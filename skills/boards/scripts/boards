@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+# boards — tiny CLI for the boards API (read a board as text, create and edit boards).
+#
+# Environment:
+#   BOARDS_URL    origin of the boards server, e.g. https://boards.example.com (not needed when you pass full links)
+#   BOARDS_TOKEN  API token (Authorization: Bearer); needed to list/create, and to edit boards not open by link
+#
+# Usage:
+#   boards read <board-link|slug>            the board as markdown (shapes, labels, connections, ids)
+#   boards json <board-link|slug>            the board as JSON (metadata + links + text)
+#   boards list [query]                      boards visible to the token (title, updated, link)
+#   boards create <title> [payload.json|-]   new board; optional JSON body with graph/add/template/tags/…
+#   boards edit <board-link> <payload.json|->   apply {graph, add, update, delete, note}; prints the new text
+#   boards comment <board-link> <text> [element-id]   add a comment thread (pinned to a shape when id is given)
+#   boards reply <board-link> <thread-id> <text>      reply in a thread
+#   boards history <board-link>              automatic snapshots, newest first
+#   boards help                              the server's API cheat sheet (GET /b/api)
+set -euo pipefail
+
+die() { echo "boards: $*" >&2; exit 1; }
+need() { command -v "$1" >/dev/null 2>&1 || die "$1 is required"; }
+need curl
+
+auth=()
+[ -n "${BOARDS_TOKEN:-}" ] && auth=(-H "Authorization: Bearer ${BOARDS_TOKEN}")
+
+# Split a board link into origin, slug and key. Accepts a full link or a bare slug (uses BOARDS_URL, key optional).
+parse() {
+  local ref="$1"
+  if [[ "$ref" =~ ^(https?://[^/]+)/b/([a-z0-9-]+)(\.md|\.json)?(\?(.*))?$ ]]; then
+    ORIGIN="${BASH_REMATCH[1]}"; SLUG="${BASH_REMATCH[2]}"
+    KEY=$(printf '%s' "${BASH_REMATCH[5]:-}" | tr '&' '\n' | sed -n 's/^k=//p' | head -1)
+  elif [[ "$ref" =~ ^[a-z0-9][a-z0-9-]{2,63}$ ]]; then
+    [ -n "${BOARDS_URL:-}" ] || die "set BOARDS_URL to use bare slugs"
+    ORIGIN="${BOARDS_URL%/}"; SLUG="$ref"; KEY=""
+  else
+    die "not a board link: $ref"
+  fi
+}
+
+q() { if [ -n "$KEY" ]; then printf '?k=%s' "$KEY"; fi; }
+
+body_from() {
+  local src="${1:-}"
+  if [ -z "$src" ]; then echo '{}'; elif [ "$src" = "-" ]; then cat; else cat "$src"; fi
+}
+
+call() {
+  # call METHOD URL [BODY] — prints the response body, fails with the server's error message.
+  local method="$1" url="$2" data="${3:-}" out code
+  out=$(mktemp)
+  if [ -n "$data" ]; then
+    code=$(curl -sS -o "$out" -w '%{http_code}' -X "$method" "${auth[@]}" -H 'content-type: application/json' --data-binary @- "$url" <<<"$data")
+  else
+    code=$(curl -sS -o "$out" -w '%{http_code}' -X "$method" "${auth[@]}" "$url")
+  fi
+  if [ "$code" -ge 400 ]; then
+    echo "boards: HTTP $code from $method $url" >&2; cat "$out" >&2; echo >&2; rm -f "$out"; exit 1
+  fi
+  cat "$out"; rm -f "$out"
+}
+
+json_field() {
+  # json_field FIELD — print a top-level string field of JSON on stdin (python3, node or jq).
+  if command -v jq >/dev/null 2>&1; then jq -r --arg f "$1" '.[$f] // empty'
+  elif command -v python3 >/dev/null 2>&1; then python3 -c 'import sys,json; v=json.load(sys.stdin).get(sys.argv[1]); print(v if v is not None else "")' "$1"
+  elif command -v node >/dev/null 2>&1; then node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const v=JSON.parse(s)[process.argv[1]];console.log(v??"")})' "$1"
+  else cat; fi
+}
+
+cmd="${1:-help}"; shift || true
+case "$cmd" in
+  read)    parse "${1:?board link}"; call GET "$ORIGIN/b/$SLUG.md$(q)" ;;
+  json)    parse "${1:?board link}"; call GET "$ORIGIN/b/$SLUG.json$(q)" ;;
+  list)
+    [ -n "${BOARDS_URL:-}" ] || die "set BOARDS_URL"
+    query=""; [ -n "${1:-}" ] && query="?q=$(printf '%s' "$1" | sed 's/ /%20/g')"
+    resp=$(call GET "${BOARDS_URL%/}/b/api/boards$query")
+    if command -v python3 >/dev/null 2>&1; then
+      python3 -c 'import sys,json
+for b in json.load(sys.stdin)["boards"]: print((b.get("updatedAt") or "")[:16], " ", b["title"], " ", b["url"])' <<<"$resp"
+    else echo "$resp"; fi ;;
+  create)
+    [ -n "${BOARDS_URL:-}" ] || die "set BOARDS_URL"
+    title="${1:?title}"; payload=$(body_from "${2:-}")
+    if command -v python3 >/dev/null 2>&1; then
+      payload=$(python3 -c 'import sys,json; d=json.loads(sys.stdin.read() or "{}"); d.setdefault("title", sys.argv[1]); print(json.dumps(d))' "$title" <<<"$payload")
+    else
+      [ "$payload" = '{}' ] && payload="{\"title\":$(printf '%s' "$title" | sed 's/\\/\\\\/g; s/"/\\"/g; s/^/"/; s/$/"/')}"
+    fi
+    resp=$(call POST "${BOARDS_URL%/}/b/api/boards" "$payload")
+    echo "$resp" | json_field url
+    echo "$resp" | json_field summary ;;
+  edit)
+    parse "${1:?board link}"; payload=$(body_from "${2:--}")
+    call POST "$ORIGIN/b/$SLUG/edit$(q)" "$payload" | json_field summary ;;
+  comment)
+    parse "${1:?board link}"; text="${2:?text}"; el="${3:-}"
+    if command -v python3 >/dev/null 2>&1; then
+      payload=$(python3 -c 'import sys,json; d={"text":sys.argv[1],"x":0,"y":0}
+if sys.argv[2]: d["elementId"]=sys.argv[2]
+print(json.dumps(d))' "$text" "$el")
+    else payload="{\"text\":\"$text\",\"x\":0,\"y\":0${el:+,\"elementId\":\"$el\"}}"; fi
+    call POST "$ORIGIN/b/$SLUG/comments$(q)" "$payload" >/dev/null && echo "comment added" ;;
+  reply)
+    parse "${1:?board link}"; thread="${2:?thread id}"; text="${3:?text}"
+    payload=$(python3 -c 'import sys,json; print(json.dumps({"reply":sys.argv[1]}))' "$text" 2>/dev/null || printf '{"reply":"%s"}' "$text")
+    call POST "$ORIGIN/b/$SLUG/comments/$thread$(q)" "$payload" >/dev/null && echo "reply added" ;;
+  history) parse "${1:?board link}"; call GET "$ORIGIN/b/$SLUG/history$(q)" ;;
+  help|-h|--help)
+    if [ -n "${BOARDS_URL:-}" ]; then call GET "${BOARDS_URL%/}/b/api"; else sed -n '2,20p' "$0"; fi ;;
+  *) die "unknown command: $cmd (try: boards help)" ;;
+esac
