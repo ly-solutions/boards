@@ -1,0 +1,22 @@
+apiVersion: v2
+name: boards
+description: Excalidraw whiteboards that people draw and AI agents read as text and edit through an API. Self-hosted, S3 or local-folder storage.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.25.0-0"
+home: https://github.com/ly-solutions/boards
+icon: https://raw.githubusercontent.com/ly-solutions/boards/main/docs/assets/wordmark-light.svg
+sources:
+  - https://github.com/ly-solutions/boards
+maintainers:
+  - name: Ly Solutions
+    url: https://github.com/ly-solutions
+keywords:
+  - excalidraw
+  - whiteboard
+  - ai-agents
+  - collaboration
+  - s3
+annotations:
+  artifacthub.io/license: Apache-2.0

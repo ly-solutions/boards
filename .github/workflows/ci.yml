@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      # tsc, node --check on every module, and the generated configuration docs being up to date.
+      - run: npm run lint
+      # shellcheck is preinstalled on ubuntu-latest.
+      - run: shellcheck skills/boards/scripts/boards
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      # The server-side Excalidraw bundle is needed by the engine and summary tests.
+      - run: npm run build:engine
+      # Docker is available on ubuntu-latest, so tests/storage.test.mjs runs against a real MinIO container.
+      - run: npm test
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      # Fails if an Excalidraw patch in scripts/excalidraw-patches.mjs no longer matches the package.
+      - run: npm run build
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: boards:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke test
+        run: |
+          docker run -d --name boards -p 127.0.0.1:8080:8080 \
+            -e BOARDS_AUTH=none -e BOARDS_STORAGE=fs boards:ci
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/healthz; then
+              echo
+              curl -fsS -o /dev/null http://127.0.0.1:8080/readyz
+              curl -fsS -o /dev/null http://127.0.0.1:8080/b/
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "boards did not become healthy" >&2
+          exit 1
+      - name: Container logs
+        if: always()
+        run: docker logs boards || true
+
+  helm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: azure/setup-helm@v4
+        with:
+          version: v4.2.3
+      - run: helm lint --strict deploy/helm/boards
+      - name: Render value combinations
+        run: |
+          set -euo pipefail
+          chart=deploy/helm/boards
+          echo "::group::defaults (s3, token auth)"
+          helm template t "$chart" > /dev/null
+          echo "::endgroup::"
+          echo "::group::fs storage with persistence, no auth"
+          helm template t "$chart" \
+            --set storage.driver=fs --set persistence.enabled=true --set auth.mode=none > /dev/null
+          echo "::endgroup::"
+          echo "::group::OIDC behind an ingress"
+          helm template t "$chart" \
+            --set auth.mode=oidc \
+            --set auth.oidc.issuer=https://id.example.com \
+            --set auth.oidc.clientId=boards \
+            --set auth.oidc.clientSecret=example-secret \
+            --set publicUrl=https://boards.example.com \
+            --set ingress.enabled=true --set ingress.className=nginx > /dev/null
+          echo "::endgroup::"
+          echo "::group::proxy auth, existing secret, ServiceMonitor, NetworkPolicy"
+          helm template t "$chart" \
+            --set auth.mode=proxy --set existingSecret=boards-env \
+            --set serviceMonitor.enabled=true --set networkPolicy.enabled=true \
+            --api-versions monitoring.coreos.com/v1 > /dev/null
+          echo "::endgroup::"
+      # kubectl is preinstalled on ubuntu-latest.
+      - run: kubectl kustomize deploy/kustomize/base > /dev/null
+
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker compose config -q

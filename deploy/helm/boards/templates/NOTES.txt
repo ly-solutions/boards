@@ -1,0 +1,60 @@
+{{- $v := .Values }}
+{{- $fullname := include "boards.fullname" . }}
+{{- $ns := .Release.Namespace }}
+boards {{ include "boards.imageTag" . }} is deployed as release "{{ .Release.Name }}" in namespace "{{ $ns }}" (one replica by design).
+
+1. Reach it
+{{- if $v.ingress.enabled }}
+   {{ trimSuffix "/" $v.publicUrl }}/b/
+{{- else }}
+   kubectl -n {{ $ns }} port-forward svc/{{ $fullname }} 8080:{{ $v.service.port }}
+   open http://localhost:8080/b/
+{{- if and $v.publicUrl (not (hasPrefix "http://localhost:8080" $v.publicUrl)) }}
+   (publicUrl is {{ $v.publicUrl }}: links, sign-in redirects and the live WebSocket use that origin.)
+{{- end }}
+{{- end }}
+   Agents start at <url>/b/api (API cheat sheet).
+
+2. Sign in ({{ $v.auth.mode }} mode)
+{{- if eq $v.auth.mode "token" }}
+{{- if or (include "boards.generateApiToken" .) $v.auth.apiTokens $v.existingSecret }}
+   Paste an API token on the sign-in page; agents send it as `Authorization: Bearer <token>`.
+   kubectl -n {{ $ns }} get secret {{ include "boards.secretName" . }} -o jsonpath='{.data.BOARDS_API_TOKENS}' | base64 -d; echo
+   (Comma-separated when there are several.{{ if include "boards.generateApiToken" . }} This one was generated and is kept across upgrades; set auth.apiTokens to use your own.{{ end }})
+{{- end }}
+{{- else if eq $v.auth.mode "oidc" }}
+   Sign in through {{ $v.auth.oidc.issuer }}. Redirect URI to register with the provider:
+   {{ default "http://localhost:8080" (trimSuffix "/" $v.publicUrl) }}/b/auth/callback
+{{- else if eq $v.auth.mode "proxy" }}
+   Identity comes from the reverse proxy headers ({{ $v.auth.proxy.userHeader }}, {{ $v.auth.proxy.emailHeader }}).
+   Make sure auth.proxy.trusted lists the proxy's addresses.
+{{- else }}
+   WARNING: auth.mode=none — everyone who can reach the service can read, list and edit every board.
+{{- end }}
+{{- if ne $v.auth.mode "token" }}
+   API tokens for agents (if any): kubectl -n {{ $ns }} get secret {{ include "boards.secretName" . }} -o jsonpath='{.data.BOARDS_API_TOKENS}' | base64 -d; echo
+{{- end }}
+
+3. Storage: {{ $v.storage.driver }}
+{{- if eq $v.storage.driver "s3" }}
+   Bucket "{{ $v.storage.s3.bucket }}"{{ with $v.storage.s3.endpoint }} at {{ . }}{{ end }}.
+{{- if eq $v.storage.s3.bucket "boards" }} Make sure this bucket exists (or set storage.s3.createBucket=true) — "boards" is the chart's placeholder default.{{ end }}
+{{- if and (not $v.storage.s3.credentials.accessKeyId) (not $v.existingSecret) }}
+   No static keys: credentials come from IRSA / Pod Identity / the AWS default chain (serviceAccount.annotations).
+{{- end }}
+   Readiness (/readyz) stays red until the bucket is reachable; check: kubectl -n {{ $ns }} logs deploy/{{ $fullname }}
+{{- else if $v.persistence.enabled }}
+   Boards are kept in {{ $v.storage.fs.dataDir }} on PVC {{ include "boards.pvcName" . }}.
+{{- else }}
+   WARNING: storage.driver=fs without persistence — boards live in an emptyDir and are LOST when the pod is
+   replaced. Set persistence.enabled=true or use storage.driver=s3.
+{{- end }}
+{{- if $v.existingSecret }}
+
+Note: with existingSecret, put BOARDS_SESSION_SECRET in "{{ $v.existingSecret }}" or sessions reset on every restart,
+and restart the pod yourself after changing that Secret (kubectl -n {{ $ns }} rollout restart deploy/{{ $fullname }}).
+{{- end }}
+{{- if $v.metrics.enabled }}
+
+Metrics: svc/{{ $fullname }} port {{ $v.metrics.port }}, path /metrics.
+{{- end }}

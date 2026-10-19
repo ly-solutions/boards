@@ -1,0 +1,74 @@
+# Argo CD Application for boards, installed from the Helm chart in this repository.
+# Apply it to the namespace Argo CD runs in:  kubectl -n argocd apply -f deploy/argocd/application.yaml
+#
+# Secrets stay out of Git: create the Secret named in `existingSecret` first (kubectl, External Secrets,
+# Sealed Secrets, SOPS, ...). Argo CD renders charts without cluster access, so the chart cannot read back
+# generated values — keep BOARDS_SESSION_SECRET (and BOARDS_API_TOKENS) in that Secret.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: boards
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ly-solutions/boards.git
+    # Pin to a release tag in production, e.g. v0.1.0, so upgrades are deliberate.
+    targetRevision: main
+    path: deploy/helm/boards
+    helm:
+      releaseName: boards
+      valuesObject:
+        publicUrl: https://boards.example.com
+        storage:
+          driver: s3
+          s3:
+            bucket: my-company-boards
+            region: eu-central-1
+            # endpoint: http://minio.minio.svc:9000   # S3-compatible stores
+            # forcePathStyle: true
+        serviceAccount:
+          annotations:
+            # IRSA: credentials from an IAM role instead of static keys.
+            eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/boards
+        auth:
+          mode: oidc
+          oidc:
+            issuer: https://id.example.com/realms/main
+            clientId: boards
+            allowedDomains:
+              - example.com
+        # Keys read from this Secret (all optional): BOARDS_API_TOKENS, BOARDS_SESSION_SECRET,
+        # BOARDS_S3_ACCESS_KEY_ID, BOARDS_S3_SECRET_ACCESS_KEY, BOARDS_OIDC_CLIENT_SECRET,
+        # BOARDS_PROXY_SECRET, BOARDS_COMMENTS_WEBHOOK_SECRET. Here: BOARDS_OIDC_CLIENT_SECRET and
+        # BOARDS_SESSION_SECRET, plus BOARDS_API_TOKENS for agents.
+        existingSecret: boards-secrets
+        ingress:
+          enabled: true
+          className: nginx
+          annotations:
+            nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+            nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+            cert-manager.io/cluster-issuer: letsencrypt
+          hosts:
+            - host: boards.example.com
+              paths:
+                - path: /
+                  pathType: Prefix
+          tls:
+            - secretName: boards-tls
+              hosts:
+                - boards.example.com
+        serviceMonitor:
+          enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: boards
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

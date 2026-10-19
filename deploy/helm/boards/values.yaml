@@ -1,0 +1,309 @@
+# Default values for the boards chart.
+#
+# boards keeps live board state in process memory, so it always runs as exactly ONE replica. There is no
+# `replicaCount` and no autoscaling on purpose. Every key below maps to an environment variable documented in
+# server/config.mjs (the OPTIONS table); see the chart README for the mapping.
+
+image:
+  # -- Container image repository.
+  repository: ghcr.io/ly-solutions/boards
+  # -- Image tag. Defaults to the chart `appVersion`.
+  tag: ""
+  # -- Image pull policy.
+  pullPolicy: IfNotPresent
+
+# -- Secrets for pulling the image from a private registry, e.g. `[{name: regcred}]`.
+imagePullSecrets: []
+# -- Override the chart name used in resource names.
+nameOverride: ""
+# -- Override the full resource name (default `<release>-boards`, or `<release>` when it already contains `boards`).
+fullnameOverride: ""
+
+# -- Public origin of the service as users reach it: scheme + host, no path (`BOARDS_PUBLIC_URL`), e.g.
+# `https://boards.example.com`. Used in links, OIDC redirects, cookie security and the WebSocket origin check.
+# Required when `ingress.enabled` is true. When empty the app assumes `http://localhost:8080`, which matches
+# `kubectl port-forward svc/<name> 8080:8080`.
+publicUrl: ""
+
+storage:
+  # -- Storage driver (`BOARDS_STORAGE`): `s3` (recommended) or `fs` (local folder; enable `persistence` too).
+  driver: s3
+  s3:
+    # -- Bucket name (`BOARDS_S3_BUCKET`). Required with `driver: s3`. The default is only a placeholder: set it
+    # to a bucket that exists, or set `createBucket: true`.
+    bucket: boards
+    # -- Key prefix inside the bucket, e.g. `team-a/` (`BOARDS_S3_PREFIX`).
+    prefix: ""
+    # -- Endpoint for S3-compatible stores such as MinIO, Ceph or R2 (`BOARDS_S3_ENDPOINT`). Empty for AWS.
+    endpoint: ""
+    # -- Region (`BOARDS_S3_REGION`). Empty = `$AWS_REGION`, else `us-east-1`.
+    region: ""
+    # -- Use path-style URLs (`BOARDS_S3_FORCE_PATH_STYLE`); needed by MinIO and most self-hosted stores.
+    forcePathStyle: false
+    # -- `auto` probes whether the store honours `If-Match`/`If-None-Match` on PUT; `on` forces conditional
+    # writes; `off` always compares first (`BOARDS_S3_CONDITIONAL_WRITES`).
+    conditionalWrites: auto
+    # -- Create the bucket at start-up if it does not exist (`BOARDS_S3_CREATE_BUCKET`).
+    createBucket: false
+    credentials:
+      # -- Static access key id, stored in the chart Secret (`BOARDS_S3_ACCESS_KEY_ID`). Leave both keys empty
+      # to use IRSA / EKS Pod Identity / the AWS default credential chain, or put them in `existingSecret`.
+      accessKeyId: ""
+      # -- Static secret access key, stored in the chart Secret (`BOARDS_S3_SECRET_ACCESS_KEY`).
+      secretAccessKey: ""
+  snapshots:
+    # -- Board history (`BOARDS_SNAPSHOTS`): `bucket` (bucket versioning), `objects` (immutable snapshot
+    # objects + manifest), `auto` (bucket when versioning is on, else objects), `off`.
+    mode: auto
+    # -- `objects` mode: minimum seconds between two snapshots of a board (`BOARDS_SNAPSHOT_INTERVAL`).
+    intervalSeconds: 600
+    # -- `objects` mode: snapshots kept per board; older ones are pruned (`BOARDS_SNAPSHOT_KEEP`).
+    keep: 500
+  fs:
+    # -- `fs` driver: folder for boards inside the container (`BOARDS_DATA_DIR`). The data volume is mounted here.
+    dataDir: /data
+
+persistence:
+  # -- `fs` driver only: keep boards on a PersistentVolumeClaim. When false the folder is an `emptyDir` and every
+  # board is lost when the pod is replaced.
+  enabled: false
+  # -- Size of the claim.
+  size: 5Gi
+  # -- StorageClass of the claim. Empty = cluster default; `"-"` = no class (`storageClassName: ""`).
+  storageClass: ""
+  # -- Access modes of the claim.
+  accessModes:
+    - ReadWriteOnce
+  # -- Use an existing claim instead of creating one.
+  existingClaim: ""
+  # -- Annotations for the created claim, e.g. `helm.sh/resource-policy: keep`.
+  annotations: {}
+
+auth:
+  # -- Who may sign in to the web UI (`BOARDS_AUTH`): `token` (paste an API token once; a session cookie
+  # follows), `oidc` (any OpenID Connect provider), `proxy` (trust identity headers from a reverse proxy),
+  # `none` (everyone is a signed-in user; local use only).
+  mode: token
+  # -- Bearer tokens for agents and integrations, joined into `BOARDS_API_TOKENS` in the chart Secret. Each must
+  # be at least 16 characters (`openssl rand -hex 32`). Works in every mode; required in `token` mode.
+  apiTokens: []
+  # -- In `token` mode with no `apiTokens` and no `existingSecret`, generate one token into the chart Secret and
+  # keep it across upgrades. `helm install` NOTES show how to read it.
+  generateApiToken: true
+  # -- HMAC key for session cookies (`BOARDS_SESSION_SECRET`). Empty = generate 48 random characters on install
+  # and reuse them on upgrades (looked up from the existing Secret). Set it explicitly under GitOps tools that
+  # render without cluster access (Argo CD), otherwise it changes on every sync.
+  sessionSecret: ""
+  # -- `lax`, `strict` or `none` (`BOARDS_COOKIE_SAMESITE`). `none` only when the editor is embedded cross-site;
+  # requires an https `publicUrl`.
+  cookieSameSite: lax
+  oidc:
+    # -- OIDC issuer URL (`BOARDS_OIDC_ISSUER`). Required with `mode: oidc`.
+    issuer: ""
+    # -- OIDC client id (`BOARDS_OIDC_CLIENT_ID`). Register the redirect URI `<publicUrl>/b/auth/callback`.
+    clientId: ""
+    # -- OIDC client secret, stored in the chart Secret (`BOARDS_OIDC_CLIENT_SECRET`). Required with
+    # `mode: oidc` unless it comes from `existingSecret`.
+    clientSecret: ""
+    # -- Requested scopes (`BOARDS_OIDC_SCOPES`).
+    scopes: openid email profile
+    # -- Only allow these e-mail domains (`BOARDS_OIDC_ALLOWED_DOMAINS`). Empty = anyone the provider
+    # authenticates.
+    allowedDomains: []
+    # -- Claim holding group membership (`BOARDS_OIDC_GROUPS_CLAIM`).
+    groupsClaim: groups
+    # -- Only allow members of these groups (`BOARDS_OIDC_ALLOWED_GROUPS`). Empty = no group check.
+    allowedGroups: []
+  proxy:
+    # -- Header with the user id (`BOARDS_PROXY_USER_HEADER`).
+    userHeader: x-forwarded-user
+    # -- Header with the e-mail (`BOARDS_PROXY_EMAIL_HEADER`).
+    emailHeader: x-forwarded-email
+    # -- Header with a display name (`BOARDS_PROXY_NAME_HEADER`).
+    nameHeader: x-forwarded-preferred-username
+    # -- IPs/CIDRs allowed to set identity headers (`BOARDS_PROXY_TRUSTED`). Empty = app default
+    # (`127.0.0.1/32,::1/128`, i.e. a sidecar proxy). For an in-cluster proxy list the pod CIDR or the proxy pods.
+    trusted: []
+    # -- Optional shared secret the proxy must send in `x-boards-proxy-secret`, stored in the chart Secret
+    # (`BOARDS_PROXY_SECRET`).
+    secret: ""
+    # -- Where "Sign out" goes, e.g. `/oauth2/sign_out` (`BOARDS_PROXY_LOGOUT_URL`).
+    logoutUrl: ""
+
+# -- Name of a user-managed Secret loaded with `envFrom`. When set, the chart creates no Secret and ignores the
+# secret values above (`auth.apiTokens`, `auth.sessionSecret`, `storage.s3.credentials.*`,
+# `auth.oidc.clientSecret`, `auth.proxy.secret`, `webhook.secret`). Recognised keys, all optional:
+# `BOARDS_API_TOKENS`, `BOARDS_SESSION_SECRET`, `BOARDS_S3_ACCESS_KEY_ID`, `BOARDS_S3_SECRET_ACCESS_KEY`,
+# `BOARDS_OIDC_CLIENT_SECRET`, `BOARDS_PROXY_SECRET`, `BOARDS_COMMENTS_WEBHOOK_SECRET`.
+existingSecret: ""
+
+integration:
+  # -- CSP `frame-ancestors` for the editor (`BOARDS_FRAME_ANCESTORS`), e.g. `'self' https://workspace.example.com`.
+  # Empty = app default `'self'`.
+  frameAncestors: ""
+  # -- Origins allowed to call the JSON/text API from a browser (`BOARDS_CORS_ORIGINS`).
+  corsOrigins: []
+  # -- Lifetime in seconds of hand-off links minted by `POST /b/api/handoff` (`BOARDS_HANDOFF_TTL`).
+  handoffTtl: 120
+
+webhook:
+  # -- POST comment events (`thread.created`, `thread.replied`, ...) here (`BOARDS_COMMENTS_WEBHOOK_URL`).
+  url: ""
+  # -- Sent as `x-boards-webhook-secret` with every webhook call; stored in the chart Secret
+  # (`BOARDS_COMMENTS_WEBHOOK_SECRET`).
+  secret: ""
+
+features:
+  # -- Editor features to switch off (`BOARDS_DISABLE_FEATURES`): `live`, `studio`, `workboard`, `snap`, `motion`.
+  disable: []
+
+metrics:
+  # -- Serve Prometheus metrics on a separate port. When false `BOARDS_METRICS_PORT=0`.
+  enabled: true
+  # -- Metrics port inside the pod and on the Service (`BOARDS_METRICS_PORT`); path `/metrics`.
+  port: 9090
+
+# -- Extra environment variables (list of EnvVar). They win over everything the chart sets, e.g.
+# `[{name: BOARDS_FLUSH_DELAY_MS, value: "5000"}]`.
+extraEnv: []
+# -- Extra `envFrom` sources (list of EnvFromSource), e.g. `[{secretRef: {name: other}}]`.
+extraEnvFrom: []
+# -- Extra volumes for the pod, e.g. a custom CA bundle.
+extraVolumes: []
+# -- Extra volume mounts for the container.
+extraVolumeMounts: []
+
+serviceAccount:
+  # -- Create a ServiceAccount.
+  create: true
+  # -- Annotations for the ServiceAccount. For S3 on EKS with IRSA:
+  # `eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/boards`. (EKS Pod Identity needs no annotation;
+  # GKE Workload Identity uses `iam.gke.io/gcp-service-account`.)
+  annotations: {}
+  # -- Name of the ServiceAccount. Empty = the full name when `create` is true, else `default`.
+  name: ""
+  # -- Mount the Kubernetes API token into the pod. boards never talks to the API server; IRSA and Pod Identity
+  # inject their own token regardless.
+  automount: false
+
+# -- Annotations for the pod.
+podAnnotations: {}
+# -- Extra labels for the pod.
+podLabels: {}
+
+# -- Container resources. Boards are held in memory while open, so size the memory limit to your largest boards.
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 1Gi
+
+# -- Node selector for the pod.
+nodeSelector: {}
+# -- Tolerations for the pod.
+tolerations: []
+# -- Affinity for the pod.
+affinity: {}
+# -- Topology spread constraints for the pod.
+topologySpreadConstraints: []
+# -- Priority class of the pod.
+priorityClassName: ""
+
+# -- Deployment strategy. Empty = `RollingUpdate` with `maxSurge: 1, maxUnavailable: 0` (safe: writes use ETag
+# preconditions and the loser merges), except `Recreate` for `storage.driver: fs` with persistence, where a
+# ReadWriteOnce volume cannot be mounted by two pods.
+strategy: {}
+# -- Seconds the pod gets to flush boards to storage after SIGTERM.
+terminationGracePeriodSeconds: 30
+
+# -- Pod security context.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+# -- Container security context. The root filesystem is read-only; `/tmp` is an `emptyDir`.
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# -- Liveness probe (process is up).
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+# -- Readiness probe (storage is reachable).
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: http
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+# -- Startup probe; liveness and readiness start after it succeeds (up to 60 s).
+startupProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  periodSeconds: 2
+  timeoutSeconds: 3
+  failureThreshold: 30
+
+service:
+  # -- Service type.
+  type: ClusterIP
+  # -- Service port for HTTP and WebSocket traffic (the container listens on 8080).
+  port: 8080
+  # -- Annotations for the Service.
+  annotations: {}
+
+ingress:
+  # -- Expose boards through an Ingress. Requires `publicUrl`. WebSocket upgrades must pass through (ingress-nginx
+  # does this by default) and idle live connections need a read timeout of at least 60 s.
+  enabled: false
+  # -- IngressClass name, e.g. `nginx`.
+  className: ""
+  # -- Annotations for the Ingress. Examples:
+  # ingress-nginx: `nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"`,
+  # `nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"`, `nginx.ingress.kubernetes.io/proxy-body-size: "16m"`;
+  # cert-manager: `cert-manager.io/cluster-issuer: letsencrypt`;
+  # Traefik and most other controllers pass WebSockets without extra settings.
+  annotations: {}
+  # -- Hosts and paths. Keep path `/` (the app redirects `/` to `/b/`), or `/b` to share a host with other apps.
+  hosts:
+    - host: boards.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  # -- TLS, e.g. `[{secretName: boards-tls, hosts: [boards.example.com]}]`.
+  tls: []
+
+serviceMonitor:
+  # -- Create a Prometheus Operator ServiceMonitor (`monitoring.coreos.com/v1`). Needs `metrics.enabled`.
+  enabled: false
+  # -- Scrape interval.
+  interval: 30s
+  # -- Scrape timeout. Empty = Prometheus default.
+  scrapeTimeout: ""
+  # -- Extra labels so your Prometheus selects the ServiceMonitor, e.g. `release: kube-prometheus-stack`.
+  labels: {}
+
+networkPolicy:
+  # -- Create a NetworkPolicy that only admits traffic to the HTTP and metrics ports. Egress is not restricted
+  # (S3, the OIDC provider and the webhook are usually outside the cluster).
+  enabled: false
+  # -- Peers (NetworkPolicyPeer list) allowed to reach the HTTP port, e.g. the ingress controller namespace.
+  # Empty = any source. The chart's own `helm test` pod is always allowed.
+  ingressFrom: []
+  # -- Peers allowed to reach the metrics port, e.g. the monitoring namespace. Empty = any source.
+  metricsFrom: []

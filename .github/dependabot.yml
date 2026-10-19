@@ -1,0 +1,35 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # scripts/excalidraw-patches.mjs rewrites exact byte sequences in the minified production build of
+      # @excalidraw/excalidraw 0.18.1, and the build fails when a sequence is not found exactly once. Any new
+      # release (in 0.x even a "minor" or "patch" one) can move that code, so the package is never bumped
+      # automatically: upgrade it by hand together with the patches and tests/excalidraw-patches.test.mjs
+      # (see CONTRIBUTING.md).
+      - dependency-name: '@excalidraw/excalidraw'
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ['*']
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    # The Dockerfile selects Node through `ARG NODE_VERSION`; stay on the Node 22 line until engines.node and the
+    # CI matrix move together.
+    ignore:
+      - dependency-name: node
+        update-types: [version-update:semver-major]

@@ -1,0 +1,27 @@
+# Minimal boards deployment without Helm: one replica, S3 storage, token sign-in.
+# Settings are plain env vars in deployment.yaml; secrets come from the Secret `boards-secrets`
+# (see ../README.md). Customise with an overlay rather than editing this base.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - serviceaccount.yaml
+  - service.yaml
+  - deployment.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: boards
+    includeSelectors: false
+
+images:
+  - name: ghcr.io/ly-solutions/boards
+    newTag: 0.1.0
+
+# Example only — prefer an overlay with an untracked env file, External Secrets or Sealed Secrets.
+# secretGenerator:
+#   - name: boards-secrets
+#     envs:
+#       - secrets.env          # BOARDS_API_TOKENS=..., BOARDS_SESSION_SECRET=..., BOARDS_S3_ACCESS_KEY_ID=...
+#     options:
+#       disableNameSuffixHash: true

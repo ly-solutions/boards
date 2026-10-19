@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/ly-solutions/boards/security/advisories/new
+    about: Please report vulnerabilities privately, not in a public issue. See SECURITY.md.
+  - name: Questions and ideas
+    url: https://github.com/ly-solutions/boards/discussions
+    about: Ask how to deploy, configure or use boards, or discuss an idea before opening a feature request.

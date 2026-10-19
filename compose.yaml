@@ -1,0 +1,51 @@
+# Quick start: `docker compose up`, then open http://localhost:8080
+#
+# boards + MinIO (S3-compatible storage; the bucket is created on start). Authentication is OFF and the ports
+# are bound to 127.0.0.1 only — this is a local playground. For a shared instance copy .env.example to .env and
+# set BOARDS_AUTH=token with a real BOARDS_API_TOKENS (or OIDC/proxy auth), and put TLS in front.
+#
+# The upstream minio/minio image is no longer published on Docker Hub; a maintained community build is used.
+# Any S3-compatible image works — set MINIO_IMAGE.
+
+services:
+  minio:
+    image: ${MINIO_IMAGE:-pgsty/minio:RELEASE.2026-08-04T00-00-00Z}
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-boards}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change-me-minio-secret}
+    volumes:
+      - minio-data:/data
+    ports:
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  boards:
+    build: .
+    image: ${BOARDS_IMAGE:-ghcr.io/ly-solutions/boards:latest}
+    depends_on:
+      minio:
+        condition: service_healthy
+    ports:
+      - "${BOARDS_BIND:-127.0.0.1}:${BOARDS_PORT:-8080}:8080"
+    environment:
+      BOARDS_PUBLIC_URL: ${BOARDS_PUBLIC_URL:-http://localhost:8080}
+      BOARDS_AUTH: ${BOARDS_AUTH:-none}
+      BOARDS_API_TOKENS: ${BOARDS_API_TOKENS:-}
+      BOARDS_SESSION_SECRET: ${BOARDS_SESSION_SECRET:-}
+      BOARDS_STORAGE: s3
+      BOARDS_S3_ENDPOINT: http://minio:9000
+      BOARDS_S3_BUCKET: ${BOARDS_S3_BUCKET:-boards}
+      BOARDS_S3_FORCE_PATH_STYLE: "true"
+      BOARDS_S3_CREATE_BUCKET: "true"
+      BOARDS_S3_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-boards}
+      BOARDS_S3_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-change-me-minio-secret}
+    restart: unless-stopped
+
+volumes:
+  minio-data:

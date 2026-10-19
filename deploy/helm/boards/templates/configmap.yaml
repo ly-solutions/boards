@@ -1,0 +1,80 @@
+{{- include "boards.validate" . }}
+{{- $v := .Values }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "boards.fullname" . }}
+  labels:
+    {{- include "boards.labels" . | nindent 4 }}
+data:
+  # Non-secret settings. Secrets come from the Secret ({{ include "boards.secretName" . }}).
+  PORT: "8080"
+  {{- with $v.publicUrl }}
+  BOARDS_PUBLIC_URL: {{ trimSuffix "/" . | quote }}
+  {{- end }}
+  BOARDS_METRICS_PORT: {{ ternary (toString $v.metrics.port) "0" $v.metrics.enabled | quote }}
+  {{- with $v.features.disable }}
+  BOARDS_DISABLE_FEATURES: {{ join "," . | quote }}
+  {{- end }}
+  BOARDS_STORAGE: {{ $v.storage.driver | quote }}
+  {{- if eq $v.storage.driver "fs" }}
+  BOARDS_DATA_DIR: {{ $v.storage.fs.dataDir | quote }}
+  {{- else }}
+  {{- with $v.storage.s3 }}
+  BOARDS_S3_BUCKET: {{ .bucket | quote }}
+  {{- with .prefix }}
+  BOARDS_S3_PREFIX: {{ . | quote }}
+  {{- end }}
+  {{- with .endpoint }}
+  BOARDS_S3_ENDPOINT: {{ . | quote }}
+  {{- end }}
+  {{- with .region }}
+  BOARDS_S3_REGION: {{ . | quote }}
+  {{- end }}
+  BOARDS_S3_FORCE_PATH_STYLE: {{ .forcePathStyle | toString | quote }}
+  BOARDS_S3_CONDITIONAL_WRITES: {{ .conditionalWrites | quote }}
+  BOARDS_S3_CREATE_BUCKET: {{ .createBucket | toString | quote }}
+  {{- end }}
+  {{- end }}
+  BOARDS_SNAPSHOTS: {{ $v.storage.snapshots.mode | quote }}
+  BOARDS_SNAPSHOT_INTERVAL: {{ $v.storage.snapshots.intervalSeconds | toString | quote }}
+  BOARDS_SNAPSHOT_KEEP: {{ $v.storage.snapshots.keep | toString | quote }}
+  BOARDS_AUTH: {{ $v.auth.mode | quote }}
+  BOARDS_COOKIE_SAMESITE: {{ lower $v.auth.cookieSameSite | quote }}
+  {{- if eq $v.auth.mode "oidc" }}
+  {{- with $v.auth.oidc }}
+  BOARDS_OIDC_ISSUER: {{ .issuer | quote }}
+  BOARDS_OIDC_CLIENT_ID: {{ .clientId | quote }}
+  BOARDS_OIDC_SCOPES: {{ .scopes | quote }}
+  BOARDS_OIDC_GROUPS_CLAIM: {{ .groupsClaim | quote }}
+  {{- with .allowedDomains }}
+  BOARDS_OIDC_ALLOWED_DOMAINS: {{ join "," . | quote }}
+  {{- end }}
+  {{- with .allowedGroups }}
+  BOARDS_OIDC_ALLOWED_GROUPS: {{ join "," . | quote }}
+  {{- end }}
+  {{- end }}
+  {{- end }}
+  {{- if eq $v.auth.mode "proxy" }}
+  {{- with $v.auth.proxy }}
+  BOARDS_PROXY_USER_HEADER: {{ .userHeader | quote }}
+  BOARDS_PROXY_EMAIL_HEADER: {{ .emailHeader | quote }}
+  BOARDS_PROXY_NAME_HEADER: {{ .nameHeader | quote }}
+  {{- with .trusted }}
+  BOARDS_PROXY_TRUSTED: {{ join "," . | quote }}
+  {{- end }}
+  {{- with .logoutUrl }}
+  BOARDS_PROXY_LOGOUT_URL: {{ . | quote }}
+  {{- end }}
+  {{- end }}
+  {{- end }}
+  {{- with $v.integration.frameAncestors }}
+  BOARDS_FRAME_ANCESTORS: {{ . | quote }}
+  {{- end }}
+  {{- with $v.integration.corsOrigins }}
+  BOARDS_CORS_ORIGINS: {{ join "," . | quote }}
+  {{- end }}
+  BOARDS_HANDOFF_TTL: {{ $v.integration.handoffTtl | toString | quote }}
+  {{- with $v.webhook.url }}
+  BOARDS_COMMENTS_WEBHOOK_URL: {{ . | quote }}
+  {{- end }}

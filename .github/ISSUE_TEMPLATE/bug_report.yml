@@ -1,0 +1,82 @@
+name: Bug report
+description: Something does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please do not include API tokens, session secrets, S3
+        credentials or private board links (a board link is a secret). Security issues go to
+        [private vulnerability reporting](https://github.com/ly-solutions/boards/security/advisories/new).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: The smallest set of steps that shows the problem. A board exported as JSON helps if it is not private.
+      placeholder: |
+        1. Open a new board
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Image tag, chart version or commit. `GET /healthz` returns the running version.
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How do you run boards?
+      options:
+        - Docker image
+        - Docker Compose (compose.yaml)
+        - Helm chart
+        - Kustomize base
+        - From source (npm run dev / npm start)
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: storage
+    attributes:
+      label: Storage
+      options:
+        - s3 (AWS)
+        - s3 (MinIO)
+        - s3 (other S3-compatible store)
+        - fs
+        - Not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: auth
+    attributes:
+      label: Auth mode (BOARDS_AUTH)
+      options:
+        - token
+        - oidc
+        - proxy
+        - none
+        - Not sure
+  - type: input
+    id: client
+    attributes:
+      label: Browser or client
+      description: Browser and OS for editor problems; the agent or HTTP client for API problems.
+      placeholder: Firefox 140 on macOS / curl / an AI agent using the boards skill
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant server logs and browser console output, with secrets removed.
+      render: text

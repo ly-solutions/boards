@@ -1,0 +1,15 @@
+node_modules
+dist
+data
+.data
+.git
+.github
+.npm
+coverage
+tests
+docs
+deploy
+skills
+*.log
+.env
+.env.*
