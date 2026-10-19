@@ -1,0 +1,135 @@
+/*
+ * Read-only embed view (web/src/embed-view.tsx).
+ *
+ * View + zen mode already drop the toolbar, properties, sidebar and stats; what Excalidraw still renders is hidden
+ * here: the hamburger main menu (desktop: top-left, phone-width frames: the bottom bar), the help button and hints.
+ * The zoom buttons and "Scroll back to content" stay: they are navigation, which a viewer is allowed to do.
+ */
+
+.embed-view {
+  --embed-control-bg: rgba(255, 255, 255, 0.92);
+  --embed-control-fg: #1b1b1f;
+  --embed-control-border: rgba(0, 0, 0, 0.12);
+  --embed-control-focus: #6965db;
+  position: absolute;
+  inset: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .embed-view {
+    --embed-control-bg: rgba(35, 35, 41, 0.92);
+    --embed-control-fg: #ececf1;
+    --embed-control-border: rgba(255, 255, 255, 0.14);
+    --embed-control-focus: #a8a5ff;
+  }
+}
+
+/* Its own stacking context, so Excalidraw's internal z-indexes can never cover the overlay controls. */
+.embed-view__canvas {
+  position: absolute;
+  inset: 0;
+  isolation: isolate;
+}
+
+/* --- Excalidraw chrome that view + zen mode still shows ------------------------------------------------------------ */
+
+.embed-view .main-menu-trigger,
+.embed-view .App-menu_top__left,
+.embed-view .App-bottom-bar .App-toolbar-content,
+.embed-view .layer-ui__wrapper__footer-right,
+.embed-view .help-icon,
+.embed-view .HintViewer,
+.embed-view .disable-zen-mode,
+.embed-view .welcome-screen-center,
+.embed-view .welcome-screen-decor {
+  display: none !important;
+}
+
+/* Phone-width frames: the bottom bar's island hosts only the (hidden) menu and "Scroll back to content". */
+.embed-view .App-bottom-bar > .Island {
+  background: transparent;
+  box-shadow: none;
+  border: 0;
+}
+
+/* Zoom buttons: available, but as quiet as the overlay controls. */
+.embed-view .layer-ui__wrapper__footer-left {
+  opacity: 0.6;
+  transition: opacity 0.15s ease;
+}
+.embed-view .layer-ui__wrapper__footer-left:hover,
+.embed-view .layer-ui__wrapper__footer-left:focus-within {
+  opacity: 1;
+}
+
+/* --- Overlay controls ---------------------------------------------------------------------------------------------- */
+
+.embed-controls {
+  position: absolute;
+  top: max(8px, env(safe-area-inset-top));
+  right: max(8px, env(safe-area-inset-right));
+  z-index: 10;
+  display: flex;
+  gap: 6px;
+  /* Unobtrusive until wanted: the board is the content, the controls are a way out of the frame. */
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+
+.embed-controls:hover,
+.embed-controls:focus-within {
+  opacity: 1;
+}
+
+.embed-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--embed-control-border);
+  border-radius: 8px;
+  background: var(--embed-control-bg);
+  color: var(--embed-control-fg);
+  font: 500 13px/1 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.embed-control:hover {
+  border-color: var(--embed-control-focus);
+}
+
+.embed-control:focus-visible {
+  outline: 2px solid var(--embed-control-focus);
+  outline-offset: 2px;
+}
+
+.embed-control svg {
+  flex: none;
+}
+
+/* Tiny frames: icons only, the text stays for screen readers. */
+@media (max-width: 360px) {
+  .embed-control {
+    padding: 0 8px;
+  }
+  .embed-control span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* Touch devices have no hover: keep the controls readable. */
+@media (hover: none) {
+  .embed-controls {
+    opacity: 0.85;
+  }
+}

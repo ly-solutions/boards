@@ -1,0 +1,876 @@
+/*
+ * boards UI on top of Excalidraw.
+ *
+ * The primary colours are Excalidraw's own, pinned here in hex so our panels
+ * match the editor: its variables are mixed via color-mix in its styles and
+ * don't accept oklch everywhere. The doubled class beats the package's
+ * declarations regardless of stylesheet order.
+ */
+.excalidraw.excalidraw {
+  --color-primary: #6965db;
+  --color-primary-darker: #5b57d1;
+  --color-primary-darkest: #4a47b1;
+  --color-primary-hover: #5753d0;
+  --color-primary-light: #e3e2fe;
+  --color-primary-light-darker: #d7d5ff;
+  --color-brand-hover: #5753d0;
+  --color-brand-active: #4a47b1;
+}
+.excalidraw.excalidraw.theme--dark {
+  --color-primary: #a8a5ff;
+  --color-primary-darker: #b2aeff;
+  --color-primary-darkest: #beb9ff;
+  --color-primary-hover: #beb9ff;
+  --color-primary-light: #2e2d39;
+  --color-primary-light-darker: #3d3b52;
+}
+
+/* Our node in the top-right corner has no box of its own: its buttons join the island's row, see "Right island" below. */
+.board-top { display: contents; }
+.board-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0 0.5rem;
+  height: 2.25rem;
+  color: var(--color-gray-60, #7a7a7a);
+  white-space: nowrap;
+}
+.board-status--saved { color: #2f9e44; }
+/*
+ * Collaborator avatars: Excalidraw shows as many as fit the wrapper width, and
+ * our right panel squeezes the wrapper — without a minimum only a single "+3"
+ * bubble remains.
+ */
+.excalidraw .layer-ui__wrapper__top-right .UserList__wrapper { min-width: 156px; }
+.board-status--live { color: #2f9e44; }
+.board-status--live .board-status__dot { display: inline-block; animation: board-live-pulse 2.4s ease-in-out infinite; }
+@keyframes board-live-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .board-status--live .board-status__dot { animation: none; } }
+.board-status--saving { color: var(--color-primary); }
+.board-status--offline { color: #e03131; }
+.board-status__text { color: var(--color-gray-60, #7a7a7a); }
+
+.board-button {
+  display: inline-flex;
+  align-items: center;
+  height: 2.25rem;
+  padding: 0 0.9rem;
+  border: none;
+  border-radius: var(--border-radius-lg, 0.5rem);
+  background: var(--studio-accent);
+  color: #fff;
+  font: 600 13px/1 var(--ui-font, system-ui, sans-serif);
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.board-button:hover { background: var(--studio-accent-hover); }
+.board-button--ghost {
+  background: transparent;
+  color: var(--studio-accent);
+  box-shadow: inset 0 0 0 1px var(--studio-accent);
+}
+.board-button--ghost:hover { background: var(--studio-accent-bg); }
+
+
+/* The boards mark and wordmark, right of the menu button; links to the boards list. */
+.board-brand {
+  position: fixed;
+  top: 16px;
+  left: 64px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  height: 36px;
+  padding: 0 0.7rem 0 0.45rem;
+  border-radius: 0.5rem;
+  background: var(--island-bg-color, rgba(255, 255, 255, 0.96));
+  box-shadow: var(--shadow-island, 0 1px 4px rgba(0, 0, 0, 0.08));
+  color: var(--studio-accent);
+  font: 700 15px/1 var(--ui-font, system-ui, sans-serif);
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+.board-brand img { width: 24px; height: 24px; }
+.board-brand:hover { color: var(--studio-accent-hover); }
+
+.board-welcome-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--studio-accent);
+  font: 700 2.4rem/1 var(--ui-font, system-ui, sans-serif);
+  letter-spacing: -0.02em;
+}
+.board-welcome-logo img { width: 3rem; height: 3rem; }
+
+/* The "view only" and "what's your name" banner, above the bottom toolbar. */
+.board-banner {
+  position: fixed;
+  left: 50%;
+  bottom: 72px;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  max-width: calc(100vw - 32px);
+  padding: 0.6rem 0.7rem 0.6rem 1rem;
+  border-radius: 0.75rem;
+  background: var(--island-bg-color, #fff);
+  box-shadow: 0 6px 24px rgba(40, 20, 120, 0.16);
+  color: var(--text-primary-color, #1b1b1f);
+  font: 14px/1.35 var(--ui-font, system-ui, sans-serif);
+}
+.board-banner input {
+  height: 2.25rem;
+  width: 11rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--color-gray-30, #d0d0d8);
+  border-radius: 0.5rem;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.board-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(18, 12, 40, 0.35);
+}
+.board-dialog {
+  width: min(32rem, 100%);
+  padding: 1.25rem 1.25rem 1rem;
+  border-radius: 0.9rem;
+  background: var(--island-bg-color, #fff);
+  color: var(--text-primary-color, #1b1b1f);
+  box-shadow: 0 20px 60px rgba(40, 20, 120, 0.25);
+  font: 14px/1.45 var(--ui-font, system-ui, sans-serif);
+}
+.board-dialog__head { display: flex; align-items: center; gap: 0.6rem; }
+.board-dialog__head img { width: 28px; height: 28px; }
+.board-dialog__head h2 { flex: 1; margin: 0; font-size: 1.15rem; }
+.board-dialog__close {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.board-dialog__hint { color: var(--color-gray-60, #6b6b76); margin: 0.6rem 0; }
+.board-dialog__link { display: flex; gap: 0.5rem; }
+.board-dialog__link input {
+  flex: 1;
+  min-width: 0;
+  height: 2.25rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--color-gray-30, #d0d0d8);
+  border-radius: 0.5rem;
+  background: transparent;
+  color: inherit;
+  font: 12px/1 ui-monospace, monospace;
+}
+.board-dialog__access { margin: 1rem 0 0.5rem; padding: 0; border: none; display: grid; gap: 0.55rem; }
+.board-dialog__access legend { font-weight: 600; margin-bottom: 0.35rem; }
+.board-dialog__access label { display: flex; gap: 0.55rem; align-items: flex-start; cursor: pointer; }
+.board-dialog__access input { accent-color: var(--studio-accent); margin-top: 0.2rem; }
+.board-dialog__access[disabled] label { opacity: 0.6; cursor: default; }
+.board-dialog__foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-gray-20, #ececf1);
+  color: var(--color-gray-60, #6b6b76);
+  font-size: 13px;
+}
+.board-dialog__foot a { color: var(--studio-accent); }
+
+.board-error {
+  font: 16px/1.5 system-ui, sans-serif;
+  max-width: 32em;
+  margin: 3rem auto;
+  padding: 0 1rem;
+}
+.board-error .board-brand.board-brand { position: static; box-shadow: none; padding-left: 0; transform: none; }
+
+@media (max-width: 730px) {
+  .board-status__text { display: none; }
+  .board-brand { display: none; }
+  .board-banner { bottom: 88px; }
+}
+
+/* The brand, banners and dialog live outside the Excalidraw root and can't see its
+   variables, so dark mode follows the editor's own theme class rather than the
+   system setting: the user may have switched it in the menu. */
+body:has(.excalidraw.theme--dark) .board-brand,
+body:has(.excalidraw.theme--dark) .board-banner,
+body:has(.excalidraw.theme--dark) .board-dialog {
+  background: #232329;
+  color: #ececf1;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+body:has(.excalidraw.theme--dark) .board-brand { color: var(--studio-accent); }
+body:has(.excalidraw.theme--dark) .board-dialog__foot { border-top-color: #34343c; }
+body:has(.excalidraw.theme--dark) .board-dialog__link input,
+body:has(.excalidraw.theme--dark) .board-banner input { border-color: #45454f; }
+
+@media (min-width: 731px) {
+  .board-banner { flex-wrap: nowrap; white-space: nowrap; }
+}
+
+/*
+ * Studio theme. The dock, panels and layers sit outside the .excalidraw
+ * container, so its variables (--island-bg-color etc.) don't reach them — the
+ * bottom toolbar stayed white in dark mode. Our own variables live on body,
+ * with dark values when the editor is in dark mode.
+ */
+body {
+  --studio-bg: #ffffff;
+  --studio-fg: #1b1b1f;
+  --studio-muted: #6f6f7a;
+  --studio-border: #e3e3ec;
+  --studio-hover: #f1f0ff;
+  --studio-accent: #6965db;
+  --studio-accent-hover: #5b57d1;
+  --studio-accent-bg: #e3e2fe;
+  --studio-shadow: 0 1px 4px rgba(20, 16, 50, 0.08), 0 0 0 1px rgba(20, 16, 50, 0.05);
+  --studio-shadow-lg: 0 12px 40px rgba(20, 16, 50, 0.16), 0 0 0 1px rgba(20, 16, 50, 0.06);
+}
+body:has(.excalidraw.theme--dark) {
+  --studio-bg: #232329;
+  --studio-fg: #e3e3e8;
+  --studio-muted: #a0a0ad;
+  --studio-border: #3a3a45;
+  --studio-hover: #31303c;
+  --studio-accent: #a8a5ff;
+  --studio-accent-hover: #b2aeff;
+  --studio-accent-bg: #2e2d39;
+  --studio-shadow: 0 1px 4px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --studio-shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+/*
+ * Studio: tool dock, palette, templates, stickies, slop check.
+ * Surfaces mimic Excalidraw islands (--island-bg-color, --shadow-island) so our
+ * UI looks like part of the editor rather than a bolted-on panel.
+ */
+.studio-dock {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 0.75rem;
+  background: var(--studio-bg);
+  box-shadow: var(--studio-shadow);
+}
+.studio-dock__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  height: 36px;
+  padding: 0 0.8rem;
+  border: none;
+  border-radius: 0.55rem;
+  background: transparent;
+  color: var(--studio-fg);
+  font: 600 13px/1 var(--ui-font, system-ui, sans-serif);
+  cursor: pointer;
+}
+.studio-dock__btn:hover { background: var(--studio-hover); }
+.studio-dock__btn.is-on { background: var(--studio-accent-bg); color: var(--studio-accent); }
+.studio-dock__swatch { width: 16px; height: 16px; border-radius: 4px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12); }
+
+.studio-panel {
+  position: fixed;
+  z-index: 5;
+  border-radius: 0.9rem;
+  background: var(--studio-bg);
+  box-shadow: var(--studio-shadow-lg);
+  color: var(--studio-fg);
+  font: 13px/1.45 var(--ui-font, system-ui, sans-serif);
+}
+.studio-panel--palette,
+.studio-panel--templates {
+  left: 50%;
+  bottom: 68px;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 32px);
+}
+.studio-panel--templates { width: 880px; max-height: calc(100vh - 140px); overflow: auto; }
+.studio-panel--slop { left: 50%; bottom: 68px; transform: translateX(-50%); width: 400px; max-width: calc(100vw - 32px); max-height: 60vh; overflow: auto; }
+.studio-panel__head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+  padding: 14px 16px 10px;
+}
+.studio-panel__head strong { font-size: 14px; }
+.studio-panel__head span { grid-column: 1; color: var(--studio-muted); }
+.studio-panel__close {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: start;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.studio-panel__close:hover { background: var(--studio-hover); }
+
+.studio-palette { display: grid; gap: 6px; padding: 0 16px 16px; }
+.studio-palette__row { display: flex; align-items: center; gap: 6px; }
+.studio-palette__label { width: 76px; flex: none; color: var(--studio-muted); font-size: 12px; }
+.studio-swatch {
+  width: 36px;
+  height: 28px;
+  flex: none;
+  border: 2px solid transparent;
+  border-radius: 7px;
+  font: 700 12px/1 Nunito, var(--ui-font, system-ui, sans-serif);
+  cursor: pointer;
+  transition: transform 0.12s;
+}
+.studio-swatch:hover { transform: translateY(-2px); }
+.studio-swatch--sticky { width: 28px; border-radius: 5px; border-color: rgba(0, 0, 0, 0.06); }
+.studio-swatch--sticky.is-on { box-shadow: 0 0 0 2px var(--studio-accent); }
+
+.studio-templates {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+  padding: 0 16px 16px;
+}
+.studio-template {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--studio-border);
+  border-radius: 0.7rem;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.studio-template:hover { border-color: var(--studio-accent); }
+.studio-template__preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 10;
+  border-radius: 0.45rem;
+  background: #fff;
+  overflow: hidden;
+}
+.studio-template__svg, .studio-template__svg svg { display: block; width: 100%; height: 100%; }
+.studio-template__blank, .studio-template__loading { color: #adb5bd; }
+.studio-template__title { font-weight: 700; }
+.studio-template__desc { color: var(--studio-muted); font-size: 12px; }
+
+/*
+ * Camera: a clipped viewport over the editor holding a layer in scene
+ * coordinates. Scroll and zoom are a single transform set by camera.tsx, so the
+ * layer moves with the canvas without React or layout recalculation.
+ */
+.camera-viewport { position: fixed; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; contain: strict; }
+.camera-layer { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; }
+.camera-layer.is-zooming { will-change: transform; }
+/* Things that keep the same on-screen size at any zoom: a pin and its counter. */
+.camera-fixed { position: absolute; width: 0; height: 0; transform: scale(var(--camera-inv, 1)); transform-origin: 0 0; }
+
+/* Layer above the canvas: sticky authors and reactions. Only buttons are clickable. */
+.camera-layer.is-far .studio-sticky { display: none; }
+.studio-sticky {
+  position: absolute;
+  /* The caption grows with zoom, within 0.7…1.25 × 12 px on screen. */
+  font-size: calc(12px * var(--camera-sticky, 1));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4em;
+  padding: 0 0.6em;
+  box-sizing: border-box;
+  font-family: Nunito, var(--ui-font, system-ui, sans-serif);
+}
+.studio-sticky__author {
+  overflow: hidden;
+  color: rgba(30, 30, 30, 0.62);
+  font-weight: 700;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.studio-sticky__reactions { display: inline-flex; gap: 0.25em; margin-left: auto; pointer-events: auto; }
+.studio-reaction {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2em;
+  height: 1.8em;
+  padding: 0 0.45em;
+  border: none;
+  border-radius: 1em;
+  background: rgba(255, 255, 255, 0.7);
+  color: #1e1e1e;
+  font: 700 1em/1 inherit;
+  cursor: pointer;
+}
+.studio-reaction.is-mine { background: #fff; box-shadow: inset 0 0 0 1.5px var(--studio-accent); }
+.studio-reaction--add { width: 1.8em; justify-content: center; padding: 0; color: rgba(30, 30, 30, 0.55); opacity: 0; transition: opacity 0.12s; }
+.studio-sticky:hover .studio-reaction--add, .studio-reaction-add:focus-within .studio-reaction--add { opacity: 1; }
+.studio-reaction-add { position: relative; }
+.studio-reaction-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 4px);
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 1em;
+  background: #fff;
+  box-shadow: 0 6px 20px rgba(20, 16, 50, 0.18);
+}
+.studio-reaction-menu button { width: 2em; height: 2em; border: none; border-radius: 1em; background: transparent; font-size: 1.1em; cursor: pointer; }
+.studio-reaction-menu button:hover, .studio-reaction-menu button.is-mine { background: #f1f0ff; }
+
+.studio-slop-wrap { position: relative; }
+.studio-slop {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 2.25rem;
+  padding: 0 0.7rem;
+  border: none;
+  border-radius: var(--border-radius-lg, 0.5rem);
+  background: var(--studio-bg);
+  box-shadow: var(--studio-shadow);
+  color: var(--studio-fg);
+  font: 600 13px/1 var(--ui-font, system-ui, sans-serif);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.studio-slop__dot { width: 8px; height: 8px; border-radius: 50%; }
+.studio-slop--clean .studio-slop__dot { background: #2f9e44; }
+.studio-slop--warn .studio-slop__dot { background: #fab005; }
+.studio-slop--slop .studio-slop__dot { background: #e03131; }
+.studio-slop--slop { color: #c92a2a; }
+.studio-slop__list { list-style: none; margin: 0; padding: 0 8px 10px; }
+.studio-slop__list button {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.studio-slop__list button:hover:not(:disabled) { background: var(--studio-hover); }
+.studio-slop__list button span { color: var(--studio-muted); }
+.studio-slop__empty { padding: 8px; color: var(--studio-muted); }
+
+.studio-form { display: grid; gap: 12px; margin: 0 0 16px; padding: 0; border: none; }
+.studio-form label { display: grid; gap: 4px; font-size: 13px; }
+.studio-form label span { color: var(--studio-muted); }
+.studio-form input, .studio-form textarea {
+  padding: 8px 10px;
+  border: 1px solid var(--studio-border);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: 14px/1.4 var(--ui-font, system-ui, sans-serif);
+}
+.studio-form__error { margin: 0; color: #e03131; }
+.studio-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.studio-tag { padding: 3px 8px; border-radius: 999px; background: var(--studio-accent-bg); color: var(--studio-accent); font-size: 12px; font-weight: 600; }
+
+@media (max-width: 640px) {
+  /* On phones icons only: labels don't fit and the dock overflowed the screen. */
+  .studio-dock { bottom: 72px; max-width: calc(100vw - 24px); overflow-x: auto; }
+  .studio-dock__btn { padding: 0 0.6rem; }
+  .studio-dock__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .studio-panel--slop { position: fixed; left: 16px; right: 16px; width: auto; top: 64px; }
+}
+
+/* The slop indicator is a bottom-dock button, not an island at the top. */
+.studio-dock__sep { width: 1px; margin: 6px 2px; background: var(--studio-border); }
+.studio-dock .studio-slop { height: 36px; box-shadow: none; background: transparent; }
+.studio-dock .studio-slop:hover { background: var(--studio-hover); }
+.studio-template__preview { background: #fff; }
+
+/* Sticky: author inside at the bottom, reactions below the sticky, "+" always visible. */
+.studio-sticky { pointer-events: none; }
+.studio-sticky__author { position: absolute; left: 0.7em; bottom: 0.5em; right: 0.7em; }
+.studio-sticky__reactions { position: absolute; left: 0; top: calc(100% + 0.35em); margin: 0; flex-wrap: wrap; }
+.studio-reaction { background: var(--studio-bg); color: var(--studio-fg); box-shadow: var(--studio-shadow); }
+.studio-reaction.is-mine { background: var(--studio-accent-bg); box-shadow: inset 0 0 0 1.5px var(--studio-accent); }
+.studio-reaction--add { opacity: 0.55; color: var(--studio-muted); }
+.studio-reaction--add:hover { opacity: 1; }
+.studio-reaction-menu { top: calc(100% + 4px); bottom: auto; left: 0; right: auto; background: var(--studio-bg); box-shadow: var(--studio-shadow-lg); }
+.studio-reaction-menu button:hover, .studio-reaction-menu button.is-mine { background: var(--studio-hover); }
+
+/* Top-right status has a fixed width so label changes don't shift its neighbours. */
+.board-status { min-width: 7.5rem; justify-content: flex-end; }
+
+/* Small round icon buttons used in panel headers (close, resolve, more). */
+.icon-button {
+  width: 26px; height: 26px; flex: none; display: inline-flex; align-items: center; justify-content: center;
+  padding: 0; border: 0; border-radius: 8px; background: none; color: var(--studio-muted); cursor: pointer; font-size: 14px; line-height: 1;
+}
+.icon-button:hover { background: var(--studio-hover); color: var(--studio-fg); }
+.icon-button:disabled { opacity: 0.5; cursor: default; }
+
+/* ── Studio buttons in the Excalidraw top toolbar ─────────────────────────
+ * The studio node is appended to the tool row and uses Excalidraw's own classes
+ * (ToolIcon, App-toolbar__divider), so sizes, selection highlight and dark mode
+ * are native. Only what Excalidraw lacks is styled here.
+ */
+.studio-toolbar-slot { display: contents; }
+.studio-tool .ToolIcon__icon svg { width: 1rem; height: 1rem; }
+.studio-toolbar-slot .studio-slop-wrap { display: inline-flex; align-items: center; margin-left: 2px; }
+.studio-toolbar-slot .studio-slop {
+  height: var(--default-button-size, 2.25rem); padding: 0 0.55rem; gap: 0.35rem;
+  background: transparent; box-shadow: none; color: var(--icon-fill-color, currentColor);
+  border-radius: var(--border-radius-lg, 0.5rem); font-size: 12px;
+}
+.studio-toolbar-slot .studio-slop:hover { background: var(--button-hover-bg, var(--studio-hover)); }
+.studio-toolbar-slot .studio-dock__label { display: none; }
+/* Studio panels open below the top toolbar when the buttons live there. */
+body.studio-top .studio-panel--palette,
+body.studio-top .studio-panel--templates,
+body.studio-top .studio-panel--slop { top: 72px; bottom: auto; }
+/* Sticky or comment tool selected — crosshair, like shape tools. */
+body.studio-tool-on .excalidraw canvas.interactive { cursor: crosshair !important; }
+/*
+ * The toolbar is strictly centred at the top. Excalidraw puts it in the middle
+ * grid column, so it drifted left whenever the right corner (collaborators,
+ * status, Share, library) was wider than its column. We take the section out
+ * of the grid and centre it on itself. The brand stays top-left.
+ */
+@media (min-width: 1080px) {
+  .excalidraw.excalidraw .App-menu_top > .shapes-section {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    /* No offset needed: the laser island right of the toolbar is hidden. */
+    transform: translateX(-50%);
+  }
+  /* With the section out of flow the grid would move the right corner into the middle column — pin it to its own. */
+  .excalidraw.excalidraw .App-menu_top > .App-menu_top__left { grid-column: 1; }
+  .excalidraw.excalidraw .App-menu_top > .layer-ui__wrapper__top-right { grid-column: 3; justify-self: end; }
+}
+.board-button--share { gap: 0.4rem; }
+.board-button__icon { display: none; }
+/*
+ * The right corner must fit beside the centred toolbar: no spare width for the
+ * collaborator list, "Library" always as an icon, "Share" and the status label
+ * only on wide screens.
+ */
+.excalidraw.excalidraw .layer-ui__wrapper__top-right .UserList__wrapper { min-width: 0; }
+.excalidraw.excalidraw .default-sidebar-trigger .sidebar-trigger__label { display: none; }
+/* "Share" as a word only where the island fits with room to spare. */
+@media (max-width: 1879px) {
+  .board-button--share { padding: 0 0.6rem; }
+  .board-button--share .board-button__label { display: none; }
+  .board-button--share .board-button__icon { display: block; }
+}
+
+
+/*
+ * Phone: the top row holds the Excalidraw tools and is already wider than the
+ * screen. Status and Share are hidden there — "Share…" is in the menu (☰ at the bottom).
+ */
+@media (max-width: 730px) {
+  .board-top .board-status,
+  .board-top .board-button--share { display: none; }
+}
+/* Excalidraw's dark mode darkens stickies — make the author caption light so it stays visible. */
+body:has(.excalidraw.theme--dark) .studio-sticky__author { color: rgba(236, 235, 243, 0.62); }
+
+/*
+ * Checkpoints: a right panel in place of the comments panel, diff highlights on
+ * the canvas in the camera layer, and the "as it was" banner.
+ */
+.cp-panel {
+  position: fixed; top: 64px; right: 16px; bottom: 64px; z-index: 5; width: 320px; max-width: calc(100vw - 32px);
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--studio-bg); color: var(--studio-fg); border-radius: 12px; box-shadow: var(--studio-shadow-lg);
+  font: 13px/1.45 var(--ui-font, system-ui, sans-serif);
+}
+.cp-panel__head { display: flex; align-items: center; justify-content: space-between; padding: 10px 8px 10px 14px; border-bottom: 1px solid var(--studio-border); }
+.cp-panel__head strong { font-weight: 700; }
+.cp-panel__body { flex: 1; overflow: auto; padding: 8px; display: grid; gap: 8px; align-content: start; }
+.cp-row { display: grid; gap: 4px; width: 100%; padding: 10px; border: 1px solid var(--studio-border); border-radius: 10px; background: transparent; color: inherit; font: inherit; text-align: left; }
+button.cp-row { cursor: pointer; }
+.cp-row.is-on { border-color: var(--studio-accent); background: var(--studio-accent-bg); }
+.cp-row--past { padding: 0; }
+.cp-row__main { display: grid; gap: 4px; width: 100%; padding: 10px; border: none; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.cp-row__title { font-weight: 700; overflow-wrap: anywhere; }
+.cp-row__meta, .cp-authors, .cp-row__note { color: var(--studio-muted); font-size: 11.5px; }
+.cp-row__chips, .cp-week { display: flex; flex-wrap: wrap; gap: 4px; }
+.cp-row__more { display: grid; gap: 8px; padding: 0 10px 10px; }
+.cp-chip { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 20px; background: var(--studio-hover); color: var(--studio-fg); font-size: 11px; font-weight: 700; white-space: nowrap; }
+.cp-chip--add { background: var(--cp-add-bg); color: var(--cp-add); }
+.cp-chip--chg { background: var(--cp-chg-bg); color: var(--cp-chg); }
+.cp-chip--del { background: var(--cp-del-bg); color: var(--cp-del); }
+.cp-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.cp-actions .board-button { flex: 1 1 auto; justify-content: center; text-align: center; text-decoration: none; }
+.cp-form { display: grid; gap: 8px; padding: 10px; border-radius: 10px; box-shadow: inset 0 0 0 2px var(--studio-accent); }
+.cp-form input { box-sizing: border-box; width: 100%; padding: 8px 10px; border: none; border-radius: 8px; background: var(--studio-bg); color: var(--studio-fg); font: 600 13px/1.4 var(--ui-font, system-ui, sans-serif); box-shadow: inset 0 0 0 2px var(--studio-border); }
+.cp-form input:focus { outline: none; box-shadow: inset 0 0 0 2px var(--studio-accent); }
+.cp-error { color: var(--cp-del); font-size: 12px; }
+.cp-empty { margin: 4px 2px; color: var(--studio-muted); font-size: 12.5px; }
+.cp-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; font-size: 12px; }
+.cp-list s { color: var(--studio-muted); }
+.cp-list li.is-del { color: var(--cp-del); }
+:root { --cp-add: #2b8a3e; --cp-add-bg: #e3f6e7; --cp-chg: #b86e00; --cp-chg-bg: #fff1d6; --cp-del: #c2255c; --cp-del-bg: #ffe3ec; }
+body:has(.excalidraw.theme--dark) { --cp-add: #6bd486; --cp-add-bg: #173323; --cp-chg: #f2b23e; --cp-chg-bg: #3a2c0e; --cp-del: #ff7fa6; --cp-del-bg: #3d1626; }
+/* Canvas highlight: a frame around the element in scene coordinates; the tag keeps a fixed on-screen size. */
+.cp-marks { pointer-events: none; }
+.cp-mark { position: absolute; box-sizing: border-box; border-radius: 12px; outline: calc(3px * var(--camera-inv, 1)) solid var(--cp-add); outline-offset: calc(4px * var(--camera-inv, 1)); }
+.cp-mark--chg { outline-color: var(--cp-chg); }
+.cp-mark--del { outline: calc(2px * var(--camera-inv, 1)) dashed var(--cp-del); opacity: 0.55; display: flex; align-items: center; justify-content: center; padding: 10px; overflow: hidden; }
+.cp-mark__ghost { color: #1e1e1e; font: 600 16px/1.25 Nunito, var(--ui-font, system-ui, sans-serif); text-align: center; text-decoration: line-through; overflow-wrap: anywhere; }
+.cp-mark--del:not([style*="background"]) .cp-mark__ghost { color: var(--studio-fg); }
+.cp-mark > .camera-fixed { left: 0; top: 0; }
+.cp-mark__tag { position: absolute; left: 0; bottom: 7px; padding: 1px 8px; border-radius: 20px; background: var(--cp-add); color: var(--studio-bg); font: 700 11px/1.5 var(--ui-font, system-ui, sans-serif); white-space: nowrap; opacity: 1; }
+.cp-mark--chg .cp-mark__tag { background: var(--cp-chg); }
+.cp-mark--del .cp-mark__tag { background: var(--cp-del); }
+/* "As it was" view: banner top centre, where the toolbar would be (there is none in this view). */
+.cp-banner {
+  position: fixed; top: 14px; left: 16px; right: 16px; z-index: 5; width: fit-content; max-width: calc(100vw - 32px); margin: 0 auto;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 10px; padding: 8px 12px;
+  background: var(--studio-bg); color: var(--studio-fg); border-radius: 12px; box-shadow: var(--studio-shadow-lg);
+  font: 13px/1.4 var(--ui-font, system-ui, sans-serif);
+}
+.cp-banner__title { font-weight: 700; }
+.cp-banner__note { color: var(--studio-muted); font-size: 12px; }
+.cp-banner .board-button { text-decoration: none; }
+@media (max-width: 640px) { .cp-panel { top: auto; right: 8px; left: 8px; bottom: 72px; width: auto; max-width: none; max-height: 60vh; } }
+
+/* Shared timer: a pill in the toolbar and a popover below it. */
+.timer-pill {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; margin-left: 4px; padding: 0 12px 0 9px; border: none; border-radius: 16px;
+  background: var(--studio-accent); color: var(--studio-bg); font: 700 14px/1 var(--ui-font, system-ui, sans-serif); font-variant-numeric: tabular-nums; cursor: pointer;
+}
+.timer-pill.is-paused { background: var(--studio-hover); color: var(--studio-fg); }
+.timer-pill.is-last { background: #e8590c; color: #fff; }
+.timer-pill.is-done { background: #e03131; color: #fff; }
+.timer-pill--dock { height: 36px; }
+@media (prefers-reduced-motion: no-preference) {
+  .timer-pill.is-done { animation: timer-shake 0.5s ease-in-out 6; }
+  @keyframes timer-shake { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-5deg); } 75% { transform: rotate(5deg); } }
+}
+.timer-pop {
+  position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 6; box-sizing: border-box; width: 300px; max-width: calc(100vw - 24px);
+  display: grid; gap: 10px; padding: 12px; border-radius: 14px; background: var(--studio-bg); color: var(--studio-fg); box-shadow: var(--studio-shadow-lg);
+  font: 13px/1.45 var(--ui-font, system-ui, sans-serif);
+}
+.timer-pop--dock { top: auto; bottom: 76px; }
+.timer-pop__head { display: flex; align-items: center; justify-content: space-between; }
+.timer-pop__time { text-align: center; font: 800 40px/1.1 var(--ui-font, system-ui, sans-serif); font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+.timer-pop__time.is-done { font-size: 24px; color: #e03131; }
+.timer-pop__time.is-last { color: #e8590c; }
+.timer-pop__time.is-paused { color: var(--studio-muted); }
+.timer-pop__row { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; }
+.timer-preset { min-width: 34px; height: 30px; padding: 0 8px; border: none; border-radius: 8px; background: var(--studio-hover); color: var(--studio-fg); font: 700 13px/1 var(--ui-font, system-ui, sans-serif); cursor: pointer; }
+.timer-preset:hover { background: var(--studio-accent); color: var(--studio-bg); }
+.timer-custom { width: 58px; height: 30px; box-sizing: border-box; padding: 0 8px; border: none; border-radius: 8px; background: var(--studio-bg); color: var(--studio-fg); font: 600 13px/1 var(--ui-font, system-ui, sans-serif); box-shadow: inset 0 0 0 2px var(--studio-border); }
+.timer-custom:focus { outline: none; box-shadow: inset 0 0 0 2px var(--studio-accent); }
+.timer-pop__unit { color: var(--studio-muted); }
+.timer-pop__sound { display: flex; align-items: center; gap: 8px; color: var(--studio-muted); cursor: pointer; }
+.timer-pop__sound input { accent-color: var(--studio-accent); }
+
+/*
+ * Link cards. The layer is in scene coordinates: a card is part of the board
+ * and scales with it.
+ */
+.link-layer { pointer-events: none; }
+.link-glyph { width: 1.15em; height: 1.15em; flex: none; }
+.link-glyph--plain { color: var(--studio-muted); }
+/* The card covers the scene rectangle along with its fallback label. */
+.link-card {
+  position: absolute; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 10px 12px; overflow: hidden; border-radius: 10px;
+  background: var(--studio-bg); color: var(--studio-fg); box-shadow: inset 0 0 0 1px var(--studio-border); font: 13px/1.3 var(--ui-font, system-ui, sans-serif);
+}
+.link-card__head { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--studio-muted); font-size: 11.5px; font-weight: 800; }
+.link-card__kind { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.link-card__title { font-weight: 700; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.link-card--link .link-card__title { -webkit-line-clamp: 1; }
+.link-card__foot { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--studio-muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/*
+ * Right-click menu. The editor's stock menu stays in the DOM — ours clicks its
+ * items — but is hidden.
+ */
+body.board-menu-on .excalidraw .context-menu { display: none !important; }
+.board-menu {
+  position: fixed; z-index: 1000; box-sizing: border-box; min-width: 232px; max-width: calc(100vw - 16px); padding: 6px; border-radius: 14px;
+  background: var(--studio-bg); color: var(--studio-fg); box-shadow: var(--studio-shadow-lg); font: 600 13px/1 var(--ui-font, system-ui, sans-serif);
+  animation: board-menu-in 90ms ease-out; user-select: none;
+}
+@keyframes board-menu-in { from { opacity: 0; transform: scale(0.97); } }
+@media (prefers-reduced-motion: reduce) { .board-menu { animation: none; } }
+.board-menu__item {
+  display: flex; align-items: center; gap: 10px; width: 100%; height: 34px; padding: 0 10px; border: none; border-radius: 9px;
+  background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.board-menu__item:hover, .board-menu__item:focus-visible { outline: none; background: var(--studio-hover); }
+.board-menu__item .link-glyph, .board-menu__icon { width: 17px; height: 17px; flex: none; }
+.board-menu__icon { color: var(--studio-muted); }
+.board-menu__item:hover .board-menu__icon { color: var(--studio-accent); }
+.board-menu__label { flex: 1 1 auto; white-space: nowrap; }
+.board-menu__hint { color: var(--studio-muted); font: 500 11.5px/1 var(--ui-font, system-ui, sans-serif); }
+.board-menu__item.is-danger, .board-menu__item.is-danger .board-menu__icon { color: #e03131; }
+.board-menu__item.is-danger:hover { background: rgba(224, 49, 49, 0.1); }
+.board-menu__sep { height: 1px; margin: 5px 8px; border: none; background: var(--studio-border); }
+.board-menu__item.is-open { background: var(--studio-hover); }
+.board-menu__chevron { color: var(--studio-muted); font-size: 16px; line-height: 1; }
+.board-menu__check { width: 17px; flex: none; text-align: center; color: var(--studio-accent); font-weight: 900; }
+/* "More" opens beside its item; flips to the left if it doesn't fit on the right. */
+.board-menu__sub { position: absolute; left: calc(100% + 6px); max-height: calc(100vh - 16px); overflow-y: auto; animation: none; }
+.board-menu__sub.is-left { left: auto; right: calc(100% + 6px); }
+.board-menu__sub .board-menu__label { font-weight: 500; }
+
+/* ── Right island ─────────────────────────────────────────────────────────
+ * Everything about the board rather than drawing: collaborators, connection,
+ * timer, checkpoints, comments, slop check, library, Share. These used to be
+ * five differently styled pills plus buttons at the end of the toolbar, and at
+ * 1700 px the avatars overlapped the toolbar. Now it's one island styled like
+ * the centre toolbar: same height, radius, shadow, 36 px buttons.
+ *
+ * The island is Excalidraw's own top-right corner: its collaborators and
+ * "Library" with our buttons in between, ordered via `order`.
+ */
+.excalidraw.excalidraw .layer-ui__wrapper__top-right {
+  width: auto;
+  justify-self: end;
+  align-items: center;
+  gap: 2px;
+  box-sizing: border-box;
+  height: 44px;
+  padding: 4px;
+  border-radius: var(--border-radius-lg, 0.5rem);
+  background: var(--island-bg-color, #fff);
+  box-shadow: var(--shadow-island, 0 1px 4px rgba(0, 0, 0, 0.12));
+  font: 13px/1 var(--ui-font, system-ui, sans-serif);
+  /* The package passes clicks between buttons to the canvas — with a filled island that would draw "through" it. */
+  pointer-events: auto !important;
+}
+.excalidraw .layer-ui__wrapper__top-right > .UserList__wrapper { order: 0; }
+.excalidraw .layer-ui__wrapper__top-right .board-status { order: 1; }
+.excalidraw .layer-ui__wrapper__top-right .bar-sep--tools { order: 2; }
+.excalidraw .layer-ui__wrapper__top-right .bar-btn,
+.excalidraw .layer-ui__wrapper__top-right .timer-pill,
+.excalidraw .layer-ui__wrapper__top-right .studio-slop-wrap,
+.excalidraw .layer-ui__wrapper__top-right .sidebar-trigger__label-element { order: 3; }
+.excalidraw .layer-ui__wrapper__top-right .bar-sep--share { order: 4; }
+.excalidraw .layer-ui__wrapper__top-right .board-button { order: 5; }
+
+/*
+ * Collaborators. The package decides how many avatars to show from the wrapper
+ * width (38 px each, the last slot for "+N"), so the width is fixed at three.
+ * The space it takes in the island follows the avatar count: the excess goes
+ * left via a negative margin, leaving no gap.
+ */
+.excalidraw.excalidraw .layer-ui__wrapper__top-right .UserList__wrapper { flex: none; width: 152px; min-width: 0; margin-left: -152px; }
+.excalidraw.excalidraw .layer-ui__wrapper__top-right .UserList__wrapper:has(.UserList > :nth-child(1)) { margin-left: -114px; }
+.excalidraw.excalidraw .layer-ui__wrapper__top-right .UserList__wrapper:has(.UserList > :nth-child(2)) { margin-left: -76px; }
+.excalidraw.excalidraw .layer-ui__wrapper__top-right .UserList__wrapper:has(.UserList > :nth-child(3)) { margin-left: -38px; }
+.excalidraw.excalidraw .layer-ui__wrapper__top-right .UserList__wrapper:has(.UserList > :nth-child(4)) { margin-left: 0; }
+
+.bar-btn {
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 36px; height: 36px; padding: 0;
+  border: none; border-radius: var(--border-radius-lg, 0.5rem);
+  background: transparent; color: var(--icon-fill-color, var(--studio-fg));
+  font: 600 12px/1 var(--ui-font, system-ui, sans-serif); font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.bar-btn:hover { background: var(--button-hover-bg, var(--studio-hover)); }
+.bar-btn.is-on { background: var(--color-surface-primary-container, var(--studio-accent-bg)); color: var(--color-on-primary-container, var(--studio-accent)); }
+.bar-btn--wide { width: auto; min-width: 36px; padding: 0 9px; gap: 6px; }
+.bar-btn--wide .studio-dock__label { display: none; }
+.bar-btn.studio-slop--slop { color: #c92a2a; }
+.bar-sep { flex: none; width: 1px; height: 20px; margin: 0 6px; background: var(--default-border-color, var(--studio-border)); }
+.excalidraw .layer-ui__wrapper__top-right .board-status { height: 36px; padding: 0 8px 0 10px; }
+.excalidraw .layer-ui__wrapper__top-right .board-button { height: 36px; }
+/* "Sign in" and "Share" side by side get the same gap as island buttons. */
+.excalidraw .layer-ui__wrapper__top-right .board-button + .board-button { margin-left: 4px; }
+.excalidraw .layer-ui__wrapper__top-right .timer-pill--bar { margin: 0 4px 0 2px; }
+/* The editor's "Library" styled like our buttons. */
+.excalidraw.excalidraw .layer-ui__wrapper__top-right .sidebar-trigger {
+  width: 36px; height: 36px; padding: 0; border: none; box-shadow: none;
+  border-radius: var(--border-radius-lg, 0.5rem); background: transparent; color: var(--icon-fill-color, var(--studio-fg));
+}
+.excalidraw.excalidraw .layer-ui__wrapper__top-right .sidebar-trigger:hover { background: var(--button-hover-bg, var(--studio-hover)); }
+.excalidraw.excalidraw .layer-ui__wrapper__top-right .sidebar-trigger svg { width: 18px; height: 18px; }
+
+/* Popovers opened from the island appear below it, not centred under the toolbar. */
+.timer-pop--bar { top: 68px; left: auto; right: 16px; transform: none; }
+.studio-panel--slop.studio-panel--bar,
+body.studio-top .studio-panel--slop.studio-panel--bar { top: 68px; bottom: auto; left: auto; right: 16px; transform: none; }
+.cp-panel { top: 68px; }
+
+/*
+ * Connection as a dot: "Live" and "Saved" read from colour and tooltip. Words
+ * remain only for states the user must notice: offline, view only, slow save.
+ */
+.excalidraw.excalidraw .layer-ui__wrapper__top-right .board-status { min-width: 0; padding: 0 8px; }
+.excalidraw .layer-ui__wrapper__top-right .board-status--live .board-status__text,
+.excalidraw .layer-ui__wrapper__top-right .board-status--saved .board-status__text { display: none; }
+
+/* The laser island right of the toolbar: the same laser is under "more tools" and on the K key. */
+.excalidraw .App-toolbar-container > .Island:has(.ToolIcon__LaserPointer) { display: none; }
+/* Align the brand and menu button with the toolbar and island, which are 8 px taller. */
+.excalidraw.excalidraw .App-menu_top > .App-menu_top__left { margin-top: 4px; }
+.board-brand { top: 20px; }
+
+/* Compact island: two avatar slots (a face and "+N"), "Library" moves into the "More" menu. */
+body[data-bar='compact'] .excalidraw.excalidraw .layer-ui__wrapper__top-right .UserList__wrapper,
+body[data-bar='dock'] .excalidraw.excalidraw .layer-ui__wrapper__top-right .UserList__wrapper { width: 76px; margin-left: -76px; }
+body[data-bar='compact'] .excalidraw.excalidraw .layer-ui__wrapper__top-right .UserList__wrapper:has(.UserList > :nth-child(1)),
+body[data-bar='dock'] .excalidraw.excalidraw .layer-ui__wrapper__top-right .UserList__wrapper:has(.UserList > :nth-child(1)) { margin-left: -38px; }
+body[data-bar='compact'] .excalidraw.excalidraw .layer-ui__wrapper__top-right .UserList__wrapper:has(.UserList > :nth-child(2)),
+body[data-bar='dock'] .excalidraw.excalidraw .layer-ui__wrapper__top-right .UserList__wrapper:has(.UserList > :nth-child(2)) { margin-left: 0; }
+body[data-bar='compact'] .excalidraw .layer-ui__wrapper__top-right .sidebar-trigger__label-element { display: none; }
+body[data-bar='compact'] .excalidraw .layer-ui__wrapper__top-right .bar-sep--tools,
+body[data-bar='dock'] .excalidraw .layer-ui__wrapper__top-right .bar-sep--tools { display: none; }
+.bar-menu { top: 68px; right: 16px; }
+.bar-menu .board-menu__icon svg { width: 17px; height: 17px; }
+
+/*
+ * Bottom dock on desktop. Centred on the screen, six labelled buttons overlapped
+ * "Undo" at the bottom left. Now it's centred in the free space between the
+ * zoom/undo controls on the left and help on the right; where labels still
+ * don't fit, only icons remain.
+ */
+@media (min-width: 731px) {
+  .studio-dock { left: 248px; right: 64px; width: fit-content; margin: 0 auto; transform: none; }
+}
+@media (min-width: 731px) and (max-width: 1239px) {
+  .studio-dock__btn { padding: 0 0.6rem; }
+  .studio-dock .studio-dock__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}

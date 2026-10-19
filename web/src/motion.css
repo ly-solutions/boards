@@ -1,0 +1,143 @@
+/*
+ * Motion in the board UI.
+ *
+ * Everything here lives under the `board-motion` class on the root element:
+ * web/src/motion.ts sets it when smoothing is on and removes it when the user
+ * turns it off in the menu or the OS asks for reduced motion. Without the class
+ * the board looks and behaves as before.
+ *
+ * Entrances use the translate, scale and opacity properties, not transform:
+ * many panels already use transform for positioning (translateX(-50%), inverse
+ * camera scale), and animating transform would override it.
+ * Popovers that measure themselves to stay on screen (menus) only slide in,
+ * never change size.
+ */
+html.board-motion {
+  --m-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* Slight overshoot for small things being "placed": pin, chip, avatar. */
+  --m-spring: cubic-bezier(0.34, 1.45, 0.64, 1);
+}
+
+@keyframes m-fade { from { opacity: 0; } }
+@keyframes m-rise { from { opacity: 0; translate: 0 8px; } }
+@keyframes m-drop { from { opacity: 0; translate: 0 -8px; } }
+@keyframes m-from-right { from { opacity: 0; translate: 18px 0; } }
+@keyframes m-from-left { from { opacity: 0; translate: -14px 0; } }
+@keyframes m-pop { from { opacity: 0; scale: 0.86; } }
+@keyframes m-dialog { from { opacity: 0; translate: 0 10px; scale: 0.97; } }
+
+/* ── Board appears ───────────────────────────────────────────────────────── */
+/* Static scene canvas only: the new-element canvas appears on every stroke and must not fade in. */
+html.board-motion .excalidraw .excalidraw__canvas.static { animation: m-fade 0.28s ease-out; }
+html.board-motion .board-brand,
+html.board-motion .excalidraw .layer-ui__wrapper { animation: m-fade 0.32s ease-out; }
+html.board-motion .excalidraw .welcome-screen-center { animation: m-rise 0.45s var(--m-out); }
+
+/* ── Our panels and dialogs ──────────────────────────────────────────────── */
+html.board-motion .note-panel,
+html.board-motion .cp-panel { animation: m-from-right 0.2s var(--m-out); }
+html.board-motion .studio-panel { animation: m-rise 0.18s var(--m-out); }
+html.board-motion body.studio-top .studio-panel { animation-name: m-drop; }
+html.board-motion .timer-pop { animation: m-drop 0.18s var(--m-out); }
+html.board-motion .timer-pop--dock { animation-name: m-rise; }
+html.board-motion .board-dialog__backdrop { animation: m-fade 0.16s ease-out; }
+html.board-motion .board-dialog { animation: m-dialog 0.22s var(--m-out); }
+html.board-motion .board-banner { animation: m-rise 0.3s var(--m-out) 0.15s backwards; }
+html.board-motion .studio-reaction-menu { transform-origin: 100% 100%; animation: m-pop 0.14s var(--m-spring); }
+html.board-motion .board-menu { animation: m-rise 0.12s var(--m-out); }
+html.board-motion .board-menu__sub { animation: m-from-left 0.12s var(--m-out); }
+html.board-motion .cp-banner { animation: m-drop 0.24s var(--m-out); }
+
+/* List rows stagger in: it reads as the list arriving, not as always having been there. */
+html.board-motion .note-panel__list > *,
+html.board-motion .cp-list > * { animation: m-rise 0.22s var(--m-out) backwards; }
+html.board-motion .note-panel__list > :nth-child(2),
+html.board-motion .cp-list > :nth-child(2) { animation-delay: 0.03s; }
+html.board-motion .note-panel__list > :nth-child(3),
+html.board-motion .cp-list > :nth-child(3) { animation-delay: 0.06s; }
+html.board-motion .note-panel__list > :nth-child(4),
+html.board-motion .cp-list > :nth-child(4) { animation-delay: 0.09s; }
+html.board-motion .note-panel__list > :nth-child(n + 5),
+html.board-motion .cp-list > :nth-child(n + 5) { animation-delay: 0.12s; }
+html.board-motion .studio-templates > * { animation: m-rise 0.24s var(--m-out) backwards; }
+html.board-motion .studio-templates > :nth-child(2) { animation-delay: 0.03s; }
+html.board-motion .studio-templates > :nth-child(3) { animation-delay: 0.06s; }
+html.board-motion .studio-templates > :nth-child(n + 4) { animation-delay: 0.09s; }
+
+/* ── Things placed on the board ──────────────────────────────────────────── */
+html.board-motion .note-pin:not(.note-pin--draft) { transform-origin: 0 100%; animation: m-pop 0.24s var(--m-spring); }
+html.board-motion .link-chip { animation: m-pop 0.2s var(--m-spring); }
+html.board-motion .link-chip__card { animation: m-rise 0.14s var(--m-out); }
+html.board-motion .studio-sticky { animation: m-fade 0.22s ease-out; }
+html.board-motion .cp-mark { animation: m-fade 0.3s ease-out; }
+
+/* Ring around a freshly added block (web/src/motion-fx.tsx). */
+.motion-layer { z-index: 2; }
+.motion-pulse {
+  position: absolute;
+  box-sizing: border-box;
+  border-radius: calc(14px * var(--camera-inv, 1));
+  outline: calc(2.5px * var(--camera-inv, 1)) solid currentColor;
+  pointer-events: none;
+  /* Delay while the view glides to the new block: a ring in transit would only distract. */
+  animation: m-pulse 0.9s var(--m-out) 0.35s both;
+}
+@keyframes m-pulse {
+  0% { opacity: 0; outline-offset: 0; }
+  18% { opacity: 0.85; }
+  100% { opacity: 0; outline-offset: calc(16px * var(--camera-inv, 1)); }
+}
+
+/* ── Press and hover feedback ────────────────────────────────────────────── */
+html.board-motion .board-button,
+html.board-motion .studio-dock__btn,
+html.board-motion .studio-tool,
+html.board-motion .note-toggle,
+html.board-motion .icon-button,
+html.board-motion .studio-reaction,
+html.board-motion .studio-swatch,
+html.board-motion .studio-template,
+html.board-motion .timer-preset,
+html.board-motion .timer-pill,
+html.board-motion .link-chip {
+  transition: background-color 0.14s ease-out, color 0.14s ease-out, box-shadow 0.14s ease-out, border-color 0.14s ease-out, scale 0.1s ease-out, opacity 0.14s ease-out;
+}
+html.board-motion .board-button:active,
+html.board-motion .studio-dock__btn:active,
+html.board-motion .studio-tool:active,
+html.board-motion .note-toggle:active,
+html.board-motion .icon-button:active,
+html.board-motion .studio-swatch:active,
+html.board-motion .timer-preset:active { scale: 0.95; }
+html.board-motion .studio-reaction:active { scale: 0.88; }
+html.board-motion .studio-template:hover { translate: 0 -2px; }
+html.board-motion .studio-template { transition: background-color 0.14s ease-out, border-color 0.14s ease-out, box-shadow 0.14s ease-out, translate 0.16s var(--m-out); }
+html.board-motion .board-menu__item,
+html.board-motion .note-row,
+html.board-motion .cp-row { transition: background-color 0.12s ease-out, color 0.12s ease-out; }
+html.board-motion .board-status { transition: color 0.2s ease-out; }
+html.board-motion .board-brand img { transition: rotate 0.5s var(--m-out), scale 0.2s var(--m-out); }
+html.board-motion .board-brand:hover img { rotate: -8deg; scale: 1.06; }
+
+/* ── Excalidraw's own UI ─────────────────────────────────────────────────── */
+html.board-motion .excalidraw .dropdown-menu { animation: m-drop 0.16s var(--m-out); }
+html.board-motion .excalidraw .dropdown-menu--mobile { animation-name: m-rise; }
+html.board-motion .excalidraw .popover,
+html.board-motion .excalidraw .picker { animation: m-fade 0.14s ease-out; }
+html.board-motion .excalidraw .context-menu { animation: m-rise 0.12s var(--m-out); }
+html.board-motion .excalidraw .App-menu__left { animation: m-from-left 0.2s var(--m-out); }
+html.board-motion .excalidraw .Toast { animation: m-rise 0.26s var(--m-out); }
+html.board-motion .excalidraw .HintViewer > span { animation: m-fade 0.3s ease-out; }
+html.board-motion .excalidraw .UserList .Avatar { animation: m-pop 0.28s var(--m-spring); }
+html.board-motion .excalidraw .ToolIcon__icon,
+html.board-motion .excalidraw .dropdown-menu-item,
+html.board-motion .excalidraw .dropdown-menu-button,
+html.board-motion .excalidraw .zoom-actions button,
+html.board-motion .excalidraw .undo-redo-buttons button,
+html.board-motion .excalidraw .color-picker__button {
+  transition: background-color 0.14s ease-out, color 0.14s ease-out, box-shadow 0.14s ease-out, scale 0.1s ease-out;
+}
+html.board-motion .excalidraw .ToolIcon:active .ToolIcon__icon,
+html.board-motion .excalidraw .zoom-actions button:active,
+html.board-motion .excalidraw .undo-redo-buttons button:active,
+html.board-motion .excalidraw .color-picker__button:active { scale: 0.92; }

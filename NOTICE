@@ -1,0 +1,17 @@
+boards
+Copyright 2026 Ly Solutions
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The web editor bundles third-party software, distributed under their own licenses:
+
+- Excalidraw (@excalidraw/excalidraw) — MIT License, Copyright (c) 2020 Excalidraw
+  https://github.com/excalidraw/excalidraw
+- React and React DOM — MIT License, Copyright (c) Meta Platforms, Inc. and affiliates
+- Fonts shipped with Excalidraw (Excalifont, Virgil, Nunito, Lilita One, Cascadia Code,
+  Liberation Sans, Assistant, Comic Shanns, Xiaolai) — SIL Open Font License 1.1 or MIT,
+  see the font files' metadata and https://github.com/excalidraw/excalidraw
+
+The server uses, among others: jsdom (MIT), ws (MIT), yaml (ISC), @dagrejs/dagre (MIT),
+AWS SDK for JavaScript v3 (Apache-2.0). A full list with licenses is produced by
+`npx license-checker --production --summary`; see docs/licenses.md.

@@ -1,0 +1,59 @@
+{
+  "name": "boards",
+  "version": "0.1.0",
+  "description": "Excalidraw whiteboards that people draw and AI agents read as text and edit through an API. Self-hosted, S3 storage.",
+  "license": "Apache-2.0",
+  "author": "Ly Solutions",
+  "homepage": "https://github.com/ly-solutions/boards",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ly-solutions/boards.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ly-solutions/boards/issues"
+  },
+  "keywords": [
+    "excalidraw",
+    "whiteboard",
+    "ai-agents",
+    "collaboration",
+    "s3",
+    "self-hosted"
+  ],
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "boards": "bin/boards.mjs"
+  },
+  "scripts": {
+    "build": "npm run build:web && npm run build:engine",
+    "build:web": "vite build",
+    "build:engine": "node scripts/build-engine.mjs",
+    "dev": "BOARDS_STORAGE=fs BOARDS_DATA_DIR=.data BOARDS_AUTH=none BOARDS_API_TOKENS=dev-token-0123456789abcdef BOARDS_METRICS_PORT=0 node server/index.mjs",
+    "start": "node bin/boards.mjs serve",
+    "test": "node --test --test-concurrency=1 tests/*.test.mjs",
+    "lint": "tsc -p tsconfig.json && node scripts/check-syntax.mjs && node scripts/gen-config-docs.mjs --check",
+    "docs:config": "node scripts/gen-config-docs.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1153.0",
+    "@dagrejs/dagre": "^3.1.1",
+    "jsdom": "^30.1.1",
+    "ws": "^8.22.0",
+    "yaml": "^2.6.1"
+  },
+  "devDependencies": {
+    "@excalidraw/excalidraw": "0.18.1",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "esbuild": "^0.28.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^8.3.1"
+  }
+}

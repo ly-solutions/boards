@@ -1,0 +1,191 @@
+/*
+ * Comments: pins and thread cards in the camera layer, the composer at the
+ * bottom centre, the panel on the right. Colours come from the studio
+ * variables (editor.css), so dark mode follows the editor without extra rules.
+ * Inside `.camera-fixed` one CSS pixel is one screen pixel at any zoom.
+ */
+
+/* Above stickies and link cards: a pin on a sticky must stay clickable. */
+.note-layer { z-index: 3; }
+
+/* ── Pins ────────────────────────────────────────────────────────────────── */
+.note-pin {
+  position: absolute; left: 0; bottom: 0;
+  box-sizing: border-box; width: 32px; height: 32px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  /* The square bottom-left corner is the tip: it marks the exact point. */
+  border: 2px solid var(--studio-bg); border-radius: 16px 16px 16px 4px;
+  color: #fff; font: 700 14px/1 var(--ui-font, system-ui, sans-serif);
+  box-shadow: 0 2px 6px rgba(20, 16, 50, 0.25);
+  cursor: pointer; pointer-events: auto; touch-action: none; user-select: none;
+}
+.note-pin:hover { box-shadow: 0 0 0 2px var(--studio-accent), 0 3px 10px rgba(20, 16, 50, 0.3); }
+.note-pin:focus-visible { outline: 2px solid var(--studio-accent); outline-offset: 2px; }
+.note-pin.is-active { box-shadow: 0 0 0 3px var(--studio-accent), 0 3px 10px rgba(20, 16, 50, 0.3); }
+.note-pin.is-resolved { opacity: 0.6; }
+.note-pin.is-dragging { cursor: grabbing; box-shadow: 0 8px 20px rgba(20, 16, 50, 0.35); z-index: 1; }
+.note-pin--draft { pointer-events: none; opacity: 0.9; box-shadow: 0 0 0 2px var(--studio-accent), 0 2px 6px rgba(20, 16, 50, 0.25); }
+.note-pin__initial { pointer-events: none; }
+.note-pin__count {
+  position: absolute; top: -8px; right: -10px;
+  box-sizing: border-box; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+  background: var(--studio-bg); color: var(--studio-fg); box-shadow: var(--studio-shadow);
+  font: 700 11px/18px var(--ui-font, system-ui, sans-serif); text-align: center; pointer-events: none;
+}
+.note-pin__dot {
+  position: absolute; top: -4px; left: -4px; width: 10px; height: 10px; border-radius: 50%;
+  background: var(--studio-accent); box-shadow: 0 0 0 2px var(--studio-bg); pointer-events: none;
+}
+
+/* ── Avatars and badges ──────────────────────────────────────────────────── */
+.note-avatar {
+  flex: none; width: 28px; height: 28px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; font: 700 13px/1 var(--ui-font, system-ui, sans-serif);
+}
+.note-avatar--small { width: 24px; height: 24px; font-size: 12px; }
+.note-who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.note-badge {
+  flex: none; padding: 0 6px; border-radius: 999px;
+  background: var(--studio-accent-bg); color: var(--studio-accent);
+  font: 700 10.5px/16px var(--ui-font, system-ui, sans-serif);
+}
+.note-badge--quiet { background: var(--studio-hover); color: var(--studio-muted); }
+.note-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--studio-accent); }
+
+/* Open-thread count on the island button. */
+.note-count {
+  position: absolute; top: 2px; right: 1px;
+  box-sizing: border-box; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
+  background: var(--studio-accent); color: var(--studio-bg);
+  font: 700 10px/16px var(--ui-font, system-ui, sans-serif); text-align: center; pointer-events: none;
+}
+
+/* ── Thread card ─────────────────────────────────────────────────────────── */
+.note-card {
+  position: absolute; box-sizing: border-box; width: 320px; max-height: 440px;
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--studio-bg); color: var(--studio-fg); border-radius: 12px; box-shadow: var(--studio-shadow-lg);
+  font: 13px/1.45 var(--ui-font, system-ui, sans-serif);
+  pointer-events: auto; cursor: default;
+}
+.note-card--sheet { position: fixed; left: 8px; right: 8px; bottom: 8px; z-index: 6; width: auto; max-height: 70vh; }
+.note-card__head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px; border-bottom: 1px solid var(--studio-border); }
+.note-card__place { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.note-card__list { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 4px 6px; }
+.note-card__note { padding: 6px 14px; border-top: 1px solid var(--studio-border); color: var(--studio-muted); font-size: 12px; }
+.note-card__foot { padding: 8px; border-top: 1px solid var(--studio-border); }
+
+.note-msg { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 8px; padding: 8px 6px; border-radius: 8px; transition: background-color 0.4s ease-out; }
+.note-msg.is-flash { background: var(--studio-accent-bg); transition: none; }
+.note-msg__meta { display: flex; align-items: center; gap: 6px; min-height: 24px; }
+.note-msg__time { flex: none; color: var(--studio-muted); font-size: 11.5px; }
+.note-msg__actions { display: flex; gap: 2px; margin-left: auto; opacity: 0; }
+.note-msg:hover .note-msg__actions,
+.note-msg:focus-within .note-msg__actions { opacity: 1; }
+/* No hover on touch screens: actions are always visible there. */
+@media (hover: none) { .note-msg__actions { opacity: 1; } }
+.note-msg__actions .icon-button { width: 24px; height: 24px; }
+.note-delete.is-armed { width: auto; padding: 0 8px; background: #e03131; color: #fff; font-weight: 700; font-size: 12px; }
+.note-delete.is-armed:hover { background: #c92a2a; color: #fff; }
+.note-msg__text { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.note-quote {
+  display: block; box-sizing: border-box; width: 100%; margin: 2px 0 4px; padding: 1px 8px;
+  border: none; border-left: 3px solid var(--studio-border); background: none;
+  color: var(--studio-muted); font: 12px/1.45 var(--ui-font, system-ui, sans-serif); text-align: left;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer;
+}
+.note-quote:hover { border-left-color: var(--studio-accent); color: var(--studio-fg); }
+.note-quote--gone { font-style: italic; cursor: default; }
+.note-quote--gone:hover { border-left-color: var(--studio-border); color: var(--studio-muted); }
+
+.note-replying {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 6px; padding: 2px 2px 2px 10px; border-radius: 8px;
+  background: var(--studio-hover); color: var(--studio-muted); font-size: 12px;
+}
+.note-replying > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.note-replying b { color: var(--studio-fg); }
+
+/* ── Input shared by the composer and the reply box ──────────────────────── */
+.note-input { display: flex; align-items: flex-end; gap: 6px; }
+.note-input textarea {
+  flex: 1; min-width: 0; box-sizing: border-box; max-height: 140px; margin: 0; padding: 7px 10px;
+  border: none; border-radius: 8px; resize: none;
+  background: var(--studio-bg); color: var(--studio-fg); font: 13px/1.45 var(--ui-font, system-ui, sans-serif);
+  box-shadow: inset 0 0 0 1.5px var(--studio-border);
+}
+.note-input textarea:focus { outline: none; box-shadow: inset 0 0 0 1.5px var(--studio-accent); }
+.note-input textarea::placeholder { color: var(--studio-muted); }
+.note-send {
+  flex: none; width: 33px; height: 33px; padding: 0; border: none; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--studio-accent); color: var(--studio-bg); cursor: pointer;
+}
+.note-send:hover:not(:disabled) { background: var(--studio-accent-hover); }
+.note-send:disabled { opacity: 0.4; cursor: default; }
+
+/* ── Composer ────────────────────────────────────────────────────────────── */
+.note-composer {
+  position: fixed; left: 50%; bottom: 16px; z-index: 5; transform: translateX(-50%);
+  box-sizing: border-box; width: 380px; max-width: calc(100vw - 32px);
+  display: grid; gap: 8px; padding: 8px 8px 10px 12px;
+  background: var(--studio-bg); color: var(--studio-fg); border-radius: 14px; box-shadow: var(--studio-shadow-lg);
+  font: 13px/1.45 var(--ui-font, system-ui, sans-serif);
+}
+/* The bottom dock (narrow screens) sits at the same spot: stay above it. */
+body:has(.studio-dock) .note-composer { bottom: 76px; }
+.note-composer__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--studio-muted); font-size: 12px; }
+.note-composer__head > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.note-composer__place { color: var(--studio-fg); font-weight: 600; }
+
+/* ── Panel ───────────────────────────────────────────────────────────────── */
+.note-panel {
+  position: fixed; top: 68px; right: 16px; bottom: 64px; z-index: 5;
+  box-sizing: border-box; width: 320px; max-width: calc(100vw - 32px);
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--studio-bg); color: var(--studio-fg); border-radius: 12px; box-shadow: var(--studio-shadow-lg);
+  font: 13px/1.45 var(--ui-font, system-ui, sans-serif);
+}
+.note-panel__head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px; border-bottom: 1px solid var(--studio-border); }
+.note-panel__head strong { font-weight: 700; }
+.note-panel__count { padding: 0 7px; border-radius: 999px; background: var(--studio-accent-bg); color: var(--studio-accent); font-weight: 700; font-size: 11.5px; line-height: 18px; }
+.note-panel__tools { display: flex; gap: 2px; margin-left: auto; }
+.note-panel__tools .icon-button.is-off { color: var(--studio-accent); }
+.note-panel__list { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 6px; display: grid; gap: 2px; align-content: start; }
+
+.note-row {
+  display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: start; gap: 8px;
+  padding: 8px; border-radius: 10px; cursor: pointer;
+}
+.note-row:hover { background: var(--studio-hover); }
+.note-row.is-on { background: var(--studio-accent-bg); }
+.note-row:focus-visible { outline: 2px solid var(--studio-accent); outline-offset: -2px; }
+.note-row.is-resolved .note-row__body { opacity: 0.7; }
+.note-row__meta { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.note-row__meta time { flex: none; color: var(--studio-muted); font-size: 11.5px; }
+.note-row__text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.note-row__replies { margin-top: 2px; color: var(--studio-accent); font-size: 11.5px; font-weight: 600; }
+.note-row__action {
+  height: 24px; padding: 0 8px; border: none; border-radius: 6px;
+  background: transparent; color: var(--studio-accent); box-shadow: inset 0 0 0 1px var(--studio-border);
+  font: 600 12px/1 var(--ui-font, system-ui, sans-serif); cursor: pointer; white-space: nowrap;
+}
+.note-row__action:hover { background: var(--studio-accent-bg); box-shadow: inset 0 0 0 1px var(--studio-accent); }
+
+.note-toggle {
+  display: flex; align-items: center; gap: 6px; margin-top: 6px; padding: 6px; border: none; border-radius: 8px;
+  background: none; color: var(--studio-muted); font: 600 12px/1.2 var(--ui-font, system-ui, sans-serif); text-align: left; cursor: pointer;
+}
+.note-toggle:hover { background: var(--studio-hover); color: var(--studio-fg); }
+.note-toggle svg { transition: rotate 0.15s ease-out; }
+.note-toggle.is-open svg { rotate: 90deg; }
+
+.note-empty { padding: 10px 8px; color: var(--studio-muted); }
+.note-empty p { margin: 0 0 8px; }
+
+/* ── Phone: panel and card become bottom sheets ──────────────────────────── */
+@media (max-width: 640px) {
+  .note-panel { top: auto; left: 8px; right: 8px; bottom: 72px; width: auto; max-width: none; max-height: 60vh; }
+  .note-composer { bottom: 76px; width: auto; left: 8px; right: 8px; max-width: none; transform: none; }
+}
