@@ -21,12 +21,12 @@ refused. Browsers on origins listed in `BOARDS_CORS_ORIGINS` may call the API wi
 | GET | `/b/api/boards?q=&tag=` | token / user | `{ boards: [ { slug, title, description, tags, task, author, access, createdAt, updatedAt, stats, key, url, markdown, json, embed, scene, live, preview } ] }` |
 | POST | `/b/api/boards` | token / user | `{ title, description?, tags?, task?, access?, author?, template?, graph?, add?, at? }` → `201 { slug, title, key, url, markdown, json, embed, scene, live, summary }` |
 | GET | `/b/api/boards/<slug>` | token / user | board JSON (below), no key needed |
-| GET | `/b/<slug>.json?k=` | key | board JSON: metadata, links, `rev`, `stats`, `preview`, `text` |
+| GET | `/b/<slug>.json?k=` | key | board JSON: metadata (incl. plugin `fields`), links, `rev`, `stats`, `preview`, `text` |
 | GET | `/b/<slug>.md?k=` | key | `text/markdown` — the board as text |
 | GET | `/b/<slug>?k=` | key | editor page (HTML); `Accept: text/markdown` or `?format=md` returns the text; `&embed=1` read-only embed |
 | GET | `/b/<slug>/scene.excalidraw?k=` | key | scene JSON (+ `notes`, `rev`, `epoch`); `&download` for a file |
 | GET | `/b/<slug>/preview.svg?k=` | key | thumbnail |
-| POST | `/b/<slug>/meta?k=` | editor (access: token/user) | `{ title?, description?, tags?, task?, access? }` |
+| POST | `/b/<slug>/meta?k=` | editor (access: token/user) | `{ title?, description?, tags?, task?, access?, fields? }` — `fields`: properties declared by plugins, `null` removes one |
 
 ## Editing
 
@@ -51,7 +51,7 @@ Colour names: `purple, blue, teal, green, amber, orange, rose, red, slate` (`GET
 | POST | `/b/<slug>/comments/<thread>?k=` | `{ reply, replyTo? }` · `{ resolved }` · `{ remove: true }` · `{ removeMessage }` · `{ x, y, elementId }` |
 | POST | `/b/<slug>/react?k=` | `{ id: <sticky>, emoji: 👍 \| 👎 \| ❤️, on }` |
 | POST | `/b/<slug>/timer?k=` | `{ do: start\|pause\|resume\|add\|stop, minutes? }` |
-| POST | `/b/<slug>/links?k=` | `{ refs: ["board:<slug>"] }` → titles of boards this board links to |
+| POST | `/b/<slug>/links?k=` | `{ refs: ["board:<slug>", "link:<url>", "ref:<resolver>:<text>"] }` → card data for refs this board contains: board titles, plugin cards, link previews; `null` for the rest |
 
 ## History and checkpoints
 
@@ -74,5 +74,18 @@ Colour names: `purple, blue, teal, green, amber, orange, rose, red, slate` (`GET
 | GET/POST | `/b/auth/login` | sign-in (token form, OIDC redirect, or proxy check) |
 | GET | `/b/auth/callback`, `/b/auth/logout`, `/b/auth/handoff?t=` | |
 | GET | `/healthz`, `/readyz` | probes |
+
+## Plugins
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| GET | `/b/api/plugins` | token / user; `{ apiVersion, plugins: [{ name, version, apiVersion }], web, actions, fields, patterns }` |
+| any | `/b/plugins/<name>/…` | a plugin's global routes |
+| any | `/b/<slug>/plugins/<name>/…?k=` | a plugin's board routes |
+| POST | `/b/<slug>/actions/<plugin>/<id>?k=` | editor; `{ ids: [element ids], input? }` → `{ ok, toast?, open?, created?, rev?, select? }` |
+| POST | `/b/hooks/<name>/…` | a plugin's incoming webhooks (secret or signature checked by the plugin's definition) |
+| GET | `/b/_plugins/<mount>/<file>` | web plugin modules |
+
+See [plugins.md](plugins.md).
 
 Comment webhook payloads are documented in [integrations/harnessly.md](integrations/harnessly.md#comment-webhook).

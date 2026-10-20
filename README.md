@@ -69,6 +69,10 @@ person can drag it around a second later.
   proxy, or none for local use. Safe by default.
 - **Embeds and integrations**: read-only `?embed=1` view for iframes, oEmbed, one-time sign-in hand-off links,
   configurable CORS and `frame-ancestors` — see the [harnessly integration](docs/integrations/harnessly.md).
+- **Plugins, not forks**: add rich cards for your tracker, actions on selected blocks, board properties, webhooks
+  and per-person feature flags from a separate package mounted next to the stock image — see
+  [docs/plugins.md](docs/plugins.md) and the [example plugin](examples/plugin-example/).
+- **English and Russian** interface (`BOARDS_LOCALE`), message catalogs ready for more languages.
 - **Runs anywhere**: one Node process; Docker image, docker compose with MinIO, Helm chart, Argo CD and kustomize
   examples, Prometheus metrics.
 
@@ -126,6 +130,9 @@ Environment variables only, validated at start-up; the full table is in
 | `BOARDS_S3_BUCKET`, `BOARDS_S3_ENDPOINT`, `BOARDS_S3_REGION`, `BOARDS_S3_FORCE_PATH_STYLE` | | S3 location; credentials from `BOARDS_S3_ACCESS_KEY_ID`/`…SECRET…` or the AWS chain (IRSA works) |
 | `BOARDS_OIDC_ISSUER`, `BOARDS_OIDC_CLIENT_ID`, `BOARDS_OIDC_CLIENT_SECRET` | | OIDC sign-in |
 | `BOARDS_FRAME_ANCESTORS`, `BOARDS_CORS_ORIGINS` | `'self'`, — | who may embed the editor / call the API from a browser |
+| `BOARDS_LOCALE` | `en` | interface language: `en` · `ru` |
+| `BOARDS_PLUGINS`, `BOARDS_WEB_PLUGINS`, `BOARDS_FLAGS` | — | [plugins](docs/plugins.md) and feature flags |
+| `BOARDS_LINK_PREVIEW` | `off` | Open Graph previews for pasted links (SSRF-guarded) |
 
 ## Architecture
 
@@ -148,6 +155,8 @@ workspace ─ iframe ?embed=1 · oEmbed · hand-off ───────┘    
 | Storage drivers, snapshots, migration | [`server/storage/`](server/storage), [`server/migrate.mjs`](server/migrate.mjs) |
 | Auth modes, configuration | [`server/auth.mjs`](server/auth.mjs), [`server/config.mjs`](server/config.mjs) |
 | Editor | [`web/src/main.tsx`](web/src/main.tsx) and friends; render patches in [`scripts/excalidraw-patches.mjs`](scripts/excalidraw-patches.mjs) |
+| Plugins: loader, cards, flags, SSRF guard | [`server/plugins.mjs`](server/plugins.mjs), [`server/cards.mjs`](server/cards.mjs), [`server/flags.mjs`](server/flags.mjs), [`server/ssrf.mjs`](server/ssrf.mjs), [`web/src/plugins.ts`](web/src/plugins.ts) |
+| Interface language | [`shared/i18n.mjs`](shared/i18n.mjs), catalogs in [`shared/locales/`](shared/locales) |
 
 Design notes — why the Excalidraw package plus our own storage instead of self-hosting excalidraw.com, how the
 live channel recovers, checkpoints, embeds — are in [docs/design.md](docs/design.md). Storage internals and the
