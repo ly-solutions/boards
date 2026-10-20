@@ -128,12 +128,13 @@ ${script}
 }
 
 /** The Content-Security-Policy shared by the editor and the embed view. */
-function boardCsp({ publicUrl, frameAncestors }) {
+function boardCsp({ publicUrl, frameAncestors, scriptOrigins = [] }) {
   // The live channel is a WebSocket to our host; 'self' covers ws(s) only in recent browsers, so it is named.
   const socket = publicUrl.replace(/^http/, 'ws')
   const directives = [
     "default-src 'self'",
-    "script-src 'self' 'wasm-unsafe-eval'", // WASM: font subsetting when exporting SVG
+    // WASM: font subsetting when exporting SVG. Extra origins: web plugins loaded from https URLs (BOARDS_WEB_PLUGINS).
+    `script-src 'self' 'wasm-unsafe-eval'${scriptOrigins.map((o) => ` ${o}`).join('')}`,
     "style-src 'self' 'unsafe-inline'", // Excalidraw styles its UI inline
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",
@@ -159,8 +160,8 @@ const boardPageHeaders = (csp) => ({
 })
 
 /** The editor may be framed only by the origins in BOARDS_FRAME_ANCESTORS. */
-export function editorHeaders({ publicUrl = 'http://localhost:8080', frameAncestors = "'self'" } = {}) {
-  return boardPageHeaders(boardCsp({ publicUrl, frameAncestors }))
+export function editorHeaders({ publicUrl = 'http://localhost:8080', frameAncestors = "'self'", scriptOrigins = [] } = {}) {
+  return boardPageHeaders(boardCsp({ publicUrl, frameAncestors, scriptOrigins }))
 }
 
 /**
@@ -281,13 +282,30 @@ const relative = (iso, t = EN) => {
   return new Date(at).toISOString().slice(0, 10)
 }
 
+/**
+ * Plugin-defined board properties marked for the list (`home: true`), e.g. a deadline. Dates read in the interface
+ * language; a date in the past is marked overdue.
+ */
+function homeFields(board, fields, t) {
+  const shown = fields.filter((f) => board.fields?.[f.id] !== undefined && board.fields?.[f.id] !== null && board.fields?.[f.id] !== '')
+  if (!shown.length) return ''
+  const today = new Date().toISOString().slice(0, 10)
+  const value = (f) => {
+    const raw = board.fields[f.id]
+    if (f.type === 'date' && /^\d{4}-\d{2}-\d{2}$/.test(String(raw))) return new Date(`${raw}T00:00:00Z`).toLocaleDateString(t.locale === 'ru' ? 'ru-RU' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
+    if (f.type === 'select') return f.options?.find((o) => String(o.value) === String(raw))?.label ?? String(raw)
+    return String(raw)
+  }
+  return `<span class="fields">${shown.map((f) => `<span class="field${f.type === 'date' && String(board.fields[f.id]) < today ? ' overdue' : ''}" data-field="${escape(f.id)}">${escape(f.label)}: <b>${escape(value(f))}</b></span>`).join('')}</span>`
+}
+
 /** The boards list: every board with its thumbnail, plus "New board". */
-export function renderHome({ staticBase, boards, templates, user, canSignOut, q = '', t = EN }) {
+export function renderHome({ staticBase, boards, templates, user, canSignOut, q = '', t = EN, fields = [] }) {
   const cards = boards
     .map(
       (b) => `<a class="card" href="${escape(`/b/${b.slug}?k=${encodeURIComponent(b.key)}`)}">
   <div class="thumb">${b.hasPreview ? `<img loading="lazy" alt="" src="${escape(`/b/${b.slug}/preview.svg?k=${encodeURIComponent(b.key)}`)}">` : `<span>${t('pages.noPreview')}</span>`}</div>
-  <div class="meta"><strong>${escape(b.title)}</strong><span>${escape(relative(b.updatedAt, t))}${b.author ? ` · ${escape(b.author)}` : ''}</span>${(b.tags ?? []).length ? `<span class="tags">${b.tags.map((t) => `<i>${escape(t)}</i>`).join('')}</span>` : ''}</div>
+  <div class="meta"><strong>${escape(b.title)}</strong><span>${escape(relative(b.updatedAt, t))}${b.author ? ` · ${escape(b.author)}` : ''}</span>${(b.tags ?? []).length ? `<span class="tags">${b.tags.map((t) => `<i>${escape(t)}</i>`).join('')}</span>` : ''}${homeFields(b, fields, t)}</div>
 </a>`,
     )
     .join('\n')
@@ -312,6 +330,9 @@ export function renderHome({ staticBase, boards, templates, user, canSignOut, q 
   .meta { display: grid; gap: .2rem; padding: .7rem .8rem .8rem; }
   .meta span { color: var(--muted); font-size: .82rem; }
   .tags i { font-style: normal; border: 1px solid var(--line); border-radius: 999px; padding: 0 .45rem; margin-right: .25rem; }
+  .fields { display: flex; flex-wrap: wrap; gap: .2rem .7rem; }
+  .fields b { font-weight: 600; color: var(--fg); }
+  .fields .overdue b { color: #e03131; }
   .empty { color: var(--muted); padding: 3rem 0; text-align: center; }
   @media (prefers-color-scheme: dark) { .thumb { background: #f4f4f6; } }
 </style></head>

@@ -10,6 +10,9 @@
 const SLUG = '[a-z0-9][a-z0-9-]{2,120}'
 const BOARD_PATH = new RegExp(`^/b/(${SLUG})/?$`)
 
+/** A plugin reference card: `ref:<resolver id>:<the pasted text>`. */
+const REF = /^ref:[a-z0-9][a-z0-9._-]{0,60}:[^\n]{1,200}$/
+
 /** Sites Excalidraw embeds itself as a player or frame: we leave those pastes alone. */
 const EMBEDS = new Set(['youtube.com', 'm.youtube.com', 'youtu.be', 'vimeo.com', 'player.vimeo.com', 'figma.com', 'excalidraw.com', 'link.excalidraw.com', 'codesandbox.io', 'twitter.com', 'x.com'])
 
@@ -51,6 +54,9 @@ export function refsOf(elements, { boardOrigin } = {}) {
       const target = candidate ? classify(candidate, { boardOrigin }) : null
       if (target) refs.add(target.ref)
     }
+    // A card for a text reference a plugin recognises (an issue key, say): `ref:<resolver>:<text>`.
+    const ref = el.customData?.kind === 'card' ? el.customData?.ref : null
+    if (typeof ref === 'string' && REF.test(ref)) refs.add(ref)
   }
   return refs
 }

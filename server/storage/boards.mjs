@@ -77,6 +77,10 @@ export function buildMeta(meta) {
     lines.push('tags:')
     for (const tag of meta.tags) lines.push(`  - ${yamlString(tag)}`)
   }
+  if (meta.fields && typeof meta.fields === 'object' && Object.keys(meta.fields).length) {
+    lines.push('fields:')
+    for (const [key, value] of Object.entries(meta.fields)) lines.push(`  ${JSON.stringify(key)}: ${typeof value === 'number' && Number.isFinite(value) ? value : yamlString(value)}`)
+  }
   if (meta.stats) {
     lines.push('stats:')
     for (const [key, value] of Object.entries(meta.stats)) lines.push(`  ${key}: ${Number(value) || 0}`)

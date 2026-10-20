@@ -18,6 +18,11 @@
  *   POST /b/api/boards                 new board
  *   GET  /b/api/oembed?url=…           oEmbed for board links
  *   POST /b/api/handoff                one-time sign-in link for an integration's user (token)
+ *   GET  /b/api/plugins                loaded plugins and what they add (token or signed-in user)
+ *   *    /b/plugins/<name>/…           plugin routes (global); /b/<slug>/plugins/<name>/… board routes
+ *   POST /b/<slug>/actions/<plugin>/<id>  run a plugin's block action on selected elements
+ *   POST /b/hooks/<name>/…             incoming webhooks for plugins
+ *   GET  /b/_plugins/<mount>/…         web plugin modules
  *   GET  /healthz, /readyz             probes
  */
 import { createServer } from 'node:http'
@@ -46,6 +51,9 @@ import { createMetrics } from './metrics.mjs'
 import { SNAPSHOT_ID } from './storage/boards.mjs'
 import { createTranslator } from '../shared/i18n.mjs'
 import { CATALOGS } from '../shared/locales/index.mjs'
+import { createPluginHost, PluginHttpError, PluginReply, PLUGIN_API_VERSION } from './plugins.mjs'
+import { createFlags, staticFlags } from './flags.mjs'
+import { linkPreviewResolver } from './link-preview.mjs'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const PREFIX = '/b'
@@ -64,15 +72,19 @@ const json = (res, status, body) => sendBody(res, status, { 'content-type': 'app
 const text = (res, status, body, type = 'text/markdown; charset=utf-8') =>
   sendBody(res, status, { 'content-type': type, 'cache-control': 'no-store', 'x-robots-tag': 'noindex, nofollow, noarchive', 'referrer-policy': 'no-referrer' }, body)
 
-async function readBody(req, limit) {
+async function readRaw(req, limit) {
   const chunks = []
   let size = 0
   for await (const chunk of req) {
     size += chunk.length
-    if (size > limit) throw new HttpError(413, `request body is larger than ${Math.round(limit / 1024 / 1024)} MB`)
+    if (size > limit) throw new HttpError(413, limit >= 1024 * 1024 ? `request body is larger than ${Math.round(limit / 1024 / 1024)} MB` : `request body is larger than ${Math.round(limit / 1024)} KB`)
     chunks.push(chunk)
   }
-  return Buffer.concat(chunks).toString('utf8')
+  return Buffer.concat(chunks)
+}
+
+async function readBody(req, limit) {
+  return (await readRaw(req, limit)).toString('utf8')
 }
 
 async function readJson(req, limit) {
@@ -131,12 +143,22 @@ export function createApp({
   auth = createAuth(config.auth, { publicUrl: config.publicUrl, log: (event) => console.log(JSON.stringify(event)) }),
   webDir = join(ROOT, 'dist/web'),
   webhook = createWebhook(config.webhook),
-  links = createLinks({ boardMeta: (slug) => store.boardMeta(slug), log: (event) => console.log(JSON.stringify({ at: new Date().toISOString(), ...event })) }),
-  metrics = createMetrics(),
-  ready = async () => true,
   /** The interface translator; plugins add their messages to it, so it is per app, not the shared cached one. */
   t = createTranslator(config.locale, CATALOGS),
+  /** Feature flags per person: static ones from BOARDS_FLAGS, plus providers plugins add. */
+  flags = createFlags({ providers: [staticFlags(config.flags)], log: (event) => console.log(JSON.stringify({ at: new Date().toISOString(), ...event })) }),
+  /** Plugins (server/plugins.mjs); main() loads BOARDS_PLUGINS into it. Empty by default. */
+  plugins = createPluginHost({ config, t, flags, log: (event) => console.log(JSON.stringify({ at: new Date().toISOString(), ...event })) }),
+  links = createLinks({
+    boardMeta: (slug) => store.boardMeta(slug),
+    linkPreview: config.linkPreview ? linkPreviewResolver() : null,
+    log: (event) => console.log(JSON.stringify({ at: new Date().toISOString(), ...event })),
+  }),
+  metrics = createMetrics(),
+  ready = async () => true,
 } = {}) {
+  // One translator for pages and plugins: a host built elsewhere brings its own, with its plugins' messages in it.
+  if (plugins.t) t = plugins.t
   const publicUrl = config.publicUrl
   /** Template names in the interface language (the editor's templates panel uses the same catalog keys). */
   const localTemplates = () =>
@@ -224,6 +246,12 @@ export function createApp({
     }
   }
 
+  /** Comment events go to the outgoing webhook and to plugin listeners alike. */
+  const emitComment = (payload) => {
+    webhook.emit(payload)
+    plugins.emit(payload.event, payload)
+  }
+
   /** Comment requests: new thread or a change to one. Permissions here, data rules in comments.mjs. */
   async function handleComment(req, res, state, threadId) {
     const body = await readJson(req, 64 * 1024)
@@ -232,7 +260,7 @@ export function createApp({
     try {
       if (!threadId) {
         const created = store.comment(state, { text: body.text, x: body.x, y: body.y, elementId: body.elementId }, actor)
-        webhook.emit(commentPayload('thread.created', state, created, who, created.messages[0]))
+        emitComment(commentPayload('thread.created', state, created, who, created.messages[0]))
         return json(res, 201, { ok: true, thread: created, notes: store.notes(state) })
       }
       // Members and agents may delete anything (agents and departed guests leave threads nobody else could
@@ -240,9 +268,9 @@ export function createApp({
       const mayDelete = (author) => who.kind !== 'guest' || author === who.name
       const change = { reply: body.reply, replyTo: body.replyTo, resolved: body.resolved, remove: body.remove === true, removeMessage: body.removeMessage, x: body.x, y: body.y, elementId: body.elementId }
       const result = store.changeComment(state, threadId, change, actor, mayDelete)
-      if (result.removed) webhook.emit(commentPayload('thread.removed', state, result.thread, who))
-      if (result.replied) webhook.emit(commentPayload('thread.replied', state, result.thread, who, result.replied))
-      if (result.resolvedChanged) webhook.emit(commentPayload(result.thread.resolved ? 'thread.resolved' : 'thread.reopened', state, result.thread, who))
+      if (result.removed) emitComment(commentPayload('thread.removed', state, result.thread, who))
+      if (result.replied) emitComment(commentPayload('thread.replied', state, result.thread, who, result.replied))
+      if (result.resolvedChanged) emitComment(commentPayload(result.thread.resolved ? 'thread.resolved' : 'thread.reopened', state, result.thread, who))
       return json(res, 200, { ok: true, thread: result.removed ? { removed: true } : result.thread, notes: store.notes(state) })
     } catch (error) {
       if (error instanceof CommentError) throw new HttpError(error.status, error.message)
@@ -321,7 +349,9 @@ export function createApp({
       if (Array.isArray(body.add)) skeleton.push(...body.add)
       elements = (await materialize(skeleton, [])).created
     }
-    return store.create({ slug, meta, elements })
+    const state = await store.create({ slug, meta, elements })
+    plugins.emit('board.created', { slug: state.slug, title: meta.title, author: meta.author, url: store.boardUrl(state) })
+    return state
   }
 
   /** Templates and the library are constants; materialising them costs hundreds of ms once, so cache them. */
@@ -352,6 +382,224 @@ export function createApp({
     return libraryCache
   }
 
+  // ---- Plugins ----------------------------------------------------------------------------------------------------
+
+  /** A board as plugins see it: metadata, text and elements on demand — never the store's own objects. */
+  function boardView(state) {
+    const m = state.meta
+    return {
+      slug: state.slug,
+      title: m.title,
+      url: store.boardUrl(state),
+      rev: state.rev,
+      meta: { description: m.description ?? '', tags: m.tags ?? [], task: m.task ?? null, access: m.access ?? 'team', author: m.author ?? null, createdAt: m.createdAt ?? null, updatedAt: m.updatedAt ?? null, fields: { ...(m.fields ?? {}) } },
+      text: () => store.text(state),
+      elements: () => structuredClone(store.elements(state)),
+    }
+  }
+
+  plugins.attach({
+    cards: typeof links.add === 'function' ? links : null,
+    listBoards: async () =>
+      (await store.list()).map((b) => ({ slug: b.slug, title: b.title, author: b.author ?? null, updatedAt: b.updatedAt ?? null, tags: b.tags ?? [], fields: b.fields ?? {}, url: `${publicUrl}${PREFIX}/${b.slug}?k=${encodeURIComponent(b.key)}` })),
+    boardView: async (slug) => {
+      if (!isValidSlug(slug)) return null
+      const state = await store.get(slug)
+      return state ? boardView(state) : null
+    },
+    editBoard: async (slug, body, { author }) => {
+      const state = isValidSlug(slug) ? await store.get(slug) : null
+      if (!state) throw new Error(`no board ${slug}`)
+      const result = await applyEdit(state, { ...body, author })
+      return { rev: state.rev, ...result }
+    },
+  })
+
+  // Board activity for plugin listeners. Edits arrive many times a second while someone drags; listeners get one
+  // `board.changed` per board once things settle.
+  const changeTimers = new Map()
+  store.onChange?.((event) => {
+    if (event.type === 'meta') plugins.emit('board.meta', event)
+    else if (event.type === 'checkpoints') plugins.emit('board.checkpoints', { slug: event.slug, checkpoints: event.checkpoints })
+    else if (event.type === 'elements' || event.type === 'edit') {
+      clearTimeout(changeTimers.get(event.slug))
+      const timer = setTimeout(() => {
+        changeTimers.delete(event.slug)
+        plugins.emit('board.changed', { slug: event.slug })
+      }, 2000)
+      timer.unref?.()
+      changeTimers.set(event.slug, timer)
+    }
+  })
+
+  const pluginStatics = new Map()
+  const pluginStatic = (dir) => {
+    if (!pluginStatics.has(dir)) pluginStatics.set(dir, createStatic({ root: dir }))
+    return pluginStatics.get(dir)
+  }
+
+  /** A plugin failure is the plugin's: its own HttpError passes through, anything else is logged and becomes a 500. */
+  function pluginFailure(error, plugin) {
+    if (error instanceof PluginHttpError || error instanceof HttpError) return new HttpError(error.status, error.message, error.extra)
+    console.error(JSON.stringify({ level: 'error', event: 'plugin_failed', plugin, error: String(error?.stack ?? error) }))
+    return new HttpError(500, `internal error in plugin ${plugin}`)
+  }
+
+  function sendPluginResult(res, result) {
+    if (result === undefined) {
+      res.writeHead(204, { 'cache-control': 'no-store' })
+      return res.end()
+    }
+    if (result instanceof PluginReply) {
+      const headers = Object.fromEntries(Object.entries(result.headers ?? {}).map(([k, v]) => [k.toLowerCase(), String(v)]))
+      if (result.body === null || result.body === undefined) {
+        res.writeHead(result.status, { 'cache-control': 'no-store', ...headers })
+        return res.end()
+      }
+      if (typeof result.body === 'string' || Buffer.isBuffer(result.body)) return sendBody(res, result.status, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', ...headers }, result.body)
+      return sendBody(res, result.status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...headers }, JSON.stringify(result.body))
+    }
+    return json(res, 200, result)
+  }
+
+  /** Who a plugin route or action is serving, as plugins see them. */
+  const whoView = (who) => (who ? { kind: who.kind, name: who.name ?? null, email: who.email ?? null } : null)
+
+  async function handlePluginRoute(req, res, url, { scope, plugin, subpath, state = null }) {
+    const found = plugins.findRoute(scope, plugin, req.method === 'HEAD' ? 'GET' : req.method, subpath)
+    if (!found) throw new HttpError(404, 'no such path')
+    if (found.methodNotAllowed) throw new HttpError(405, 'this plugin route has no such method')
+    const { route, params } = found
+    const { agent, user } = context(req)
+    let who = agent ? { kind: 'agent', name: 'agent' } : user ? { kind: 'user', name: user.name, email: user.email } : null
+    if (scope === 'board') {
+      const guest = url.searchParams.get('guest') ?? req.headers['x-board-guest'] ?? ''
+      const asEditor = editor(req, state, { guest: String(guest) })
+      if (route.access === 'editor' && !asEditor) throw new HttpError(403, 'sign in to edit this board, or ask its owner to open it for editing by link', { login: `${PREFIX}/auth/login` })
+      if (route.access === 'member' && !agent && !user) throw new HttpError(401, 'an API token (Authorization: Bearer …) or a signed-in session is required')
+      who = asEditor ?? who
+    } else if (route.access === 'token' && !agent) throw new HttpError(401, 'an API token is required')
+    else if (route.access === 'member') who = requireMember(req)
+    let raw = null
+    const rawBody = async () => (raw ??= await readRaw(req, route.bodyLimit))
+    const ctx = {
+      req,
+      url,
+      method: req.method,
+      params,
+      query: url.searchParams,
+      headers: req.headers,
+      who: whoView(who),
+      user: user ? { name: user.name, email: user.email ?? null } : null,
+      agent: Boolean(agent),
+      board: state ? boardView(state) : null,
+      t,
+      locale: t.locale,
+      rawBody,
+      text: async () => (await rawBody()).toString('utf8'),
+      json: async () => {
+        const body = (await rawBody()).toString('utf8')
+        try {
+          return JSON.parse(body || '{}')
+        } catch {
+          throw new HttpError(400, 'request body must be JSON')
+        }
+      },
+      flags: () => flags.forUser(who),
+    }
+    let result
+    try {
+      result = await route.handler(ctx)
+    } catch (error) {
+      throw pluginFailure(error, route.plugin)
+    }
+    return sendPluginResult(res, result)
+  }
+
+  async function handleWebhook(req, res, url, plugin, subpath) {
+    const found = plugins.findWebhook(plugin, subpath)
+    if (!found) throw new HttpError(404, 'no such webhook')
+    if (req.method !== 'POST') throw new HttpError(405, 'webhooks take POST')
+    const { hook, params } = found
+    const rawBody = await readRaw(req, hook.bodyLimit)
+    const ctx = {
+      req,
+      url,
+      params,
+      headers: req.headers,
+      rawBody: async () => rawBody,
+      text: async () => rawBody.toString('utf8'),
+      json: async () => {
+        try {
+          return JSON.parse(rawBody.toString('utf8') || '{}')
+        } catch {
+          throw new HttpError(400, 'request body must be JSON')
+        }
+      },
+      t,
+      locale: t.locale,
+    }
+    let result
+    try {
+      if (!(await plugins.verifyWebhook(hook, { ...ctx, rawBody }))) throw new HttpError(401, 'webhook secret or signature does not match')
+      result = await hook.handler(ctx)
+    } catch (error) {
+      throw pluginFailure(error, hook.plugin)
+    }
+    return sendPluginResult(res, result)
+  }
+
+  /** A block action: the selected elements go to the plugin; whatever edit it returns lands as one revision. */
+  async function handleAction(req, res, state, pluginName, id) {
+    const action = plugins.action(pluginName, id)
+    if (!action) throw new HttpError(404, 'no such action')
+    const body = await readJson(req, 256 * 1024)
+    const who = requireEditor(req, state, body)
+    const all = store.elements(state)
+    const scene = describeScene(all)
+    const byId = new Map(all.map((el) => [el.id, el]))
+    // A shape's label is a separate element; the action is about the shape.
+    const ids = [...new Set((Array.isArray(body.ids) ? body.ids : []).filter((x) => typeof x === 'string').slice(0, 1000).map((x) => byId.get(x)?.containerId ?? x))]
+    const selection = ids
+      .map((x) => byId.get(x))
+      .filter((el) => el && !el.isDeleted)
+      .map((el) => ({
+        id: el.id,
+        type: el.type,
+        x: el.x,
+        y: el.y,
+        width: el.width,
+        height: el.height,
+        text: scene.labelOf.get(el.id) ?? (el.type === 'text' ? (el.originalText ?? el.text ?? null) : null),
+        link: el.link ?? null,
+        customData: el.customData ? structuredClone(el.customData) : null,
+        groupIds: el.groupIds ?? [],
+      }))
+    const { when } = action
+    const fits =
+      selection.length >= when.min &&
+      (when.max === null || selection.length <= when.max) &&
+      (!when.types || selection.every((el) => when.types.includes(el.type))) &&
+      (!when.kinds || selection.every((el) => when.kinds.includes(el.customData?.kind)))
+    if (!fits) throw new HttpError(400, 'this action does not apply to the selected elements')
+    let result
+    try {
+      result = (await action.run({ board: boardView(state), selection, who: whoView(who), t, locale: t.locale, input: body.input ?? null, flags: () => flags.forUser(who) })) ?? {}
+    } catch (error) {
+      throw pluginFailure(error, pluginName)
+    }
+    const out = { ok: true }
+    if (typeof result.toast === 'string' && result.toast.trim()) out.toast = result.toast.trim().slice(0, 300)
+    if (typeof result.open === 'string' && /^https?:\/\//.test(result.open)) out.open = result.open
+    if (result.edit && typeof result.edit === 'object') {
+      const applied = await applyEdit(state, { ...result.edit, author: who.name, note: typeof result.edit.note === 'string' ? result.edit.note : plugins.label(action.label) })
+      out.created = applied.created
+      out.rev = state.rev
+    }
+    if (Array.isArray(result.select)) out.select = result.select.filter((x) => typeof x === 'string').slice(0, 1000)
+    return json(res, 200, out)
+  }
+
   const links_ = (slug, key) => {
     const k = encodeURIComponent(key)
     return {
@@ -371,6 +619,7 @@ export function createApp({
     description: state.meta.description ?? '',
     tags: state.meta.tags ?? [],
     task: state.meta.task ?? null,
+    fields: state.meta.fields ?? {},
     access: state.meta.access ?? 'team',
     author: state.meta.author ?? null,
     createdAt: state.meta.createdAt ?? null,
@@ -450,8 +699,18 @@ export function createApp({
       throw new HttpError(404, 'no such file')
     }
 
+    if (rest.startsWith('_plugins/')) {
+      const [, mount = '', ...file] = rest.split('/')
+      const dir = plugins.webDir(decodeURIComponent(mount))
+      if (dir && (await pluginStatic(dir)(req, res, file.join('/')))) return
+      throw new HttpError(404, 'no such file')
+    }
+    // Incoming webhooks come from other servers: no browser origin to check, the plugin's secret or signature decides.
+    const hook = /^hooks\/([a-z0-9-]+)(\/.*)?$/.exec(rest)
+    if (hook) return handleWebhook(req, res, url, hook[1], hook[2] ?? '')
+
     if (req.method === 'OPTIONS') {
-      res.writeHead(204, { 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'authorization, content-type, x-board-key', 'access-control-max-age': '600' })
+      res.writeHead(204, { 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'authorization, content-type, x-board-key, x-board-guest', 'access-control-max-age': '600' })
       return res.end()
     }
     guardOrigin(req)
@@ -464,7 +723,7 @@ export function createApp({
       }
       const boards = await listBoards(url)
       res.writeHead(200, pageHeaders({ frameAncestors: config.frameAncestors }))
-      return res.end(renderHome({ staticBase, boards, templates: localTemplates(), user, canSignOut: auth.mode !== 'none', q: url.searchParams.get('q') ?? '', t }))
+      return res.end(renderHome({ staticBase, boards, templates: localTemplates(), user, canSignOut: auth.mode !== 'none', q: url.searchParams.get('q') ?? '', t, fields: plugins.homeFields() }))
     }
 
     if (rest === 'api' || rest === 'api/') return text(res, 200, API_HELP)
@@ -483,6 +742,13 @@ export function createApp({
     if (rest === 'api/library' && req.method === 'GET') return json(res, 200, { type: 'excalidrawlib', version: 2, source: publicUrl, libraryItems: await library() })
     if (rest === 'api/palette' && req.method === 'GET') return json(res, 200, { colors: paletteColors() })
     if (rest === 'api/oembed' && req.method === 'GET') return json(res, 200, await oembed(req, url))
+
+    if (rest === 'api/plugins' && req.method === 'GET') {
+      requireMember(req)
+      return json(res, 200, { apiVersion: PLUGIN_API_VERSION, plugins: plugins.list(), ...plugins.clientView() })
+    }
+    const globalPlugin = /^plugins\/([a-z0-9-]+)(\/.*)?$/.exec(rest)
+    if (globalPlugin) return handlePluginRoute(req, res, url, { scope: 'global', plugin: globalPlugin[1], subpath: globalPlugin[2] ?? '' })
 
     if (rest === 'api/handoff' && req.method === 'POST') {
       if (!context(req).agent) throw new HttpError(401, 'an API token is required')
@@ -591,6 +857,11 @@ export function createApp({
       throw new HttpError(405, 'history has no such action')
     }
 
+    const boardPlugin = /^([a-z0-9-]+)\/plugins\/([a-z0-9-]+)(\/.*)?$/.exec(rest)
+    if (boardPlugin) return handlePluginRoute(req, res, url, { scope: 'board', plugin: boardPlugin[2], subpath: boardPlugin[3] ?? '', state: await board(req, url, boardPlugin[1]) })
+    const actionRoute = /^([a-z0-9-]+)\/actions\/([a-z0-9-]+)\/([a-z0-9][a-z0-9._-]{0,60})$/.exec(rest)
+    if (actionRoute && req.method === 'POST') return handleAction(req, res, await board(req, url, actionRoute[1]), actionRoute[2], actionRoute[3])
+
     const threadRoute = /^([a-z0-9-]+)\/comments(?:\/([a-f0-9]{10}))?$/.exec(rest)
     if (threadRoute && req.method === 'POST') return handleComment(req, res, await board(req, url, threadRoute[1]), threadRoute[2] ?? null)
 
@@ -604,7 +875,9 @@ export function createApp({
       if (url.searchParams.get('format') === 'md' || (/text\/markdown/.test(accept) && !/text\/html/.test(accept))) return text(res, 200, store.text(state))
       const { user } = context(req)
       const access = state.meta.access ?? 'team'
-      const features = config.features ?? {}
+      // Editor features for this person: the operator's switches narrowed by their flags.
+      const userFlags = await flags.forUser(user ? { kind: 'user', name: user.name, email: user.email } : null)
+      const features = flags.features(config.features ?? {}, userFlags)
       // The read-only embed view is its own page: see renderEmbedPage.
       if (url.searchParams.get('embed') === '1') {
         const page = renderEmbedPage({ state, text: store.text(state), scene: store.scene(state), boardUrl: `${publicUrl}${PREFIX}/${slug}?k=${encodeURIComponent(state.meta.key)}`, assets: webAssets(join(webDir, '.vite/manifest.json')).embed, staticUrl: `${publicUrl}${staticBase}`, t })
@@ -641,10 +914,14 @@ export function createApp({
         description: state.meta.description ?? '',
         tags: state.meta.tags ?? [],
         task: state.meta.task ?? null,
+        fields: state.meta.fields ?? {},
         reactions: REACTIONS,
+        locale: t.locale,
+        flags: userFlags,
+        plugins: { ...plugins.clientView(), cardsForLinks: Boolean(links.claimsLinks?.()), apiVersion: PLUGIN_API_VERSION },
       }
       const html = renderBoardPage({ state, text: store.text(state), config: pageConfig, assets: webAssets(join(webDir, '.vite/manifest.json')).editor, staticBase, t })
-      return sendBody(res, 200, editorHeaders({ publicUrl, frameAncestors: config.frameAncestors }), html)
+      return sendBody(res, 200, editorHeaders({ publicUrl, frameAncestors: config.frameAncestors, scriptOrigins: plugins.scriptOrigins() }), html)
     }
 
     if (action === 'scene.excalidraw' && req.method === 'GET') {
@@ -716,8 +993,9 @@ export function createApp({
       if (typeof body.description === 'string') changes.description = body.description.trim().slice(0, 500)
       if (body.tags !== undefined) changes.tags = normalizeTags(body.tags)
       if (body.task !== undefined) changes.task = normalizeTask(body.task)
+      if (body.fields !== undefined) changes.fields = plugins.normalizeFields(body.fields)
       store.setMeta(state, changes)
-      return json(res, 200, { ok: true, title: state.meta.title, access: state.meta.access ?? 'team', description: state.meta.description ?? '', tags: state.meta.tags ?? [], task: state.meta.task ?? null })
+      return json(res, 200, { ok: true, title: state.meta.title, access: state.meta.access ?? 'team', description: state.meta.description ?? '', tags: state.meta.tags ?? [], task: state.meta.task ?? null, fields: state.meta.fields ?? {} })
     }
 
     // Link-card data. Only for refs this board actually contains — otherwise any board key would turn the
@@ -783,7 +1061,7 @@ export function createApp({
         res.writeHead(404, { 'content-type': 'text/html; charset=utf-8', 'x-robots-tag': 'noindex', 'cache-control': 'no-store' })
         return res.end(renderNotFound(staticBase, homeUrl, t))
       }
-      if (error instanceof HttpError) return json(res, error.status, { error: error.message, ...error.extra })
+      if (error instanceof HttpError || error instanceof PluginHttpError) return json(res, error.status, { error: error.message, ...error.extra })
       if (error instanceof EditError || error instanceof LimitError) return json(res, 400, { error: error.message, help: `${PREFIX}/api` })
       console.error(JSON.stringify({ level: 'error', event: 'request_failed', path: req.url?.replace(/([?&](k|t)=)[^&]+/g, '$1…'), error: String(error?.stack ?? error) }))
       return json(res, 500, { error: 'internal error' })
@@ -792,6 +1070,9 @@ export function createApp({
   handler.upgrade = live.upgrade
   handler.live = live
   handler.auth = auth
+  handler.plugins = plugins
+  handler.flags = flags
+  handler.links = links
   metrics.gauge('boards_live_sockets', 'Open live-channel WebSockets.', () => live.stats().sockets)
   metrics.gauge('boards_loaded', 'Boards held in memory.', () => store._boards.size)
   return handler
@@ -817,11 +1098,22 @@ export async function main(env = process.env) {
     readyAt = Date.now()
     return true
   }
-  const app = createApp({ store, config, metrics, ready })
+  // Plugins load before the server listens: a broken or incompatible plugin stops the start-up with its reason.
+  const t = createTranslator(config.locale, CATALOGS)
+  const flags = createFlags({ providers: [staticFlags(config.flags)], log })
+  const plugins = createPluginHost({ config, env, t, flags, log })
+  try {
+    await plugins.load(config.plugins, { cwd: process.cwd() })
+    for (const spec of config.webPlugins) plugins.addWeb(spec, { cwd: process.cwd() })
+  } catch (error) {
+    console.error(error.message)
+    process.exit(2)
+  }
+  const app = createApp({ store, config, metrics, ready, t, flags, plugins })
   const server = createServer(app)
   server.on('upgrade', app.upgrade)
   server.listen(config.port, config.host, () =>
-    log({ event: 'listening', version: VERSION, url: config.publicUrl, port: config.port, storage: config.storage.driver, auth: config.auth.mode, epoch: store.epoch }),
+    log({ event: 'listening', version: VERSION, url: config.publicUrl, port: config.port, storage: config.storage.driver, auth: config.auth.mode, locale: config.locale, plugins: plugins.list().map((p) => `${p.name}@${p.version}`), epoch: store.epoch }),
   )
   if (config.auth.mode === 'none' && !['127.0.0.1', 'localhost', '::1'].includes(config.host)) {
     log({ level: 'warn', event: 'auth_disabled', note: 'BOARDS_AUTH=none: everyone who can reach this port can read, list and edit every board' })

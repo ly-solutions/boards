@@ -74,9 +74,15 @@ export const OPTIONS = [
   ['BOARDS_HANDOFF_TTL', '120', 'Lifetime in seconds of hand-off links minted by `POST /b/api/handoff`.', 'Integration'],
   ['BOARDS_COMMENTS_WEBHOOK_URL', '', 'POST comment events (`thread.created`, `thread.replied`, …) here.', 'Integration'],
   ['BOARDS_COMMENTS_WEBHOOK_SECRET', '', 'Sent as `x-boards-webhook-secret` with every webhook call.', 'Integration'],
+  ['BOARDS_LINK_PREVIEW', 'off', '`on`: link cards show the page title, description and image from its Open Graph tags. The server then fetches pasted URLs — only public addresses, never private, loopback or link-local ones (SSRF guard).', 'Integration'],
+
+  ['BOARDS_PLUGINS', '', 'Comma-separated server plugins to load at start-up: paths (absolute or relative to the working directory), `file:` URLs or package names. See docs/plugins.md.', 'Plugins'],
+  ['BOARDS_WEB_PLUGINS', '', 'Comma-separated ES modules the editor imports: local files (served under `/b/_plugins/`) or `https://` URLs (added to the editor\'s CSP). Server plugins can ship their own with `web`.', 'Plugins'],
+  ['BOARDS_FLAGS', '', 'Static feature flags for everyone, e.g. `beta-cards,live=false,layout=compact`. Plugins can add per-person providers. A flag named after an editor feature (`live`, `studio`, `workboard`, `snap`, `motion`) set to `false` switches it off.', 'Plugins'],
 ]
 
 import { LOCALES } from '../shared/i18n.mjs'
+import { parseFlags } from './flags.mjs'
 
 const FEATURES = ['live', 'studio', 'workboard', 'snap', 'motion']
 const AUTH_MODES = ['token', 'oidc', 'proxy', 'none']
@@ -112,6 +118,10 @@ export function loadConfig(env = process.env) {
 
   const locale = String(env.BOARDS_LOCALE || 'en').toLowerCase()
   if (!LOCALES.includes(locale)) problems.push(`BOARDS_LOCALE: "${locale}" — expected ${LOCALES.join(' or ')}`)
+
+  const linkPreview = String(env.BOARDS_LINK_PREVIEW || 'off').toLowerCase()
+  if (!['on', 'off', 'true', 'false', '1', '0', 'yes', 'no'].includes(linkPreview)) problems.push('BOARDS_LINK_PREVIEW: expected on or off')
+  const flags = read('BOARDS_FLAGS', (v) => parseFlags(v)) ?? {}
 
   const driver = (env.BOARDS_STORAGE || (env.BOARDS_S3_BUCKET ? 's3' : 'fs')).toLowerCase()
   if (!['s3', 'fs', 'memory'].includes(driver)) problems.push(`BOARDS_STORAGE: "${driver}" — expected s3 or fs`)
@@ -192,6 +202,10 @@ export function loadConfig(env = process.env) {
     frameAncestors: env.BOARDS_FRAME_ANCESTORS || "'self'",
     corsOrigins: list(env.BOARDS_CORS_ORIGINS).map((o) => o.replace(/\/+$/, '')),
     webhook: { url: env.BOARDS_COMMENTS_WEBHOOK_URL || '', secret: env.BOARDS_COMMENTS_WEBHOOK_SECRET || '' },
+    linkPreview: bool(linkPreview),
+    plugins: list(env.BOARDS_PLUGINS),
+    webPlugins: list(env.BOARDS_WEB_PLUGINS),
+    flags,
   }
   if (problems.length) {
     const error = new Error(`invalid configuration:\n  - ${problems.join('\n  - ')}`)

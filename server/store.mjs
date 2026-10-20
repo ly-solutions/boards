@@ -637,9 +637,19 @@ export function createStore({
 
   function setMeta(state, changes) {
     for (const key of ['title', 'description', 'task', 'access', 'tags']) if (changes[key] !== undefined) state.meta[key] = changes[key]
+    // Plugin-defined properties (e.g. a deadline): merged one by one, null removes a value.
+    if (changes.fields && typeof changes.fields === 'object') {
+      const fields = { ...(state.meta.fields ?? {}) }
+      for (const [id, value] of Object.entries(changes.fields)) {
+        if (value === null || value === undefined) delete fields[id]
+        else fields[id] = value
+      }
+      if (Object.keys(fields).length) state.meta.fields = fields
+      else delete state.meta.fields
+    }
     metaCache.delete(state.slug)
     schedule(state)
-    emit({ type: 'meta', slug: state.slug, title: state.meta.title, access: state.meta.access ?? 'team', description: state.meta.description ?? '', tags: state.meta.tags ?? [], task: state.meta.task ?? null })
+    emit({ type: 'meta', slug: state.slug, title: state.meta.title, access: state.meta.access ?? 'team', description: state.meta.description ?? '', tags: state.meta.tags ?? [], task: state.meta.task ?? null, fields: state.meta.fields ?? {} })
   }
 
   /**

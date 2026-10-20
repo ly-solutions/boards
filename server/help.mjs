@@ -60,8 +60,10 @@ white cards, one font (Nunito), straight lines, whitespace between blocks.
 
 ### link cards — other boards and bookmarks
 A card is a rectangle with customData { "kind": "card", "url": "<url>" } and the same URL in link; its label is
-fallback text for export. Links to boards on this server show the board's title; anything else is a bookmark.
-POST /b/<slug>/links?k=…  { "refs": ["board:<slug>"] } → { meta: { "board:<slug>": { title, updatedAt } | null } }
+fallback text for export. Links to boards on this server show the board's title; anything else is a bookmark,
+unless a plugin resolves it into a rich card (GET /b/api/plugins lists them). A plugin's text reference (an issue
+key, say) is a card with customData { "kind": "card", "ref": "ref:<resolver>:<text>" }.
+POST /b/<slug>/links?k=…  { "refs": ["board:<slug>", "link:<url>", "ref:<resolver>:<text>"] } → { meta: { "<ref>": { title, … } | null } }
 
 ### shared timer — one per board, runs for everyone
 POST /b/<slug>/timer?k=…  { "do": "start", "minutes": 5 } | { "do": "pause" } | { "do": "resume" } | { "do": "add", "minutes": 1 } | { "do": "stop" }
