@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import {
   CaptureUpdateAction,
   Excalidraw,
+  convertToExcalidrawElements,
   FONT_FAMILY,
   MainMenu,
   WelcomeScreen,
@@ -24,14 +25,15 @@ import { STICKY_COLORS } from '../../shared/palette.mjs'
 import { Comments, CommentsButton, draftAt, type Change, type Draft, type Thread } from './comments'
 import { CheckpointView, Checkpoints, type Checkpoint } from './checkpoints'
 import { TimerTool, type TimerAction, type TimerState } from './timer'
-import { LinkLayer, addCard, hostOf, linkToBlock } from './links'
-import { BoardMenu, type MenuState } from './menu'
+import { LinkLayer, addCard, addRefCard, hostOf, linkToBlock } from './links'
+import { BoardMenu, type MenuState, type PluginMenuItem } from './menu'
 import { classify as classifyUrl, singleUrl } from '../../shared/links.mjs'
 import { createPortal } from 'react-dom'
 import { bumpScene, setView } from './camera'
 import { PointerGlide, installMotion, motion, motionChosen, motionOn, setMotionChosen } from './motion'
 import { PulseLayer, pulse } from './motion-fx'
 import { excalidrawLang, t } from './i18n'
+import { fitsSelection, loadWebPlugins, matchReference, pluginApi, toolbarButtons, usePluginRegistry, webActions, type EditorBridge, type PluginConfig, type SceneElement } from './plugins'
 
 type Element = { id: string; version: number; versionNonce: number; isDeleted?: boolean; type: string; x?: number; y?: number; width?: number; height?: number; containerId?: string | null; customData?: Record<string, unknown>; fontSize?: number; fontFamily?: number; text?: string }
 type FileData = { id: string; mimeType: string; dataURL: string; created: number }
@@ -115,6 +117,12 @@ const config = JSON.parse(document.getElementById('board-config')?.textContent ?
   reactions?: string[]
   /** Full board URL. */
   boardUrl?: string
+  /** Board properties added by plugins (e.g. a deadline). */
+  fields?: Record<string, unknown>
+  /** The signed-in person's feature flags (server/flags.mjs). */
+  flags?: Record<string, boolean | string>
+  /** What plugins add: web modules, block actions, board properties, reference patterns. */
+  plugins?: PluginConfig
 }
 
 // The camera is installed before the editor: Excalidraw looks it up on creation.
@@ -214,6 +222,8 @@ const STATUS_TEXT: Record<Status, string> = {
 /** Constant editor props — one reference, otherwise Excalidraw's memo does not kick in. */
 const UI_OPTIONS = { canvasActions: { loadScene: false, saveToActiveFile: false, export: { saveFileToDisk: true } } }
 const REACTIONS = config.reactions ?? ['👍', '👎', '❤️']
+/** Icon of a plugin toolbar button that brings none: a puzzle piece. */
+const PLUGIN_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 4a2 2 0 1 1 4 0v2h4a1 1 0 0 1 1 1v4h-2a2 2 0 1 0 0 4h2v4a1 1 0 0 1-1 1h-4v-2a2 2 0 1 0-4 0v2H6a1 1 0 0 1-1-1v-4h2a2 2 0 1 0 0-4H5V7a1 1 0 0 1 1-1h4z"/></svg>'
 
 /**
  * Text drawn by an agent is measured approximately on the server — it has no
@@ -356,7 +366,7 @@ function Board() {
   }, [])
   const [properties, setProperties] = useState(false)
   const [stickyColor, setStickyColor] = useState(STICKY_COLORS[0].fill)
-  const [meta, setMeta] = useState<BoardMeta>({ title: config.title, description: config.description ?? '', tags: config.tags ?? [], task: config.task ?? null })
+  const [meta, setMeta] = useState<BoardMeta>({ title: config.title, description: config.description ?? '', tags: config.tags ?? [], task: config.task ?? null, fields: config.fields ?? {} })
   /** The studio tool lives in state: toolbar buttons highlight from it. */
   const [tool, setTool] = useState<StudioTool>(null)
   // A checkpoint snapshot is read-only for everyone, even those who can edit the board.
@@ -703,7 +713,7 @@ function Board() {
         case 'meta':
           if (m.title) setTitle(String(m.title))
           if (m.access) setAccess(m.access as 'team' | 'link')
-          if (Array.isArray(m.tags)) setMeta((prev) => ({ ...prev, description: String(m.description ?? prev.description), tags: m.tags as string[], task: (m.task as string | null) ?? null }))
+          if (Array.isArray(m.tags)) setMeta((prev) => ({ ...prev, description: String(m.description ?? prev.description), tags: m.tags as string[], task: (m.task as string | null) ?? null, fields: (m.fields as Record<string, unknown>) ?? prev.fields }))
           return
         default:
       }
@@ -811,8 +821,16 @@ function Board() {
   const onPaste = useCallback((data: { text?: string }) => {
     const api = apiRef.current as unknown as StudioApi | null
     const url = singleUrl(data.text)
-    if (!api || !url) return true
+    // A text reference a plugin recognises (an issue key, say) becomes a card too.
+    const ref = url ? null : matchReference(config.plugins?.patterns, data.text)
+    if (!api || (!url && !ref)) return true
     const state = api.getAppState() as { scrollX: number; scrollY: number; width: number; height: number; zoom: { value: number }; selectedElementIds: Record<string, boolean> }
+    if (ref) {
+      const point = lastPointer.current ?? { x: -state.scrollX + state.width / 2 / state.zoom.value, y: -state.scrollY + state.height / 2 / state.zoom.value }
+      void addRefCard(api, base, q, ref, point)
+      return false
+    }
+    if (!url) return true
     // One block selected — the link attaches to it instead of landing next to it as a card.
     // A selected card is a link itself: nothing gets attached to it.
     const hosts = new Set(Object.keys(state.selectedElementIds ?? {}).filter((id) => state.selectedElementIds[id]).map((id) => hostOf(api, id)?.id))
@@ -825,7 +843,7 @@ function Board() {
     // The same parsing decides the paste: a link the editor embeds itself goes to the editor.
     const target = classifyUrl(url, { boardOrigin })
     if (!target) return true
-    void addCard(api, base, q, url, at, boardOrigin)
+    void addCard(api, base, q, url, at, boardOrigin, { cardsForLinks: Boolean(config.plugins?.cardsForLinks) })
     return false
   }, [])
   const onPointerUpdate = useCallback(
@@ -958,6 +976,73 @@ function Board() {
     }
   }, [initial, syncNow, pushLive])
 
+  /** What web plugins may do with the scene: read it, add and change elements, select, scroll, toast. */
+  const bridge = useMemo<EditorBridge>(
+    () => ({
+      getSceneElements: () => (apiRef.current?.getSceneElements() ?? []) as unknown as SceneElement[],
+      getSelectedElements: () => {
+        const api = apiRef.current
+        if (!api) return []
+        const picked = api.getAppState().selectedElementIds as Record<string, boolean>
+        return api.getSceneElements().filter((el) => picked[el.id]) as unknown as SceneElement[]
+      },
+      addElements: (skeletons) => {
+        const api = apiRef.current
+        if (!api || !live.current.canEdit) return []
+        const created = convertToExcalidrawElements(skeletons as never) as unknown as Element[]
+        api.updateScene({ elements: [...api.getSceneElementsIncludingDeleted(), ...created], captureUpdate: CaptureUpdateAction.IMMEDIATELY })
+        return created.map((el) => el.id)
+      },
+      updateElements: (patches) => {
+        const api = apiRef.current
+        if (!api || !live.current.canEdit) return
+        const byId = new Map(patches.map((p) => [p.id, p]))
+        const next = api.getSceneElementsIncludingDeleted().map((el) => {
+          const patch = byId.get(el.id)
+          if (!patch) return el
+          const { id: _id, ...fields } = patch
+          return newElementWith(el as never, fields as never) as unknown as Element
+        })
+        api.updateScene({ elements: next, captureUpdate: CaptureUpdateAction.IMMEDIATELY })
+      },
+      select: (ids) => apiRef.current?.updateScene({ appState: { selectedElementIds: Object.fromEntries(ids.map((id) => [id, true])) }, captureUpdate: CaptureUpdateAction.NEVER }),
+      scrollTo: (ids) => {
+        const api = apiRef.current
+        if (api) api.scrollToContent(api.getSceneElements().filter((el) => ids.includes(el.id)), { fitToContent: false, animate: true })
+      },
+      toast: (message) => apiRef.current?.setToast({ message: String(message).slice(0, 300), closable: true, duration: 5000 }),
+    }),
+    [],
+  )
+  const metaRef = useRef({ title: config.title, fields: config.fields ?? {} })
+  metaRef.current = { title, fields: meta.fields ?? {} }
+  const pluginsStarted = useRef(false)
+  const startPlugins = useCallback(() => {
+    if (pluginsStarted.current || !config.plugins?.web?.length) return
+    pluginsStarted.current = true
+    void loadWebPlugins(config.plugins.web, {
+      // Read live: a property changed in the dialog or by someone else shows up without a reload.
+      board: {
+        slug: config.slug,
+        url: config.boardUrl ?? `${location.origin}${base}${q}`,
+        user: config.user,
+        get title() {
+          return metaRef.current.title
+        },
+        get canEdit() {
+          return live.current.canEdit
+        },
+        get fields() {
+          return { ...(metaRef.current.fields ?? {}) }
+        },
+      },
+      editor: () => (apiRef.current ? bridge : null),
+      key: config.key,
+      guest: () => live.current.guest,
+      flags: config.flags ?? {},
+    })
+  }, [bridge])
+
   const onApi = useCallback(
     (api: unknown) => {
       apiRef.current = api as Api
@@ -975,6 +1060,7 @@ function Board() {
       if (config.studio) loadLibrary(api as unknown as StudioApi)
       if (config.live) (api as Api).onUserFollow(onUserFollow)
       startLive()
+      startPlugins()
       setTimeout(() => {
         if (!live.current.canEdit) return
         remeasure(api as Api)
@@ -982,7 +1068,7 @@ function Board() {
         if (!config.hasPreview || config.previewStale) sync.current.previewDue = true
       }, 300)
     },
-    [schedulePreview, sendViewport, startLive, onUserFollow],
+    [schedulePreview, sendViewport, startLive, onUserFollow, startPlugins],
   )
 
   /**
@@ -1146,6 +1232,44 @@ function Board() {
     document.body.classList.toggle('board-menu-on', config.workboard && canEdit)
   }, [canEdit])
   const closeMenu = useCallback(() => setMenu(null), [])
+  usePluginRegistry()
+  /**
+   * Plugin block actions for the right-click menu: the server's (run on the server, which may edit the board) and
+   * web plugins' own, each shown only when its `when` fits the selection.
+   */
+  const pluginItems = useCallback(
+    (state: MenuState): PluginMenuItem[] => {
+      const api = studioApi
+      if (!api || !state.ids.length) return []
+      const hosts = [...new Map(state.ids.map((id) => hostOf(api, id)).filter(Boolean).map((el) => [el!.id, el!])).values()] as unknown as SceneElement[]
+      const items: PluginMenuItem[] = []
+      for (const action of config.plugins?.actions ?? []) {
+        if (!fitsSelection(action.when, hosts)) continue
+        items.push({
+          key: `${action.plugin}/${action.id}`,
+          label: action.label,
+          icon: action.icon,
+          run: () => void runServerAction(action.plugin, action.id, action.confirm, hosts.map((el) => el.id)),
+        })
+      }
+      for (const action of webActions()) {
+        if (!fitsSelection(action.when, hosts)) continue
+        items.push({ key: `web/${action.id}`, label: action.label, icon: action.icon ?? null, run: () => void Promise.resolve(action.run({ selection: hosts, api: pluginApi()! })).catch((error) => console.error(`[boards] action ${action.id} failed`, error)) })
+      }
+      return items
+    },
+    [studioApi],
+  )
+  /** Run a server plugin's action; its edit arrives like any other edit, its toast and link right here. */
+  const runServerAction = useCallback(async (plugin: string, id: string, confirm: string | null, ids: string[]) => {
+    if (confirm && !window.confirm(confirm)) return
+    const response = await fetch(`${base}/actions/${plugin}/${id}${q}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ids, guest: live.current.guest || undefined }) }).catch(() => null)
+    const body = response ? await response.json().catch(() => ({})) : {}
+    if (!response?.ok) return apiRef.current?.setToast({ message: body.error ?? t('plugins.actionFailed'), closable: true, duration: 6000 })
+    if (body.toast) apiRef.current?.setToast({ message: body.toast, closable: true, duration: 5000 })
+    if (body.open) window.open(body.open, '_blank', 'noopener')
+    if (Array.isArray(body.select) && body.select.length) bridge.select(body.select)
+  }, [bridge])
   const commentAt = useCallback(
     (at: { x: number; y: number }) => {
       if (!studioApi) return
@@ -1223,7 +1347,7 @@ function Board() {
     async (changes: Partial<BoardMeta>) => {
       const body = await saveMeta(changes)
       if (!body) return false
-      setMeta((prev) => ({ ...prev, description: body.description ?? prev.description, tags: body.tags ?? prev.tags, task: body.task ?? null }))
+      setMeta((prev) => ({ ...prev, description: body.description ?? prev.description, tags: body.tags ?? prev.tags, task: body.task ?? null, fields: body.fields ?? prev.fields }))
       apiRef.current?.setToast({ message: t('editor.propertiesSaved'), duration: 2500 })
       return true
     },
@@ -1402,6 +1526,11 @@ function Board() {
                 ]}
               />
             )}
+            {toolbarButtons().map((button) => (
+              <BarButton key={button.id} label={button.label} onClick={() => void Promise.resolve(button.onClick({ api: pluginApi()! })).catch((error) => console.error(`[boards] toolbar button ${button.id} failed`, error))}>
+                <span className="bar-btn__plugin-icon" aria-hidden dangerouslySetInnerHTML={{ __html: button.icon ?? PLUGIN_ICON }} />
+              </BarButton>
+            ))}
             <span className="bar-sep bar-sep--share" />
             {!config.user && config.authEnabled && (
               <a className="board-button board-button--ghost" href={loginUrl()}>
@@ -1469,13 +1598,14 @@ function Board() {
           q={q}
           staticBase={config.staticBase}
           boardOrigin={boardOrigin}
+          cardsForLinks={Boolean(config.plugins?.cardsForLinks)}
         />
       )}
       {studioApi && config.workboard && canEdit && menu && (
-        <BoardMenu api={studioApi} menu={menu} onClose={closeMenu} onComment={commentAt} onSticky={stickyAt} />
+        <BoardMenu api={studioApi} menu={menu} onClose={closeMenu} onComment={commentAt} onSticky={stickyAt} pluginItems={pluginItems(menu)} />
       )}
       {studioApi && config.at && <CheckpointView api={studioApi} base={base} q={q} guest={guest} at={config.at} canCopy={Boolean(config.canCopy)} boardUrl={config.boardUrl ?? `${base}${q}`} />}
-      {properties && <PropertiesDialog meta={{ ...meta, title }} canEdit={Boolean(config.user)} onSave={saveProperties} onClose={() => setProperties(false)} />}
+      {properties && <PropertiesDialog meta={{ ...meta, title }} canEdit={Boolean(config.user)} onSave={saveProperties} onClose={() => setProperties(false)} fields={config.plugins?.fields ?? []} />}
 
       {!canEdit && config.authEnabled && (
         <div className="board-banner" role="status">

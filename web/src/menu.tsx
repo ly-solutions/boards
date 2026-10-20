@@ -23,6 +23,9 @@ import type { StudioApi } from './studio'
 import { useFit } from './popover'
 import { t } from './i18n'
 
+/** A plugin's block action as a menu item; `icon` is an inline SVG string. */
+export type PluginMenuItem = { key: string; label: string; icon: string | null; run: () => void }
+
 /** What the editor opened: screen position, scene point and what is selected under the cursor. */
 export type MenuState = { left: number; top: number; at: { x: number; y: number }; ids: string[] }
 
@@ -70,6 +73,8 @@ type Props = {
   onClose: () => void
   onComment: (at: { x: number; y: number }) => void
   onSticky: (at: { x: number; y: number }) => void
+  /** Plugin block actions that fit the selection (main.tsx decides which). */
+  pluginItems?: PluginMenuItem[]
 }
 
 const icon = (d: string) => (
@@ -92,13 +97,17 @@ const ICON = {
   lock: icon('M6 11h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1Z M8 11V7a4 4 0 0 1 8 0v4'),
   select: icon('M4 4h4 M16 4h4v4 M20 16v4h-4 M8 20H4v-4 M4 8v0 M9 9h6v6H9Z'),
   trash: icon('M4 7h16 M10 11v6 M14 11v6 M6 7l1 13h10l1-13 M9 7V4h6v3'),
+  plugin: icon('M10 4a2 2 0 1 1 4 0v2h4a1 1 0 0 1 1 1v4h-2a2 2 0 1 0 0 4h2v4a1 1 0 0 1-1 1h-4v-2a2 2 0 1 0-4 0v2H6a1 1 0 0 1-1-1v-4h2a2 2 0 1 0 0-4H5V7a1 1 0 0 1 1-1h4z'),
 }
+
+/** A plugin icon is trusted inline SVG (the server checks it carries no scripts). */
+const pluginIcon = (svg: string | null) => (svg ? <span className="board-menu__icon board-menu__icon--plugin" aria-hidden dangerouslySetInnerHTML={{ __html: svg }} /> : ICON.plugin)
 
 type Item = { key: string; label: string; icon: ReactNode; hint?: string; danger?: boolean; run: () => void } | 'sep'
 /** An item of the editor's stock menu as it rendered it: label and shortcut are its own, in the UI language. */
 type Native = { name: string; label: string; hint: string; checked: boolean } | 'sep'
 
-export function BoardMenu({ api, menu, onClose, onComment, onSticky }: Props) {
+export function BoardMenu({ api, menu, onClose, onComment, onSticky, pluginItems = [] }: Props) {
   // The editor decided which edits fit: read them from its hidden menu.
   const [nativeItems, setNativeItems] = useState<Native[]>([])
   useLayoutEffect(() => {
@@ -194,6 +203,8 @@ export function BoardMenu({ api, menu, onClose, onComment, onSticky }: Props) {
     // The block link is a real editor action: it opens the editor's URL popup.
     if (hosts.size === 1) add('hyperlink', (host as { link?: string | null } | null)?.link ? t('editor.menuEditLink') : t('editor.menuLink'), ICON.link, `${MOD}K`)
     items.push({ key: 'comment', label: t('editor.menuComment'), icon: ICON.comment, run: own(() => onComment(menu.at)) })
+    if (pluginItems.length) items.push('sep')
+    for (const item of pluginItems) items.push({ key: `plugin:${item.key}`, label: item.label, icon: pluginIcon(item.icon), run: own(item.run) })
     items.push('sep')
     add('copy', t('editor.menuCopy'), ICON.copy, `${MOD}C`)
     add('cut', t('editor.menuCut'), ICON.cut, `${MOD}X`)

@@ -719,6 +719,16 @@ body:has(.excalidraw.theme--dark) { --cp-add: #6bd486; --cp-add-bg: #173323; --c
 .link-card__title { font-weight: 700; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .link-card--link .link-card__title { -webkit-line-clamp: 1; }
 .link-card__foot { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--studio-muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Plugin cards: a status pill in the head line, emoji icons, and a free-form node for a plugin's own renderer. */
+.link-glyph--emoji { display: inline-grid; place-items: center; font-size: 1em; line-height: 1; }
+.link-card__status { flex: none; padding: 1px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 700; background: color-mix(in srgb, var(--studio-muted) 16%, transparent); color: var(--studio-fg); white-space: nowrap; }
+.link-card__status--info { background: rgba(25, 113, 194, 0.14); color: #1971c2; }
+.link-card__status--success { background: rgba(47, 158, 68, 0.14); color: #2f9e44; }
+.link-card__status--warning { background: rgba(240, 140, 0, 0.16); color: #c46a00; }
+.link-card__status--danger { background: rgba(224, 49, 49, 0.14); color: #e03131; }
+.link-card__plugin { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 10px 12px; box-sizing: border-box; overflow: hidden; }
+/* Plugin toolbar buttons in the top-right bar carry an inline SVG icon. */
+.bar-btn__plugin-icon svg { width: 16px; height: 16px; display: block; }
 
 /*
  * Right-click menu. The editor's stock menu stays in the DOM — ours clicks its
@@ -739,6 +749,7 @@ body.board-menu-on .excalidraw .context-menu { display: none !important; }
 .board-menu__item:hover, .board-menu__item:focus-visible { outline: none; background: var(--studio-hover); }
 .board-menu__item .link-glyph, .board-menu__icon { width: 17px; height: 17px; flex: none; }
 .board-menu__icon { color: var(--studio-muted); }
+.board-menu__icon--plugin svg { width: 100%; height: 100%; display: block; }
 .board-menu__item:hover .board-menu__icon { color: var(--studio-accent); }
 .board-menu__label { flex: 1 1 auto; white-space: nowrap; }
 .board-menu__hint { color: var(--studio-muted); font: 500 11.5px/1 var(--ui-font, system-ui, sans-serif); }
@@ -874,3 +885,4 @@ body[data-bar='dock'] .excalidraw .layer-ui__wrapper__top-right .bar-sep--tools 
   .studio-dock__btn { padding: 0 0.6rem; }
   .studio-dock .studio-dock__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 }
+.studio-form__hint { color: var(--studio-muted); font-size: 12px; }

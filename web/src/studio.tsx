@@ -18,7 +18,8 @@ import { CaptureUpdateAction, convertToExcalidrawElements, exportToSvg, newEleme
 import { INK, STICKY_COLORS, STYLE, TONES, VARIANTS, paint, stickyStroke } from '../../shared/palette.mjs'
 import { sticky as stickySkeleton } from '../../shared/templates.mjs'
 import { analyzeSlop } from '../../shared/slop.mjs'
-import { locale, t } from './i18n'
+import { locale, localized, t } from './i18n'
+import { fieldView, usePluginRegistry, type ServerField } from './plugins'
 
 /** `prefix` + capitalised id: the catalog key for a palette or template name, e.g. `studio.toneBlue`. */
 const nameKey = (prefix: string, id: string) => `studio.${prefix}${id.charAt(0).toUpperCase()}${id.slice(1)}`
@@ -807,18 +808,23 @@ export function SlopBadge({ api, placement = 'bottom', quiet, open: openProp, on
 
 // ── Board properties ────────────────────────────────────────────────────────
 
-export type BoardMeta = { title: string; description: string; tags: string[]; task: string | null }
+export type BoardMeta = { title: string; description: string; tags: string[]; task: string | null; fields?: Record<string, unknown> }
 
-export function PropertiesDialog({ meta, canEdit, onSave, onClose }: { meta: BoardMeta; canEdit: boolean; onSave: (m: Partial<BoardMeta>) => Promise<boolean>; onClose: () => void }) {
+/** Board properties added by server plugins (e.g. a deadline), edited in the same dialog. */
+export function PropertiesDialog({ meta, canEdit, onSave, onClose, fields = [] }: { meta: BoardMeta; canEdit: boolean; onSave: (m: Partial<BoardMeta>) => Promise<boolean>; onClose: () => void; fields?: ServerField[] }) {
+  usePluginRegistry()
   const [description, setDescription] = useState(meta.description)
   const [tags, setTags] = useState(meta.tags.join(', '))
   const [task, setTask] = useState(meta.task ?? '')
+  const [extra, setExtra] = useState<Record<string, string>>(() => Object.fromEntries(fields.map((f) => [f.id, meta.fields?.[f.id] === undefined || meta.fields?.[f.id] === null ? '' : String(meta.fields[f.id])])))
   const [error, setError] = useState<string | null>(null)
   const parsed = useMemo(() => tags.split(',').map((tag) => tag.trim()).filter(Boolean), [tags])
   const save = async () => {
     const ref = task.trim()
     if (ref.length > 64) return setError(t('studio.referenceTooLong'))
-    if (await onSave({ description: description.trim(), tags: parsed, task: ref || null })) onClose()
+    // Only the plugin fields that changed go to the server; an emptied one is removed.
+    const changedFields = Object.fromEntries(fields.filter((f) => extra[f.id].trim() !== (meta.fields?.[f.id] === undefined || meta.fields?.[f.id] === null ? '' : String(meta.fields[f.id]))).map((f) => [f.id, extra[f.id].trim() || null]))
+    if (await onSave({ description: description.trim(), tags: parsed, task: ref || null, ...(Object.keys(changedFields).length ? { fields: changedFields } : {}) })) onClose()
   }
   return (
     <div className="board-dialog__backdrop" onClick={onClose}>
@@ -847,6 +853,28 @@ export function PropertiesDialog({ meta, canEdit, onSave, onClose }: { meta: Boa
             <span>{t('studio.reference')}</span>
             <input value={task} onChange={(e) => setTask(e.target.value)} maxLength={64} placeholder={t('studio.referencePlaceholder')} />
           </label>
+          {fields.map((f) => {
+            const view = fieldView(f.id)
+            const name = view?.label ? localized(view.label) : f.label
+            const hint = view?.placeholder ? localized(view.placeholder) : (f.placeholder ?? '')
+            const set = (value: string) => setExtra((prev) => ({ ...prev, [f.id]: value }))
+            return (
+              <label key={f.id}>
+                <span>{name}</span>
+                {f.type === 'select' ? (
+                  <select value={extra[f.id]} onChange={(e) => set(e.target.value)}>
+                    <option value="">—</option>
+                    {(f.options ?? []).map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input type={f.type === 'text' ? 'text' : f.type} value={extra[f.id]} onChange={(e) => set(e.target.value)} placeholder={hint} />
+                )}
+                {view?.format && extra[f.id] && <small className="studio-form__hint">{view.format(extra[f.id])}</small>}
+              </label>
+            )
+          })}
           {error && <p className="studio-form__error">{error}</p>}
         </fieldset>
         <div className="board-dialog__foot">

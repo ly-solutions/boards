@@ -1,3 +1,4 @@
-/** plugins: ru messages. Keys are prefixed with "plugins." in the joined catalog. */
+/** plugins: ru messages — plugin actions, cards and fields in the editor. Keys are prefixed with "plugins." in the joined catalog. */
 export default {
+  actionFailed: 'Действие не выполнилось',
 }
