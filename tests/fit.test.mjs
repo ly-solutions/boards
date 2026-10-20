@@ -16,13 +16,14 @@ import { transform } from 'esbuild'
 let fitScene
 let sceneBounds
 let debounce
+let shouldFitOnLoad
 
 before(async () => {
   const source = readFileSync(fileURLToPath(new URL('../web/src/fit.ts', import.meta.url)), 'utf8')
   const { code } = await transform(source, { loader: 'ts', format: 'esm', target: 'es2022' })
   const file = join(mkdtempSync(join(tmpdir(), 'tb-fit-')), 'fit.mjs')
   writeFileSync(file, code)
-  ;({ fitScene, sceneBounds, debounce } = await import(pathToFileURL(file).href))
+  ;({ fitScene, sceneBounds, debounce, shouldFitOnLoad } = await import(pathToFileURL(file).href))
 })
 
 const rect = (x, y, width, height, extra = {}) => ({ type: 'rectangle', x, y, width, height, ...extra })
@@ -159,4 +160,16 @@ test('debounce: one trailing call per burst, cancellable', () => {
   } finally {
     mock.timers.reset()
   }
+})
+
+test('the editor fits the board on first load only in a narrow pane or a frame, and the URL can force either way', () => {
+  assert.equal(shouldFitOnLoad({ framed: false, width: 1440 }), false, 'a wide window keeps the usual 100 % view')
+  assert.equal(shouldFitOnLoad({ framed: false, width: 420 }), true, 'a side pane is fitted')
+  assert.equal(shouldFitOnLoad({ framed: true, width: 1440 }), true, 'an embedded editor is fitted')
+  assert.equal(shouldFitOnLoad({ framed: true, width: 420, param: '0' }), false, '?fit=0 turns it off')
+  assert.equal(shouldFitOnLoad({ framed: false, width: 1440, param: '1' }), true, '?fit=1 forces it')
+  // In a narrow pane the fit never zooms a small board above 100 % — the same rule as the embed view.
+  const fit = fitScene([rect(0, 0, 3000, 1200)], { width: 420, height: 800 }, { maxZoom: 1 })
+  assert.ok(fit.zoom < 0.2 && fit.zoom >= 0.1, `a wide board shrinks to fit 420 px (zoom ${fit.zoom})`)
+  assert.equal(fitScene([rect(0, 0, 100, 50)], { width: 420, height: 800 }, { maxZoom: 1 }).zoom, 1)
 })

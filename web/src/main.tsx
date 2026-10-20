@@ -34,6 +34,7 @@ import { PointerGlide, installMotion, motion, motionChosen, motionOn, setMotionC
 import { PulseLayer, pulse } from './motion-fx'
 import { excalidrawLang, t } from './i18n'
 import { fitsSelection, loadWebPlugins, matchReference, pluginApi, toolbarButtons, usePluginRegistry, webActions, type EditorBridge, type PluginConfig, type SceneElement } from './plugins'
+import { fitScene, shouldFitOnLoad } from './fit'
 
 type Element = { id: string; version: number; versionNonce: number; isDeleted?: boolean; type: string; x?: number; y?: number; width?: number; height?: number; containerId?: string | null; customData?: Record<string, unknown>; fontSize?: number; fontFamily?: number; text?: string }
 type FileData = { id: string; mimeType: string; dataURL: string; created: number }
@@ -1043,6 +1044,30 @@ function Board() {
     })
   }, [bridge])
 
+  /**
+   * Embedded in a narrow pane (another app's side panel, a hand-off link next to a chat) the default view — 100 %
+   * around the content — shows only a corner of the board. Fit the whole board once instead, never above 100 %.
+   */
+  const fitted = useRef(false)
+  const fitOnLoad = useCallback((api: Api) => {
+    if (fitted.current) return
+    fitted.current = true
+    let framed = false
+    try {
+      framed = window.self !== window.top
+    } catch {
+      framed = true
+    }
+    if (!shouldFitOnLoad({ framed, width: window.innerWidth, param: new URLSearchParams(location.search).get('fit') })) return
+    requestAnimationFrame(() => {
+      const state = api.getAppState() as { width?: number; height?: number }
+      const viewport = { width: state.width || window.innerWidth, height: state.height || window.innerHeight }
+      const fit = fitScene(api.getSceneElements() as never, viewport, { maxZoom: 1 })
+      api.updateScene({ appState: { zoom: { value: fit.zoom }, scrollX: fit.scrollX, scrollY: fit.scrollY }, captureUpdate: CaptureUpdateAction.NEVER })
+      if (config.studio) setView(api.getAppState())
+    })
+  }, [])
+
   const onApi = useCallback(
     (api: unknown) => {
       apiRef.current = api as Api
@@ -1061,6 +1086,7 @@ function Board() {
       if (config.live) (api as Api).onUserFollow(onUserFollow)
       startLive()
       startPlugins()
+      fitOnLoad(api as Api)
       setTimeout(() => {
         if (!live.current.canEdit) return
         remeasure(api as Api)

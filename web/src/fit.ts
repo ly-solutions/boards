@@ -157,3 +157,19 @@ export function debounce<A extends unknown[]>(fn: (...args: A) => void, wait: nu
   }
   return debounced
 }
+
+/** Below this width the editor counts as a narrow pane (a side panel, a phone): the whole board is fitted on load. */
+export const NARROW_PANE_PX = 1024
+
+/**
+ * Whether the editor should zoom to fit the board when it first opens.
+ *
+ * On a wide screen the editor opens at 100 % around the content, as people expect. Embedded in a narrow pane — an
+ * iframe in another app's side panel, a hand-off link opened next to a chat — that view shows a corner of the board,
+ * so the board is fitted instead (never above 100 %). `?fit=1` forces it, `?fit=0` turns it off.
+ */
+export function shouldFitOnLoad({ framed, width, param }: { framed: boolean; width: number; param?: string | null }): boolean {
+  if (param === '0' || param === 'false') return false
+  if (param === '1' || param === 'true') return true
+  return framed || (Number.isFinite(width) && width > 0 && width < NARROW_PANE_PX)
+}
