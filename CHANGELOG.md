@@ -7,15 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Fixed
-
-- Concurrent writes to one board within a process no longer depend on the store's preconditions: the S3 driver
-  serialises writes per key in both modes, checkpoints are saved one at a time per board, and the snapshot manifest
-  is updated under a per-board lock. On a store whose preconditions are not atomic (seen on Selectel ru-3), two
-  checkpoints or snapshots saved at once could drop one.
-
 ### Added
 
+- In-memory read cache for the s3 driver (`BOARDS_CACHE_MB`, 128 MiB by default; Helm `storage.s3.cacheMb`) for
+  stores that answer HEAD fast but take seconds per GET. Immutable snapshot and checkpoint scenes come from memory;
+  other objects are revalidated with a HEAD. `BOARDS_CACHE_WARM` (on by default) fills it in the background after
+  start, newest boards first. See docs/storage.md, "Stores with slow reads".
 - Plugins: `BOARDS_PLUGINS` loads server plugins at start-up. A plugin can add routes, card resolvers (rich cards
   for pasted URLs and text references, cached and with timeouts), block actions in the right-click menu that edit
   the board on the server, board properties shown in Board properties and on the boards list, incoming webhooks,
@@ -32,6 +29,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Opening a board reads `meta.yaml`, the scene and the notes in one parallel round and only checks that the
+  thumbnail exists; the thumbnail is read when someone asks for it.
 - Kubernetes: the Helm chart and the kustomize base roll out with `Recreate` by default, so two pods never write at
   once. On a store whose conditional writes are atomic you can opt back into an overlapping `RollingUpdate`.
 - The `auto` conditional-write probe now fires overlapping requests (8 parallel creates, then 8 parallel `If-Match`
@@ -41,6 +40,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The editor fits the whole board into the view on first load when it is embedded in a frame or a narrow pane
   (under 1024 px), never zooming above 100 %; `?fit=1` / `?fit=0` force it either way. Wide windows keep the
   usual 100 % view.
+
+### Fixed
+
+- Concurrent writes to one board within a process no longer depend on the store's preconditions: the S3 driver
+  serialises writes per key in both modes, checkpoints are saved one at a time per board, and the snapshot manifest
+  is updated under a per-board lock. On a store whose preconditions are not atomic (seen on Selectel ru-3), two
+  checkpoints or snapshots saved at once could drop one.
 
 ## [0.1.0] - 2026-10-19
 

@@ -214,6 +214,8 @@ export function s3Objects({
       }
     },
 
+    head,
+
     put,
 
     async delete(key) {

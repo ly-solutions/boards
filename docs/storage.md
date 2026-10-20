@@ -71,6 +71,32 @@ seconds of downtime.
 Tested against MinIO, against an in-process fake with AWS semantics, and against fakes that ignore or reject the
 headers or check them non-atomically.
 
+## Stores with slow reads
+
+Some stores start sending an object only after seconds while HEAD and listings stay fast. One example is Selectel
+ru-3, measured in 2026 at 3–4 s to the first byte of every GET whatever the size, against 0.1–0.3 s for HEAD and
+LIST (range requests and other GET variants do not help). The s3 driver therefore keeps a read cache in memory
+(`BOARDS_CACHE_MB`, 128 MiB by default, `0` turns it off):
+
+- snapshot and checkpoint scenes and bucket object versions never change, so they are served from memory without
+  asking the store;
+- the scene, `meta.yaml`, `notes.json`, the thumbnail and the manifests are revalidated with a HEAD and served from
+  memory while the ETag is unchanged, so an edit made by another process or by hand is still picked up;
+- writes through the process fill the cache; a failed write (a lost conditional write included) and a delete drop
+  the entry;
+- the budget is in bytes, least recently used objects go first, and an object larger than an eighth of the budget
+  is never cached.
+
+Opening a board takes one round of parallel requests: GETs of `meta.yaml`, `scene.excalidraw` and `notes.json`, and
+a HEAD for `preview.svg`, whose body is read only when someone asks for the thumbnail. On a slow store a cold open
+therefore costs one GET latency, and an open from the cache costs one HEAD latency. Once open, a board lives in
+memory and is not read again.
+
+After a restart the cache is empty. With `BOARDS_CACHE_WARM=on` (the default when the cache is on) the server reads
+every `meta.yaml` in the background after start, then scenes, notes and thumbnails, newest boards first, 16 at a
+time, until 90 % of the budget is used; readiness does not wait for it. Measured on Selectel ru-3 with 42 boards
+(24 MB): a cold open took 3.5–4 s, an open from the cache 0.12–0.35 s, and the warm-up about a minute.
+
 ## History
 
 | `BOARDS_SNAPSHOTS` | Behaviour |

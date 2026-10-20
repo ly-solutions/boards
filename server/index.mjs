@@ -626,7 +626,7 @@ export function createApp({
     updatedAt: state.meta.updatedAt ?? null,
     rev: state.rev,
     stats: store.stats(state),
-    preview: state.preview ? `${publicUrl}${PREFIX}/${state.slug}/preview.svg?k=${encodeURIComponent(state.meta.key)}` : null,
+    preview: store.hasPreview(state) ? `${publicUrl}${PREFIX}/${state.slug}/preview.svg?k=${encodeURIComponent(state.meta.key)}` : null,
     text: store.text(state),
   })
 
@@ -663,7 +663,7 @@ export function createApp({
       width,
       height,
       html: `<iframe src="${embed.replace(/&/g, '&amp;')}" width="${width}" height="${height}" style="border:0" loading="lazy" referrerpolicy="no-referrer" allow="fullscreen" title="${String(state.meta.title).replace(/[<>&"]/g, '')}"></iframe>`,
-      ...(state.preview ? { thumbnail_url: `${publicUrl}${PREFIX}/${state.slug}/preview.svg?k=${encodeURIComponent(state.meta.key)}` } : {}),
+      ...(store.hasPreview(state) ? { thumbnail_url: `${publicUrl}${PREFIX}/${state.slug}/preview.svg?k=${encodeURIComponent(state.meta.key)}` } : {}),
     }
   }
 
@@ -900,7 +900,7 @@ export function createApp({
         loginUrl: `${PREFIX}/auth/login`,
         logoutUrl: `${PREFIX}/auth/logout`,
         homeUrl,
-        hasPreview: Boolean(state.preview),
+        hasPreview: store.hasPreview(state),
         previewStale: Boolean(state.previewStale),
         agentUrl: store.boardUrl(state),
         staticBase,
@@ -941,7 +941,8 @@ export function createApp({
     }
 
     if (action === 'preview.svg' && req.method === 'GET') {
-      if (!state.preview) throw new HttpError(404, 'no preview yet — open the board in a browser')
+      const svg = await store.previewSvg(state)
+      if (!svg) throw new HttpError(404, 'no preview yet — open the board in a browser')
       return sendBody(
         res,
         200,
@@ -952,7 +953,7 @@ export function createApp({
           'x-content-type-options': 'nosniff',
           'x-robots-tag': 'noindex',
         },
-        state.preview,
+        svg,
       )
     }
 
@@ -1115,6 +1116,12 @@ export async function main(env = process.env) {
   server.listen(config.port, config.host, () =>
     log({ event: 'listening', version: VERSION, url: config.publicUrl, port: config.port, storage: config.storage.driver, auth: config.auth.mode, locale: config.locale, plugins: plugins.list().map((p) => `${p.name}@${p.version}`), epoch: store.epoch }),
   )
+  // Slow-read stores: fill the read cache in the background so first opens after a restart are fast. Readiness does
+  // not wait for it.
+  if (storage.objects?.cacheStats && config.storage.cache?.warm) {
+    const { maxBytes } = storage.objects.cacheStats
+    storage.warm({ concurrency: 16, maxBytes: maxBytes * 0.9, usedBytes: () => storage.objects.cacheStats.bytes }).catch((error) => log({ level: 'warn', event: 'cache_warm_failed', error: String(error?.message ?? error) }))
+  }
   if (config.auth.mode === 'none' && !['127.0.0.1', 'localhost', '::1'].includes(config.host)) {
     log({ level: 'warn', event: 'auth_disabled', note: 'BOARDS_AUTH=none: everyone who can reach this port can read, list and edit every board' })
   }

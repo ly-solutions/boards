@@ -70,7 +70,8 @@ test('migrates history and the current files into board storage', async () => {
   const state = await store.get('architecture-abc123def456')
   assert.equal(state.meta.title, 'Architecture')
   assert.deepEqual(store.elements(state).map((e) => e.id), ['api', 'db', 'queue'])
-  assert.equal(state.preview, '<svg xmlns="http://www.w3.org/2000/svg"/>')
+  assert.equal(store.hasPreview(state), true)
+  assert.equal(await store.previewSvg(state), '<svg xmlns="http://www.w3.org/2000/svg"/>')
   assert.equal((await store.checkpoints(state))[0].title, 'v1')
   assert.ok(await store.checkpointScene(state, 'abcdef12'))
   // Re-running skips boards that exist.

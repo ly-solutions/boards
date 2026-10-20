@@ -37,6 +37,8 @@ Turn it off explicitly with `BOARDS_AUTH=none` for a local instance.
 | `BOARDS_S3_SECRET_ACCESS_KEY` | — | Static credentials (see above). |
 | `BOARDS_S3_CONDITIONAL_WRITES` | `auto` | `auto` probes with overlapping writes whether the store enforces `If-Match`/`If-None-Match` on PUT atomically and otherwise compares ETags before writing; `on` trusts the store; `off` always compares first. Writes are serialised per key within the process either way. |
 | `BOARDS_S3_CREATE_BUCKET` | `false` | Create the bucket at start-up if it does not exist (handy for compose and tests). |
+| `BOARDS_CACHE_MB` | `128` | `s3` driver: in-memory read cache in MiB (`0` turns it off). Objects that never change are served from memory; others are revalidated with a HEAD. For stores that are slow to start sending an object. |
+| `BOARDS_CACHE_WARM` | `on` | `s3` driver with the cache on: after start, read boards into the cache in the background (newest first, within the budget), so first opens after a restart do not wait for the store. |
 | `BOARDS_SNAPSHOTS` | `auto` | History: `bucket` (rely on bucket versioning), `objects` (immutable `snapshots/<ts>.excalidraw` objects + manifest), `auto` (bucket when versioning is enabled, else objects), `off`. |
 | `BOARDS_SNAPSHOT_INTERVAL` | `600` | `objects` mode: minimum seconds between two snapshots of a board. |
 | `BOARDS_SNAPSHOT_KEEP` | `500` | `objects` mode: snapshots kept per board; older ones are pruned. |

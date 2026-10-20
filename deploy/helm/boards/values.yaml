@@ -45,6 +45,11 @@ storage:
     conditionalWrites: auto
     # -- Create the bucket at start-up if it does not exist (`BOARDS_S3_CREATE_BUCKET`).
     createBucket: false
+    # -- In-memory read cache in MiB (`BOARDS_CACHE_MB`); `0` turns it off. For stores that are slow to start
+    # sending an object. Keep the memory limit above the cache plus your open boards.
+    cacheMb: 128
+    # -- After start, read boards into the cache in the background, newest first (`BOARDS_CACHE_WARM`).
+    cacheWarm: true
     credentials:
       # -- Static access key id, stored in the chart Secret (`BOARDS_S3_ACCESS_KEY_ID`). Leave both keys empty
       # to use IRSA / EKS Pod Identity / the AWS default credential chain, or put them in `existingSecret`.

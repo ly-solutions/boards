@@ -19,6 +19,7 @@ export async function startFakeS3({ conditionals = 'native', pageSize = 1000 } =
   const buckets = new Map() // name → { versioning: bool, objects: Map<key, [versions newest first]> }
   let counter = 0
   const calls = []
+  const requests = [] // { method, key } for object requests, to count what reached the store
 
   const error = (res, status, code, message = code) => {
     res.writeHead(status, { 'content-type': 'application/xml' })
@@ -38,6 +39,7 @@ export async function startFakeS3({ conditionals = 'native', pageSize = 1000 } =
     const key = decodeURIComponent(keyParts.join('/'))
     const q = url.searchParams
     calls.push(`${req.method} ${key ? 'object' : 'bucket'}${q.has('versioning') ? ' versioning' : ''}${q.has('versions') ? ' versions' : ''}`)
+    if (key) requests.push({ method: req.method, key })
     const bucket = buckets.get(bucketName)
 
     if (!key) {
@@ -130,6 +132,11 @@ export async function startFakeS3({ conditionals = 'native', pageSize = 1000 } =
   return {
     endpoint: `http://127.0.0.1:${server.address().port}`,
     calls,
+    requests,
+    /** Object requests by method since `from` (an index into `requests`), optionally only for keys matching `match`. */
+    count(method, { from = 0, match } = {}) {
+      return requests.slice(from).filter((r) => r.method === method && (!match || match.test(r.key))).length
+    },
     buckets,
     close: () => new Promise((resolve) => server.close(resolve)),
   }

@@ -239,6 +239,8 @@ namespace). Egress is not restricted, since S3, the OIDC provider and the webhoo
 | storage.s3.endpoint | string | `""` | Endpoint for S3-compatible stores such as MinIO, Ceph or R2 (`BOARDS_S3_ENDPOINT`). Empty for AWS. |
 | storage.s3.region | string | `""` | Region (`BOARDS_S3_REGION`). Empty = `$AWS_REGION`, else `us-east-1`. |
 | storage.s3.forcePathStyle | bool | `false` | Use path-style URLs (`BOARDS_S3_FORCE_PATH_STYLE`); needed by MinIO and most self-hosted stores. |
+| storage.s3.cacheMb | int | `128` | In-memory read cache in MiB (`BOARDS_CACHE_MB`); `0` turns it off. For stores that are slow to start sending an object. Keep the memory limit above the cache plus your open boards. |
+| storage.s3.cacheWarm | bool | `true` | After start, read boards into the cache in the background, newest first (`BOARDS_CACHE_WARM`). |
 | storage.s3.conditionalWrites | string | `"auto"` | `auto` probes with overlapping writes whether the store enforces `If-Match`/`If-None-Match` on PUT atomically; `on` trusts the store; `off` always compares first (`BOARDS_S3_CONDITIONAL_WRITES`). |
 | storage.s3.createBucket | bool | `false` | Create the bucket at start-up if it does not exist (`BOARDS_S3_CREATE_BUCKET`). |
 | storage.s3.credentials.accessKeyId | string | `""` | Static access key id, stored in the chart Secret (`BOARDS_S3_ACCESS_KEY_ID`). Leave both keys empty to use IRSA / EKS Pod Identity / the AWS default credential chain, or put them in `existingSecret`. |

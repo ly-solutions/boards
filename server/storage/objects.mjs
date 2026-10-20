@@ -4,6 +4,7 @@
  * Every driver implements:
  *
  *   get(key)                         -> { body: Buffer, etag, versionId? } | null
+ *   head(key)                        -> { etag } | null   (cheap existence and ETag check; cache.mjs revalidates with it)
  *   put(key, body, { contentType, ifMatch, ifNoneMatch })
  *                                    -> { etag, versionId? }   (throws ConflictError on a failed precondition)
  *   delete(key)
@@ -91,6 +92,10 @@ export function fsObjects({ dir }) {
     kind: 'fs',
     root,
     get,
+    async head(key) {
+      const hit = await get(key)
+      return hit ? { etag: hit.etag } : null
+    },
     async put(key, body, options = {}) {
       const data = toBuffer(body)
       return withLock(key, async () => {
@@ -158,6 +163,10 @@ export function memoryObjects({ versioning = false } = {}) {
     async get(key) {
       const hit = objects.get(key)
       return hit ? { body: Buffer.from(hit.body), etag: hit.etag, versionId: hit.versionId } : null
+    },
+    async head(key) {
+      const hit = objects.get(key)
+      return hit ? { etag: hit.etag } : null
     },
     async put(key, body, options = {}) {
       checkPrecondition(objects.get(key), options)

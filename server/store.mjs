@@ -80,11 +80,13 @@ export function createStore({
       files: new Map(),
       fileRev: new Map(),
       rev: 1,
+      // The thumbnail itself is read on demand (previewSvg); opening a board only checks that it exists.
       preview: loaded.preview ?? null,
+      previewExists: Boolean(loaded.preview || loaded.previewExists),
       previewDirty: false,
       // Previews are rendered by browsers, but agent edits arrive without one. The flag tells the next person
       // who opens the board that the thumbnail is out of date.
-      previewStale: !loaded.preview,
+      previewStale: !(loaded.preview || loaded.previewExists),
       dirty: false,
       firstDirtyAt: null,
       flushTimer: null,
@@ -152,7 +154,7 @@ export function createStore({
       edges: scene.edges.length,
       texts: scene.texts.length,
       elements: scene.live.length,
-      preview: state.preview ? 1 : 0,
+      preview: hasPreview(state) ? 1 : 0,
     }
   }
 
@@ -635,8 +637,25 @@ export function createStore({
     return state
   }
 
+  function hasPreview(state) {
+    return Boolean(state.preview || state.previewExists)
+  }
+
+  /** The thumbnail SVG, read from storage the first time someone asks for it. */
+  async function previewSvg(state) {
+    if (state.preview || !state.previewExists) return state.preview ?? null
+    const svg = storage.readPreview ? await storage.readPreview(state.slug) : null
+    // A browser may have sent a fresh thumbnail while this read was in flight: that one wins.
+    if (!state.preview) {
+      state.preview = svg
+      state.previewExists = Boolean(svg)
+    }
+    return state.preview
+  }
+
   function setPreview(state, svg) {
     state.preview = svg
+    state.previewExists = true
     state.previewDirty = true
     state.previewStale = false
     schedule(state)
@@ -719,7 +738,7 @@ export function createStore({
     const metas = await Promise.all(
       [...slugs].map(async (slug) => {
         const live = boards.get(slug)
-        if (live) return { slug, ...live.meta, stats: stats(live), hasPreview: Boolean(live.preview) }
+        if (live) return { slug, ...live.meta, stats: stats(live), hasPreview: hasPreview(live) }
         const meta = await cachedMeta(slug)
         return meta ? { slug, ...meta, hasPreview: Boolean(meta.stats?.preview) } : null
       }),
@@ -762,6 +781,8 @@ export function createStore({
     flush,
     flushAll,
     setPreview,
+    hasPreview,
+    previewSvg,
     setMeta,
     list,
     boardUrl,

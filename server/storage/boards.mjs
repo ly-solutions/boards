@@ -193,17 +193,67 @@ export function createBoardStorage({
       return meta === null ? null : parseMeta(meta)
     },
 
+    /**
+     * Everything needed to open a board, in one round of parallel requests. The thumbnail is not needed to open it:
+     * only its existence is checked (a HEAD), and readPreview() fetches it when someone asks for the image.
+     */
     async readBoard(slug) {
-      const [meta, scene, preview, notes] = await Promise.all(['meta.yaml', 'scene.excalidraw', 'preview.svg', 'notes.json'].map((name) => objects.get(keyOf(slug, name))))
+      const previewKey = keyOf(slug, 'preview.svg')
+      const [meta, scene, notes, preview] = await Promise.all([
+        objects.get(keyOf(slug, 'meta.yaml')),
+        objects.get(keyOf(slug, 'scene.excalidraw')),
+        objects.get(keyOf(slug, 'notes.json')),
+        objects.head ? objects.head(previewKey) : objects.get(previewKey),
+      ])
       if (!meta) return null
       return {
         meta: parseMeta(meta.body.toString('utf8')),
         scene: scene ? parseJson(scene.body.toString('utf8')) : null,
         version: scene?.etag ?? null,
-        preview: preview ? preview.body.toString('utf8') : null,
+        preview: preview?.body ? preview.body.toString('utf8') : null,
+        previewExists: Boolean(preview),
         notes: notes ? parseJson(notes.body.toString('utf8')) : null,
         existing: new Set(['meta.yaml', ...(scene ? ['scene.excalidraw'] : []), ...(preview ? ['preview.svg'] : []), ...(notes ? ['notes.json'] : []), 'board.md']),
       }
+    },
+
+    readPreview(slug) {
+      return text(keyOf(slug, 'preview.svg'))
+    },
+
+    /**
+     * Read boards ahead of time so that the first open after a start is served from the read cache (cache.mjs):
+     * every meta.yaml first, then scenes, notes and thumbnails, newest boards first, until `maxBytes` of the cache
+     * is used. Only worth it with a cache in front of a store with slow reads; errors are logged and skipped.
+     */
+    async warm({ concurrency = 8, maxBytes = Infinity, usedBytes = () => 0 } = {}) {
+      const started = now()
+      const pool = async (items, fn) => {
+        let next = 0
+        await Promise.all(
+          Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+            while (next < items.length) {
+              const item = items[next++]
+              await fn(item).catch((error) => log({ level: 'warn', event: 'cache_warm_failed', key: String(item?.key ?? item), error: String(error?.message ?? error) }))
+            }
+          }),
+        )
+      }
+      const slugs = await this.listSlugs()
+      const metas = new Map()
+      await pool(slugs, async (slug) => metas.set(slug, parseMeta((await objects.get(keyOf(slug, 'meta.yaml')))?.body.toString('utf8') ?? '')))
+      const newestFirst = [...metas.keys()].sort((a, b) => String(metas.get(b)?.updatedAt ?? '').localeCompare(String(metas.get(a)?.updatedAt ?? '')))
+      const keys = newestFirst.flatMap((slug) => ['scene.excalidraw', 'notes.json', 'preview.svg'].map((name) => ({ key: keyOf(slug, name) })))
+      let skipped = 0
+      await pool(keys, async ({ key }) => {
+        if (usedBytes() >= maxBytes) {
+          skipped += 1
+          return
+        }
+        await objects.get(key)
+      })
+      log({ event: 'cache_warmed', boards: slugs.length, skipped, ms: now() - started })
+      return { boards: slugs.length, skipped }
     },
 
     async listSlugs() {

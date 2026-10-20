@@ -84,6 +84,14 @@
             "createBucket": {
               "type": "boolean"
             },
+            "cacheMb": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 65536
+            },
+            "cacheWarm": {
+              "type": "boolean"
+            },
             "credentials": {
               "type": "object",
               "properties": {
