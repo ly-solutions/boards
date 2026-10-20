@@ -22,6 +22,12 @@
   ],
   "private": true,
   "type": "module",
+  "exports": {
+    "./types/plugin": {
+      "types": "./types/plugin.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
   "engines": {
     "node": ">=22"
   },
