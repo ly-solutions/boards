@@ -18,6 +18,7 @@ Turn it off explicitly with `BOARDS_AUTH=none` for a local instance.
 | `BOARDS_PUBLIC_URL` | `http://localhost:$PORT` | Public origin of the service as users reach it (scheme + host, no path). Used in links, OIDC redirects, cookie security and the WebSocket origin check. |
 | `BOARDS_METRICS_PORT` | `9090` | Port for Prometheus metrics (`/metrics`), kept off the public port. `0` disables. |
 | `BOARDS_DISABLE_FEATURES` | — | Comma-separated editor features to switch off: `live` (WebSocket collaboration, falls back to polling), `studio` (stickies, palette, templates, slop check), `workboard` (checkpoints, timer, link cards), `snap`, `motion`. |
+| `BOARDS_LOCALE` | `en` | Interface language of the editor, pages and the board text for agents: `en` or `ru`. |
 | `BOARDS_FLUSH_DELAY_MS` | `8000` | Quiet time after the last edit before a board is written to storage. |
 | `BOARDS_FLUSH_MAX_MS` | `90000` | Upper bound on how long continuous editing may delay a write. |
 

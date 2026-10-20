@@ -31,6 +31,7 @@ import { createPortal } from 'react-dom'
 import { bumpScene, setView } from './camera'
 import { PointerGlide, installMotion, motion, motionChosen, motionOn, setMotionChosen } from './motion'
 import { PulseLayer, pulse } from './motion-fx'
+import { excalidrawLang, t } from './i18n'
 
 type Element = { id: string; version: number; versionNonce: number; isDeleted?: boolean; type: string; x?: number; y?: number; width?: number; height?: number; containerId?: string | null; customData?: Record<string, unknown>; fontSize?: number; fontFamily?: number; text?: string }
 type FileData = { id: string; mimeType: string; dataURL: string; created: number }
@@ -203,12 +204,12 @@ function writeSnap(on: boolean) {
 type Status = 'loading' | 'saved' | 'saving' | 'offline' | 'readonly' | 'live'
 
 const STATUS_TEXT: Record<Status, string> = {
-  loading: 'Loading…',
-  saved: 'Saved',
-  saving: 'Saving…',
-  offline: 'Offline — edits will be saved when the connection is back',
-  readonly: 'View only',
-  live: 'Live — edits and cursors are visible to everyone instantly',
+  loading: t('editor.statusLoading'),
+  saved: t('editor.statusSaved'),
+  saving: t('editor.statusSaving'),
+  offline: t('editor.statusOffline'),
+  readonly: t('editor.statusReadonly'),
+  live: t('editor.statusLive'),
 }
 /** Constant editor props — one reference, otherwise Excalidraw's memo does not kick in. */
 const UI_OPTIONS = { canvasActions: { loadScene: false, saveToActiveFile: false, export: { saveFileToDisk: true } } }
@@ -240,7 +241,7 @@ async function remeasure(api: Api) {
 
 function Brand() {
   return (
-    <a className="board-brand" href={homeUrl} title="All boards">
+    <a className="board-brand" href={homeUrl} title={t('editor.allBoards')}>
       <img src={`${config.staticBase}/logo-mark.svg`} alt="" />
       <span className="board-brand__name">boards</span>
     </a>
@@ -254,39 +255,39 @@ function ShareDialog({ access, onAccess, onClose }: { access: 'team' | 'link'; o
       await navigator.clipboard.writeText(config.agentUrl)
       setCopied(true)
     } catch {
-      window.prompt('Copy the link', config.agentUrl)
+      window.prompt(t('editor.copyTheLink'), config.agentUrl)
     }
   }
   return (
     <div className="board-dialog__backdrop" onClick={onClose}>
-      <div className="board-dialog" role="dialog" aria-label="Share board" onClick={(e) => e.stopPropagation()}>
+      <div className="board-dialog" role="dialog" aria-label={t('editor.shareBoard')} onClick={(e) => e.stopPropagation()}>
         <div className="board-dialog__head">
           <img src={`${config.staticBase}/logo-mark.svg`} alt="" />
-          <h2>Share board</h2>
-          <button type="button" className="board-dialog__close" onClick={onClose} aria-label="Close">×</button>
+          <h2>{t('editor.shareBoard')}</h2>
+          <button type="button" className="board-dialog__close" onClick={onClose} aria-label={t('editor.close')}>×</button>
         </div>
         <p className="board-dialog__hint">
-          Anyone with the link can see the board — agents too: they read it as text, no image needed.
+          {t('editor.shareHint')}
         </p>
         <div className="board-dialog__link">
           <input readOnly value={config.agentUrl} onFocus={(e) => e.currentTarget.select()} />
-          <button type="button" className="board-button" onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
+          <button type="button" className="board-button" onClick={copy}>{copied ? t('editor.copied') : t('editor.copy')}</button>
         </div>
         <fieldset className="board-dialog__access" disabled={!config.canManage}>
-          <legend>Who can edit</legend>
+          <legend>{t('editor.whoCanEdit')}</legend>
           <label>
             <input type="radio" name="access" checked={access === 'team'} onChange={() => onAccess('team')} />
-            <span><strong>Team only</strong> — after signing in</span>
+            <span><strong>{t('editor.teamOnly')}</strong>{t('editor.teamOnlyHint')}</span>
           </label>
           <label>
             <input type="radio" name="access" checked={access === 'link'} onChange={() => onAccess('link')} />
-            <span><strong>Anyone with the link</strong> — no sign-in, guests sign with a name</span>
+            <span><strong>{t('editor.anyoneWithLink')}</strong>{t('editor.anyoneWithLinkHint')}</span>
           </label>
-          {!config.canManage && <p className="board-dialog__hint">Only a signed-in team member can change access.</p>}
+          {!config.canManage && <p className="board-dialog__hint">{t('editor.onlyTeamChangesAccess')}</p>}
         </fieldset>
         <div className="board-dialog__foot">
-          <a href={`${base}.md${q}`} target="_blank" rel="noopener">How agents see this board</a>
-          {config.author && <span>Author: {config.author}</span>}
+          <a href={`${base}.md${q}`} target="_blank" rel="noopener">{t('editor.howAgentsSee')}</a>
+          {config.author && <span>{t('editor.author', { name: config.author })}</span>}
         </div>
       </div>
     </div>
@@ -474,7 +475,7 @@ function Board() {
         // No name — someone viewing without signing in. A guest is "guest: Kate"
         // in edit captions, but on the cursor and avatar the name goes first:
         // Excalidraw draws the avatar from the first letter.
-        const username = v.name === null ? 'Anonymous viewer' : v.name.startsWith('guest: ') ? `${v.name.slice(7)} (guest)` : v.name
+        const username = v.name === null ? t('editor.anonymousViewer') : v.name.startsWith('guest: ') ? t('editor.guestName', { name: v.name.slice(7) }) : v.name
         next.set(v.id, { ...peers.current.get(v.id), username, color: colorFor(v.name ?? v.id), userState: v.state ?? 'active' })
       }
       for (const id of peers.current.keys()) if (!next.has(id)) pointerGlide.current?.drop(id)
@@ -491,7 +492,7 @@ function Board() {
   const showEdit = useCallback((edit: Edit, fresh: Element[]) => {
     const api = apiRef.current
     if (!api) return
-    api.setToast({ message: `${edit.by}: ${edit.note ?? `edited ${edit.count} ${edit.count === 1 ? 'element' : 'elements'}`}`, closable: true, duration: 6000 })
+    api.setToast({ message: `${edit.by}: ${edit.note ?? t('editor.editedElements', { count: edit.count })}`, closable: true, duration: 6000 })
     if (fresh.length) api.scrollToContent(fresh, { fitToContent: false, animate: true })
     // Show where exactly something was added — a ring around new blocks; labels are ringed with their shape.
     pulse(fresh.filter((el) => !el.containerId && el.type !== 'arrow' && el.type !== 'line').map((el) => ({ x: el.x ?? 0, y: el.y ?? 0, width: el.width ?? 0, height: el.height ?? 0 })))
@@ -1059,7 +1060,7 @@ function Board() {
         body: JSON.stringify({ id, emoji, on, guest: live.current.guest || undefined }),
       })
       const body = await response.json().catch(() => ({}))
-      if (!response.ok) return apiRef.current?.setToast({ message: body.error ?? 'Reaction was not saved', closable: true, duration: 4000 })
+      if (!response.ok) return apiRef.current?.setToast({ message: body.error ?? t('editor.reactionNotSaved'), closable: true, duration: 4000 })
       // The live channel will broadcast the same, but there's no need to wait for it.
       if (body.notes) setNotes(body.notes)
     },
@@ -1075,7 +1076,7 @@ function Board() {
     })
     const data = await response.json().catch(() => ({}))
     if (!response.ok) {
-      apiRef.current?.setToast({ message: data.error ?? 'Comment was not saved', closable: true, duration: 5000 })
+      apiRef.current?.setToast({ message: data.error ?? t('editor.commentNotSaved'), closable: true, duration: 5000 })
       return null
     }
     if (data.notes) setNotes(data.notes)
@@ -1086,7 +1087,7 @@ function Board() {
       const response = await fetch(`${base}/timer${q}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...action, guest: live.current.guest || undefined }) })
       const data = await response.json().catch(() => ({}))
       if (response.ok) setTimer(data.timer as TimerState, data.now as number)
-      else apiRef.current?.setToast({ message: data.error ?? 'Timer did not respond', closable: true, duration: 4000 })
+      else apiRef.current?.setToast({ message: data.error ?? t('editor.timerNoResponse'), closable: true, duration: 4000 })
     },
     [setTimer],
   )
@@ -1206,14 +1207,14 @@ function Board() {
     })
     const body = await response.json().catch(() => ({}))
     if (!response.ok) {
-      apiRef.current?.setToast({ message: body.error ?? 'Not saved', closable: true, duration: 5000 })
+      apiRef.current?.setToast({ message: body.error ?? t('editor.notSaved'), closable: true, duration: 5000 })
       return null
     }
     return body
   }, [])
 
   const rename = useCallback(async () => {
-    const next = window.prompt('Board title', title)?.trim()
+    const next = window.prompt(t('editor.boardTitlePrompt'), title)?.trim()
     if (!next || next === title) return
     if (await saveMeta({ title: next })) setTitle(next)
   }, [title, saveMeta])
@@ -1223,7 +1224,7 @@ function Board() {
       const body = await saveMeta(changes)
       if (!body) return false
       setMeta((prev) => ({ ...prev, description: body.description ?? prev.description, tags: body.tags ?? prev.tags, task: body.task ?? null }))
-      apiRef.current?.setToast({ message: 'Board properties saved', duration: 2500 })
+      apiRef.current?.setToast({ message: t('editor.propertiesSaved'), duration: 2500 })
       return true
     },
     [saveMeta],
@@ -1234,7 +1235,7 @@ function Board() {
       const body = await saveMeta({ access: next })
       if (body) {
         setAccess(body.access)
-        apiRef.current?.setToast({ message: next === 'link' ? 'Anyone with the link can now edit' : 'Only the team can edit now', duration: 3500 })
+        apiRef.current?.setToast({ message: next === 'link' ? t('editor.accessLink') : t('editor.accessTeam'), duration: 3500 })
       }
     },
     [saveMeta],
@@ -1274,31 +1275,31 @@ function Board() {
     () =>
       <>
         <MainMenu>
-          <MainMenu.ItemLink href={homeUrl}>All boards</MainMenu.ItemLink>
-          {canEdit && <MainMenu.Item onSelect={rename}>Rename “{title}”</MainMenu.Item>}
-          <MainMenu.Item onSelect={openShare}>Share…</MainMenu.Item>
-          {config.studio && <MainMenu.Item onSelect={openProperties}>Board properties: description, tags, reference…</MainMenu.Item>}
-          <MainMenu.ItemLink href={`${base}.md${q}`}>Board as text (what agents see)</MainMenu.ItemLink>
-          <MainMenu.ItemLink href={`${base}/scene.excalidraw${q}&download=1`}>Download .excalidraw</MainMenu.ItemLink>
+          <MainMenu.ItemLink href={homeUrl}>{t('editor.allBoards')}</MainMenu.ItemLink>
+          {canEdit && <MainMenu.Item onSelect={rename}>{t('editor.rename', { title })}</MainMenu.Item>}
+          <MainMenu.Item onSelect={openShare}>{t('editor.shareEllipsis')}</MainMenu.Item>
+          {config.studio && <MainMenu.Item onSelect={openProperties}>{t('editor.boardProperties')}</MainMenu.Item>}
+          <MainMenu.ItemLink href={`${base}.md${q}`}>{t('editor.boardAsText')}</MainMenu.ItemLink>
+          <MainMenu.ItemLink href={`${base}/scene.excalidraw${q}&download=1`}>{t('editor.downloadExcalidraw')}</MainMenu.ItemLink>
           <MainMenu.Separator />
           <MainMenu.DefaultItems.SaveAsImage />
           <MainMenu.DefaultItems.SearchMenu />
           <MainMenu.DefaultItems.Help />
           {config.snap && canEdit && (
             <MainMenu.Item onSelect={toggleSnap} shortcut="Alt+S" icon={<SnapIcon on={snapOn} />}>
-              Snap to objects: {snapOn ? 'on' : 'off'}
+              {t('editor.snapToObjects', { state: snapOn ? t('editor.on') : t('editor.off') })}
             </MainMenu.Item>
           )}
-          {config.motion && <MainMenu.Item onSelect={toggleSmooth}>Smooth board motion: {smooth ? 'on' : 'off'}</MainMenu.Item>}
+          {config.motion && <MainMenu.Item onSelect={toggleSmooth}>{t('editor.smoothMotion', { state: smooth ? t('editor.on') : t('editor.off') })}</MainMenu.Item>}
           {canEdit && <MainMenu.DefaultItems.ClearCanvas />}
           <MainMenu.Separator />
           <MainMenu.DefaultItems.ToggleTheme />
           <MainMenu.DefaultItems.ChangeCanvasBackground />
           <MainMenu.Separator />
           {config.user ? (
-            <MainMenu.ItemLink href={logoutUrl()}>Sign out ({config.user.name})</MainMenu.ItemLink>
+            <MainMenu.ItemLink href={logoutUrl()}>{t('editor.signOutAs', { name: config.user.name })}</MainMenu.ItemLink>
           ) : config.authEnabled ? (
-            <MainMenu.ItemLink href={loginUrl()}>Sign in</MainMenu.ItemLink>
+            <MainMenu.ItemLink href={loginUrl()}>{t('editor.signIn')}</MainMenu.ItemLink>
           ) : null}
         </MainMenu>
         <WelcomeScreen>
@@ -1310,13 +1311,13 @@ function Board() {
               </span>
             </WelcomeScreen.Center.Logo>
             <WelcomeScreen.Center.Heading>
-              {canEdit ? 'Start drawing — everyone on the board sees your edits, and so do agents with the link' : 'This board is view-only'}
+              {canEdit ? t('editor.welcomeEdit') : t('editor.welcomeView')}
             </WelcomeScreen.Center.Heading>
             <WelcomeScreen.Center.Menu>
               {!canEdit && config.authEnabled && (
-                <WelcomeScreen.Center.MenuItemLink href={loginUrl()}>Sign in to edit</WelcomeScreen.Center.MenuItemLink>
+                <WelcomeScreen.Center.MenuItemLink href={loginUrl()}>{t('editor.signInToEdit')}</WelcomeScreen.Center.MenuItemLink>
               )}
-              <WelcomeScreen.Center.MenuItemLink href={homeUrl}>All boards</WelcomeScreen.Center.MenuItemLink>
+              <WelcomeScreen.Center.MenuItemLink href={homeUrl}>{t('editor.allBoards')}</WelcomeScreen.Center.MenuItemLink>
               <WelcomeScreen.Center.MenuItemHelp />
             </WelcomeScreen.Center.Menu>
           </WelcomeScreen.Center>
@@ -1335,7 +1336,7 @@ function Board() {
     return (
       <div className="board-error">
         <Brand />
-        <p>The board did not load. Check the link or reload the page in a minute.</p>
+        <p>{t('editor.loadFailed')}</p>
       </div>
     )
   }
@@ -1348,7 +1349,7 @@ function Board() {
       <Excalidraw
         excalidrawAPI={onApi}
         initialData={initialData!}
-        langCode="en"
+        langCode={excalidrawLang}
         name={title}
         viewModeEnabled={!canEdit}
         isCollaborating
@@ -1374,14 +1375,14 @@ function Board() {
               dock and the island stays short.
             */}
             <span className={`board-status board-status--${shownStatus}`} title={statusText}>
-              <span className="board-status__dot">{shownStatus === 'saved' || shownStatus === 'live' ? '●' : shownStatus === 'saving' ? '◐' : shownStatus === 'readonly' ? '◌' : '○'}</span> <span className="board-status__text">{shownStatus === 'live' ? 'Live' : statusText}</span>
+              <span className="board-status__dot">{shownStatus === 'saved' || shownStatus === 'live' ? '●' : shownStatus === 'saving' ? '◐' : shownStatus === 'readonly' ? '◌' : '○'}</span> <span className="board-status__text">{shownStatus === 'live' ? t('editor.statusLiveShort') : statusText}</span>
             </span>
             <span className="bar-sep bar-sep--tools" />
             {studioApi && canEdit && barMode !== 'dock' && config.workboard && (
               <TimerTool timer={timer.value} offset={timer.offset} canEdit={canEdit} onAct={timerAct} quiet={barMode === 'compact'} open={timerOpen} onOpen={setTimerOpen} />
             )}
             {studioApi && canEdit && barMode === 'full' && config.workboard && (
-              <BarButton label="Checkpoints — what changed and board history" on={panel === 'checkpoints'} onClick={() => openPanel(panel === 'checkpoints' ? null : 'checkpoints')}>
+              <BarButton label={t('editor.checkpointsTitle')} on={panel === 'checkpoints'} onClick={() => openPanel(panel === 'checkpoints' ? null : 'checkpoints')}>
                 <CheckpointsIcon />
               </BarButton>
             )}
@@ -1392,26 +1393,26 @@ function Board() {
                 items={[
                   ...(config.workboard
                     ? [
-                        { id: 'timer', label: 'Timer', icon: BAR_ICONS.timer, onSelect: () => setTimerOpen(true) },
-                        { id: 'checkpoints', label: 'Checkpoints', icon: BAR_ICONS.checkpoints, onSelect: () => openPanel('checkpoints') },
+                        { id: 'timer', label: t('editor.timer'), icon: BAR_ICONS.timer, onSelect: () => setTimerOpen(true) },
+                        { id: 'checkpoints', label: t('editor.checkpoints'), icon: BAR_ICONS.checkpoints, onSelect: () => openPanel('checkpoints') },
                       ]
                     : []),
-                  { id: 'slop', label: 'Slop check', icon: BAR_ICONS.slop, onSelect: () => setSlopOpen(true) },
-                  { id: 'library', label: 'Library', icon: BAR_ICONS.library, hint: '0', onSelect: () => (studioApi as unknown as { toggleSidebar(o: { name: string }): boolean }).toggleSidebar({ name: 'default' }) },
+                  { id: 'slop', label: t('editor.slopCheck'), icon: BAR_ICONS.slop, onSelect: () => setSlopOpen(true) },
+                  { id: 'library', label: t('editor.library'), icon: BAR_ICONS.library, hint: '0', onSelect: () => (studioApi as unknown as { toggleSidebar(o: { name: string }): boolean }).toggleSidebar({ name: 'default' }) },
                 ]}
               />
             )}
             <span className="bar-sep bar-sep--share" />
             {!config.user && config.authEnabled && (
               <a className="board-button board-button--ghost" href={loginUrl()}>
-                Sign in
+                {t('editor.signIn')}
               </a>
             )}
-            <button type="button" className="board-button board-button--share" onClick={openShare} title="Share" aria-label="Share">
+            <button type="button" className="board-button board-button--share" onClick={openShare} title={t('editor.share')} aria-label={t('editor.share')}>
               <svg className="board-button__icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7M16 6l-4-4-4 4M12 2v13" />
               </svg>
-              <span className="board-button__label">Share</span>
+              <span className="board-button__label">{t('editor.share')}</span>
             </button>
           </>,
           topRight,
@@ -1478,9 +1479,9 @@ function Board() {
 
       {!canEdit && config.authEnabled && (
         <div className="board-banner" role="status">
-          <span>This board is view-only. Team members can edit after signing in.</span>
+          <span>{t('editor.viewOnlyBanner')}</span>
           <a className="board-button" href={loginUrl()}>
-            Sign in to edit
+            {t('editor.signInToEdit')}
           </a>
         </div>
       )}
@@ -1493,14 +1494,14 @@ function Board() {
             saveGuest()
           }}
         >
-          <span>You can edit this board without signing in. What name should we show?</span>
-          <input value={guestDraft} onChange={(e) => setGuestDraft(e.target.value)} placeholder="Name" maxLength={40} aria-label="Your name" />
+          <span>{t('editor.guestPrompt')}</span>
+          <input value={guestDraft} onChange={(e) => setGuestDraft(e.target.value)} placeholder={t('editor.name')} maxLength={40} aria-label={t('editor.yourName')} />
           <button type="submit" className="board-button">
-            Done
+            {t('editor.done')}
           </button>
           {config.authEnabled && (
             <a className="board-button board-button--ghost" href={loginUrl()}>
-              Sign in
+              {t('editor.signIn')}
             </a>
           )}
         </form>

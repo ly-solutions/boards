@@ -207,3 +207,16 @@ test('checking a large board takes a fraction of a second, not seconds', () => {
   assert.equal(result.metrics.elements, elements.length)
   assert.ok(spent < 1500, `the check took ${Math.round(spent)} ms`)
 })
+
+test('issues come in the requested locale; the scores and offending ids do not depend on it', () => {
+  const elements = []
+  for (let i = 0; i < 5; i += 1) elements.push({ id: `a${i}`, type: 'arrow', x: i * 300, y: 0, width: 100, height: 0, points: [[0, 0], [100, 0]] })
+  const en = analyzeSlop(elements)
+  const ru = analyzeSlop(elements, { locale: 'ru' })
+  assert.equal(ru.score, en.score)
+  assert.deepEqual(ru.issues.map((i) => [i.id, i.elementIds]), en.issues.map((i) => [i.id, i.elementIds]))
+  const dangling = ru.issues.find((i) => i.id === 'dangling-arrows')
+  assert.equal(dangling.title, 'Стрелки в никуда')
+  assert.match(dangling.detail, /^5 стрелок не привязаны/)
+  assert.equal(en.issues.find((i) => i.id === 'dangling-arrows').title, 'Arrows to nowhere')
+})

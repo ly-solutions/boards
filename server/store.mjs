@@ -42,6 +42,8 @@ export function createStore({
   baseUrl = process.env.BOARDS_PUBLIC_URL ?? 'http://localhost:8080',
   now = () => Date.now(),
   log = (event) => console.log(JSON.stringify({ at: new Date().toISOString(), ...event })),
+  /** Language of the words in the board text (headings, kinds, colours): BOARDS_LOCALE. Content is never translated. */
+  locale = 'en',
 } = {}) {
   /** Identifies this process lifetime: when it changes, clients resend their whole scene. */
   const epoch = randomBytes(6).toString('hex')
@@ -397,6 +399,7 @@ export function createStore({
       notes,
       url: boardUrl(state),
       updatedAt: state.meta.updatedAt,
+      locale,
     })
     textCache.set(state, { key, value })
     return value

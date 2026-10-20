@@ -44,6 +44,8 @@ import { createStatic } from './static.mjs'
 import { loadConfig, testConfig } from './config.mjs'
 import { createMetrics } from './metrics.mjs'
 import { SNAPSHOT_ID } from './storage/boards.mjs'
+import { createTranslator } from '../shared/i18n.mjs'
+import { CATALOGS } from '../shared/locales/index.mjs'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const PREFIX = '/b'
@@ -132,8 +134,16 @@ export function createApp({
   links = createLinks({ boardMeta: (slug) => store.boardMeta(slug), log: (event) => console.log(JSON.stringify({ at: new Date().toISOString(), ...event })) }),
   metrics = createMetrics(),
   ready = async () => true,
+  /** The interface translator; plugins add their messages to it, so it is per app, not the shared cached one. */
+  t = createTranslator(config.locale, CATALOGS),
 } = {}) {
   const publicUrl = config.publicUrl
+  /** Template names in the interface language (the editor's templates panel uses the same catalog keys). */
+  const localTemplates = () =>
+    TEMPLATES.map((tpl) => {
+      const key = `studio.template${tpl.id.charAt(0).toUpperCase()}${tpl.id.slice(1)}Title`
+      return t.has(key) ? { ...tpl, title: t(key) } : tpl
+    })
   const staticBase = `${PREFIX}/_static`
   const homeUrl = `${PREFIX}/`
   const serveStatic = createStatic({ root: webDir })
@@ -416,7 +426,7 @@ export function createApp({
   const readForm = async (req) => new URLSearchParams(await readBody(req, 16 * 1024))
   const renderTokenForm = (res, next, error, status) => {
     res.writeHead(status, pageHeaders({ frameAncestors: config.frameAncestors }))
-    res.end(renderTokenLogin({ staticBase, next, error }))
+    res.end(renderTokenLogin({ staticBase, next, error, t }))
   }
 
   async function route(req, res) {
@@ -454,7 +464,7 @@ export function createApp({
       }
       const boards = await listBoards(url)
       res.writeHead(200, pageHeaders({ frameAncestors: config.frameAncestors }))
-      return res.end(renderHome({ staticBase, boards, templates: TEMPLATES, user, canSignOut: auth.mode !== 'none', q: url.searchParams.get('q') ?? '' }))
+      return res.end(renderHome({ staticBase, boards, templates: localTemplates(), user, canSignOut: auth.mode !== 'none', q: url.searchParams.get('q') ?? '', t }))
     }
 
     if (rest === 'api' || rest === 'api/') return text(res, 200, API_HELP)
@@ -597,7 +607,7 @@ export function createApp({
       const features = config.features ?? {}
       // The read-only embed view is its own page: see renderEmbedPage.
       if (url.searchParams.get('embed') === '1') {
-        const page = renderEmbedPage({ state, text: store.text(state), scene: store.scene(state), boardUrl: `${publicUrl}${PREFIX}/${slug}?k=${encodeURIComponent(state.meta.key)}`, assets: webAssets(join(webDir, '.vite/manifest.json')).embed, staticUrl: `${publicUrl}${staticBase}` })
+        const page = renderEmbedPage({ state, text: store.text(state), scene: store.scene(state), boardUrl: `${publicUrl}${PREFIX}/${slug}?k=${encodeURIComponent(state.meta.key)}`, assets: webAssets(join(webDir, '.vite/manifest.json')).embed, staticUrl: `${publicUrl}${staticBase}`, t })
         return sendBody(res, 200, embedHeaders({ publicUrl }), page)
       }
       // `?at=<checkpoint>`: the board as it was — read-only, no live channel.
@@ -633,7 +643,7 @@ export function createApp({
         task: state.meta.task ?? null,
         reactions: REACTIONS,
       }
-      const html = renderBoardPage({ state, text: store.text(state), config: pageConfig, assets: webAssets(join(webDir, '.vite/manifest.json')).editor, staticBase })
+      const html = renderBoardPage({ state, text: store.text(state), config: pageConfig, assets: webAssets(join(webDir, '.vite/manifest.json')).editor, staticBase, t })
       return sendBody(res, 200, editorHeaders({ publicUrl, frameAncestors: config.frameAncestors }), html)
     }
 
@@ -771,7 +781,7 @@ export function createApp({
       if (res.headersSent) return res.end()
       if (error instanceof HttpError && error.status === 404 && req.method === 'GET' && /text\/html/.test(String(req.headers.accept ?? ''))) {
         res.writeHead(404, { 'content-type': 'text/html; charset=utf-8', 'x-robots-tag': 'noindex', 'cache-control': 'no-store' })
-        return res.end(renderNotFound(staticBase, homeUrl))
+        return res.end(renderNotFound(staticBase, homeUrl, t))
       }
       if (error instanceof HttpError) return json(res, error.status, { error: error.message, ...error.extra })
       if (error instanceof EditError || error instanceof LimitError) return json(res, 400, { error: error.message, help: `${PREFIX}/api` })
@@ -799,7 +809,7 @@ export async function main(env = process.env) {
   const { storageFromConfig } = await import('./storage/index.mjs')
   const storage = await storageFromConfig(config.storage, { log })
   const metrics = createMetrics()
-  const store = createStore({ storage, baseUrl: config.publicUrl, flushDelayMs: config.flushDelayMs, flushMaxMs: config.flushMaxMs, log: (event) => { if (event.level === 'error') metrics.inc('boards_storage_errors_total', 'Failed storage writes.'); log(event) } })
+  const store = createStore({ storage, baseUrl: config.publicUrl, locale: config.locale, flushDelayMs: config.flushDelayMs, flushMaxMs: config.flushMaxMs, log: (event) => { if (event.level === 'error') metrics.inc('boards_storage_errors_total', 'Failed storage writes.'); log(event) } })
   let readyAt = 0
   const ready = async () => {
     if (Date.now() - readyAt < 5000) return true

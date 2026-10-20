@@ -30,6 +30,7 @@ export const OPTIONS = [
   ['BOARDS_PUBLIC_URL', 'http://localhost:$PORT', 'Public origin of the service as users reach it (scheme + host, no path). Used in links, OIDC redirects, cookie security and the WebSocket origin check.', 'Server'],
   ['BOARDS_METRICS_PORT', '9090', 'Port for Prometheus metrics (`/metrics`), kept off the public port. `0` disables.', 'Server'],
   ['BOARDS_DISABLE_FEATURES', '', 'Comma-separated editor features to switch off: `live` (WebSocket collaboration, falls back to polling), `studio` (stickies, palette, templates, slop check), `workboard` (checkpoints, timer, link cards), `snap`, `motion`.', 'Server'],
+  ['BOARDS_LOCALE', 'en', 'Interface language of the editor, pages and the board text for agents: `en` or `ru`.', 'Server'],
   ['BOARDS_FLUSH_DELAY_MS', '8000', 'Quiet time after the last edit before a board is written to storage.', 'Server'],
   ['BOARDS_FLUSH_MAX_MS', '90000', 'Upper bound on how long continuous editing may delay a write.', 'Server'],
 
@@ -75,6 +76,8 @@ export const OPTIONS = [
   ['BOARDS_COMMENTS_WEBHOOK_SECRET', '', 'Sent as `x-boards-webhook-secret` with every webhook call.', 'Integration'],
 ]
 
+import { LOCALES } from '../shared/i18n.mjs'
+
 const FEATURES = ['live', 'studio', 'workboard', 'snap', 'motion']
 const AUTH_MODES = ['token', 'oidc', 'proxy', 'none']
 
@@ -107,6 +110,9 @@ export function loadConfig(env = process.env) {
   const disabled = new Set(list(env.BOARDS_DISABLE_FEATURES))
   for (const f of disabled) if (!FEATURES.includes(f)) problems.push(`BOARDS_DISABLE_FEATURES: unknown feature "${f}" (known: ${FEATURES.join(', ')})`)
 
+  const locale = String(env.BOARDS_LOCALE || 'en').toLowerCase()
+  if (!LOCALES.includes(locale)) problems.push(`BOARDS_LOCALE: "${locale}" — expected ${LOCALES.join(' or ')}`)
+
   const driver = (env.BOARDS_STORAGE || (env.BOARDS_S3_BUCKET ? 's3' : 'fs')).toLowerCase()
   if (!['s3', 'fs', 'memory'].includes(driver)) problems.push(`BOARDS_STORAGE: "${driver}" — expected s3 or fs`)
   if (driver === 's3' && !env.BOARDS_S3_BUCKET) problems.push('BOARDS_S3_BUCKET: required with BOARDS_STORAGE=s3')
@@ -134,6 +140,7 @@ export function loadConfig(env = process.env) {
     host: env.BOARDS_HOST || '0.0.0.0',
     publicUrl: publicOrigin,
     metricsPort: read('BOARDS_METRICS_PORT', (v) => int(v, 9090)),
+    locale,
     features: Object.fromEntries(FEATURES.map((f) => [f, !disabled.has(f)])),
     flushDelayMs: read('BOARDS_FLUSH_DELAY_MS', (v) => int(v, 8000)),
     flushMaxMs: read('BOARDS_FLUSH_MAX_MS', (v) => int(v, 90000)),

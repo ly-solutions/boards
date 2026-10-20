@@ -128,21 +128,54 @@ export function draftFrom(elements: readonly SceneEl[], x: number, y: number): D
   return { x, y, elementId: elementAt(elements, x, y)?.id ?? null }
 }
 
+// ── Language ────────────────────────────────────────────────────────────────
+
+/** The editor's translator (web/src/i18n.ts); passed in so this module stays import-free and testable in Node. */
+export type Translate = (key: string, vars?: Record<string, unknown>) => string
+
+/**
+ * English for the words this module produces, keyed like the catalog (shared/locales/en/comments.mjs, which must
+ * hold the same text — tests/comments-model.test.mjs checks). Used when no translator is passed.
+ */
+export const MODEL_EN: Record<string, string> = {
+  'comments.canvas': 'Canvas',
+  'comments.quoted': '“{text}”',
+  'comments.sticky': 'Sticky',
+  'comments.linkCard': 'Link card',
+  'comments.shape': 'Shape',
+  'comments.kindRectangle': 'Rectangle',
+  'comments.kindEllipse': 'Ellipse',
+  'comments.kindDiamond': 'Diamond',
+  'comments.kindArrow': 'Arrow',
+  'comments.kindLine': 'Line',
+  'comments.kindText': 'Text',
+  'comments.kindDrawing': 'Drawing',
+  'comments.kindImage': 'Image',
+  'comments.kindFrame': 'Frame',
+  'comments.kindEmbed': 'Embed',
+  'comments.justNow': 'just now',
+  'comments.minutesShort': '{count} min',
+  'comments.hoursShort': '{count} h',
+}
+
+export const english: Translate = (key, vars) => (MODEL_EN[key] ?? key).replace(/\{(\w+)\}/g, (whole, name) => (vars?.[name] === undefined ? whole : String(vars[name])))
+
 // ── Labels ──────────────────────────────────────────────────────────────────
 
+/** Element type → catalog key of its name. */
 const KIND: Record<string, string> = {
-  rectangle: 'Rectangle',
-  ellipse: 'Ellipse',
-  diamond: 'Diamond',
-  arrow: 'Arrow',
-  line: 'Line',
-  text: 'Text',
-  freedraw: 'Drawing',
-  image: 'Image',
-  frame: 'Frame',
-  magicframe: 'Frame',
-  embeddable: 'Embed',
-  iframe: 'Embed',
+  rectangle: 'comments.kindRectangle',
+  ellipse: 'comments.kindEllipse',
+  diamond: 'comments.kindDiamond',
+  arrow: 'comments.kindArrow',
+  line: 'comments.kindLine',
+  text: 'comments.kindText',
+  freedraw: 'comments.kindDrawing',
+  image: 'comments.kindImage',
+  frame: 'comments.kindFrame',
+  magicframe: 'comments.kindFrame',
+  embeddable: 'comments.kindEmbed',
+  iframe: 'comments.kindEmbed',
 }
 
 /** The text a shape shows, as the board text for agents reads it: its bound label, or a text element's own text. */
@@ -161,15 +194,15 @@ export function labelOf(elements: readonly SceneEl[], id: string): string | null
 }
 
 /** What a thread is about, for the card header and the composer: the shape's label, its kind, or "Canvas". */
-export function placeName(elements: readonly SceneEl[], elementId: string | null): string {
-  if (!elementId) return 'Canvas'
+export function placeName(elements: readonly SceneEl[], elementId: string | null, t: Translate = english): string {
+  if (!elementId) return t('comments.canvas')
   const el = elements.find((e) => e.id === elementId && !e.isDeleted)
-  if (!el) return 'Canvas'
+  if (!el) return t('comments.canvas')
   const label = labelOf(elements, elementId)
-  if (label) return `“${excerpt(label, 48)}”`
-  if (el.customData?.kind === 'sticky') return 'Sticky'
-  if (el.customData?.kind === 'card') return 'Link card'
-  return KIND[el.type] ?? 'Shape'
+  if (label) return t('comments.quoted', { text: excerpt(label, 48) })
+  if (el.customData?.kind === 'sticky') return t('comments.sticky')
+  if (el.customData?.kind === 'card') return t('comments.linkCard')
+  return t(KIND[el.type] ?? 'comments.shape')
 }
 
 // ── Text helpers ────────────────────────────────────────────────────────────
@@ -215,23 +248,23 @@ const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
 /** Compact relative time for rows and messages: "just now", "5 min", "2 h", then a date ("Oct 5"). */
-export function relativeTime(iso: string, now: number = Date.now()): string {
+export function relativeTime(iso: string, now: number = Date.now(), t: Translate = english, locale?: string): string {
   const at = Date.parse(iso)
   if (Number.isNaN(at)) return ''
   const ago = now - at
   // Clock skew between server and browser can put a fresh message slightly in the future.
-  if (ago < MINUTE) return 'just now'
-  if (ago < HOUR) return `${Math.floor(ago / MINUTE)} min`
-  if (ago < DAY) return `${Math.floor(ago / HOUR)} h`
+  if (ago < MINUTE) return t('comments.justNow')
+  if (ago < HOUR) return t('comments.minutesShort', { count: Math.floor(ago / MINUTE) })
+  if (ago < DAY) return t('comments.hoursShort', { count: Math.floor(ago / HOUR) })
   const date = new Date(at)
   const sameYear = date.getFullYear() === new Date(now).getFullYear()
-  return date.toLocaleString(undefined, sameYear ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' })
+  return date.toLocaleString(locale, sameYear ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 /** Full timestamp for tooltips. */
-export function fullTime(iso: string): string {
+export function fullTime(iso: string, locale?: string): string {
   const at = Date.parse(iso)
-  return Number.isNaN(at) ? '' : new Date(at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+  return Number.isNaN(at) ? '' : new Date(at).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
 // ── Ordering ────────────────────────────────────────────────────────────────

@@ -5,11 +5,11 @@
  */
 import { analyzeSlop } from '../../shared/slop.mjs'
 
-self.onmessage = (event: MessageEvent<{ id: number; elements: unknown[] }>) => {
-  const { id, elements } = event.data
+self.onmessage = (event: MessageEvent<{ id: number; elements: unknown[]; locale?: string }>) => {
+  const { id, elements, locale } = event.data
   let result: unknown = null
   try {
-    result = analyzeSlop(elements as never)
+    result = analyzeSlop(elements as never, { locale })
   } catch {
     // A malformed element must not kill the worker: the indicator just won't update.
   }

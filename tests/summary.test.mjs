@@ -89,3 +89,31 @@ test('counter plurals', () => {
   assert.equal(plural(3, 'shape'), '3 shapes')
   assert.equal(plural(2, 'child', 'children'), '2 children')
 })
+
+test('BOARDS_LOCALE=ru: the words around the content are Russian, ids, labels and structure are not', () => {
+  const md = summarize([
+    rect('a', 0, 0, { backgroundColor: '#ffc9c9', customData: { editedBy: 'Claude' } }), label('ta', 'a', 'Gateway'),
+    rect('b', 300, 0), label('tb', 'b', 'Billing'),
+    { ...base, id: 'ar', type: 'arrow', x: 100, y: 30, width: 200, height: 0, points: [[0, 0], [200, 0]], startBinding: { elementId: 'a' }, endBinding: { elementId: 'b' }, endArrowhead: 'arrow' },
+  ], {
+    title: 'Схема',
+    task: 'PROJ-12',
+    locale: 'ru',
+    notes: { comments: [{ id: 'c1', elementId: 'a', x: 0, y: 0, messages: [{ id: 'm1', author: 'alice', text: 'Почему?' }] }, { id: 'c2', resolved: true, x: 0, y: 0, messages: [] }] },
+  })
+  assert.match(md, /^# Доска "Схема"/)
+  assert.match(md, /2 фигуры, 1 связь, 0 текстов/)
+  assert.match(md, /## Фигуры\n- \[a\] прямоугольник "Gateway" \(0,0 100×60\) — заливка: светло-красный · правил Claude/)
+  assert.match(md, /## Связи\n- \[ar\] "Gateway" \[a\] → "Billing" \[b\]/)
+  assert.match(md, /## Комментарии — 1 открытое обсуждение, закрытых: 1\n- \[c1\] на "Gateway" \[a\] — alice: "Почему\?"/)
+  assert.match(md, /Проверка на нейрослоп/)
+  assert.doesNotMatch(md, /Board|Shapes|Connections|Comments|Slop check/)
+})
+
+test('Russian counters use all three plural forms', () => {
+  const many = Array.from({ length: 5 }, (_, i) => rect(`r${i}`, i * 200, 0))
+  assert.match(summarize(many.slice(0, 1), { locale: 'ru' }), /1 фигура,/)
+  assert.match(summarize(many.slice(0, 3), { locale: 'ru' }), /3 фигуры,/)
+  assert.match(summarize(many, { locale: 'ru' }), /5 фигур,/)
+  assert.match(summarize([], { locale: 'ru' }), /Доска пуста\./)
+})

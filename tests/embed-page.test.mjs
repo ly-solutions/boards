@@ -48,3 +48,27 @@ test('embed: asset URLs are absolute on the public origin when the build exists'
     await app.close()
   }
 })
+
+test('server pages follow the locale: lang attribute and Russian text, English by default', async () => {
+  const { renderBoardPage, renderEmbedPage, renderHome, renderNotFound, renderTokenLogin } = await import('../server/html.mjs')
+  const { translator } = await import('../shared/locales/index.mjs')
+  const ru = translator('ru')
+  const state = { slug: 'plan-abc', meta: { title: 'План', key: 'K' } }
+  const assets = { scripts: [], styles: [], modules: [], fonts: [] }
+  const board = renderBoardPage({ state, text: 'TEXT', config: { homeUrl: '/b/' }, assets, staticBase: '/s', t: ru })
+  assert.match(board, /<html lang="ru">/)
+  assert.match(board, /Загружаем доску «План»…/)
+  assert.match(board, /Эта страница — доска Excalidraw/)
+  assert.match(renderBoardPage({ state, text: 'TEXT', config: {}, assets, staticBase: '/s' }), /<html lang="en">[\s\S]*Loading board "План"…/)
+  assert.match(renderEmbedPage({ state, text: 'T', scene: {}, boardUrl: 'u', assets, staticUrl: 'S', t: ru }), /<html lang="ru">[\s\S]*Просмотрщик не собран/)
+  assert.match(renderNotFound('/s', '/b/', ru), /<h1>Такой доски нет<\/h1>[\s\S]*<a href="\/b\/">список всех досок<\/a>/)
+  assert.match(renderTokenLogin({ staticBase: '/s', next: '/b/', t: ru }), /Токен доступа[\s\S]*<button type="submit">Войти<\/button>/)
+  const home = renderHome({ staticBase: '/s', boards: [{ slug: 'a', key: 'k', title: 'A', updatedAt: new Date(Date.now() - 5 * 60_000).toISOString() }], templates: [], user: { name: 'Ада' }, canSignOut: true, t: ru })
+  assert.match(home, /<title>Доски<\/title>/)
+  assert.match(home, /5 мин назад/)
+  assert.match(home, /превью пока нет/)
+  assert.match(home, />Выйти</)
+  // The inline script gets the message as a JS string that cannot break out of the string or the tag.
+  assert.match(home, /alert\(body\.error \|\| '[^'<]*'\)/)
+  assert.match(renderHome({ staticBase: '/s', boards: [], templates: [], user: null, t: ru }), /Досок пока нет — создайте первую\./)
+})

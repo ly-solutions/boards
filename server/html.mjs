@@ -7,11 +7,18 @@
  * as soon as it loads.
  */
 import { readFileSync } from 'node:fs'
+import { translator } from '../shared/locales/index.mjs'
 
 export const escape = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch])
 
 /** JSON inside `<script>` must not be able to close the tag. */
 const safeJson = (value) => JSON.stringify(value).replace(/</g, '\\u003c')
+
+/** A message as a single-quoted JavaScript string inside an inline `<script>`: it can neither end the string nor the tag. */
+const jsString = (value) => `'${String(value).replace(/[\\'\n\r\u2028\u2029<]/g, (ch) => `\\u${ch.charCodeAt(0).toString(16).padStart(4, '0')}`)}'`
+
+/** English unless a translator is passed: BOARDS_LOCALE is wired in server/index.mjs. */
+const EN = translator('en')
 
 let manifestCache = null
 /**
@@ -64,8 +71,8 @@ const BASE_STYLE = `
 
 const brand = (staticBase, href = '/b/') => `<a class="brand" href="${escape(href)}"><img src="${staticBase}/logo-mark.svg" alt=""><span>boards<b>.</b></span></a>`
 
-export function renderBoardPage({ state, text, config, assets, staticBase }) {
-  const title = state.meta.title ?? 'Board'
+export function renderBoardPage({ state, text, config, assets, staticBase, t = EN }) {
+  const title = state.meta.title ?? t('pages.untitledBoard')
   const styles = assets.styles.map((file) => `<link rel="stylesheet" href="${staticBase}/${file}">`).join('\n')
   // The browser starts fetching the scene with the first bytes of the page instead of when the editor asks for it.
   // The URL must be exactly the one web/src/boot.ts requests, or it becomes a second download.
@@ -77,11 +84,11 @@ export function renderBoardPage({ state, text, config, assets, staticBase }) {
   ].join('\n')
   const script = assets.scripts.length
     ? assets.scripts.map((file) => `<script type="module" src="${staticBase}/${file}"></script>`).join('\n')
-    : '<p class="fallback">The editor is not built: run npm run build.</p>'
+    : `<p class="fallback">${t('pages.editorNotBuilt')}</p>`
   const markdownUrl = `/b/${state.slug}.md?k=${encodeURIComponent(state.meta.key)}`
 
   return `<!doctype html>
-<html lang="en">
+<html lang="${t.locale}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
@@ -89,7 +96,7 @@ export function renderBoardPage({ state, text, config, assets, staticBase }) {
 <meta name="referrer" content="no-referrer">
 <title>${escape(title)} · boards</title>
 <link rel="icon" href="${staticBase}/favicon.svg" type="image/svg+xml">
-<link rel="alternate" type="text/markdown" href="${escape(markdownUrl)}" title="This board as text">
+<link rel="alternate" type="text/markdown" href="${escape(markdownUrl)}" title="${escape(t('pages.boardAsTextTitle'))}">
 <link rel="alternate" type="application/json+oembed" href="${escape(`/b/api/oembed?url=${encodeURIComponent(config.boardUrl ?? '')}`)}" title="${escape(title)}">
 ${early}
 ${styles}
@@ -105,10 +112,10 @@ ${BASE_STYLE}
 </style>
 </head>
 <body>
-<main id="agent-view" aria-label="Board as text">
+<main id="agent-view" aria-label="${escape(t('pages.boardAsTextLabel'))}">
 ${brand(staticBase, config.homeUrl)}
-<p class="loading">Loading board "${escape(title)}"…</p>
-<pre>This page is an Excalidraw board. Its content as text is below; the full scene JSON is at ${escape(`/b/${state.slug}/scene.excalidraw?k=…`)}, the text alone at ${escape(markdownUrl)}.
+<p class="loading">${t('pages.loadingBoard', { title: escape(title) })}</p>
+<pre>${t('pages.agentIntro', { scene: escape(`/b/${state.slug}/scene.excalidraw?k=…`), markdown: escape(markdownUrl) })}
 
 ${escape(text)}</pre>
 </main>
@@ -169,15 +176,15 @@ export function embedHeaders({ publicUrl = 'http://localhost:8080' } = {}) {
  * The read-only embed view. Everything it needs is in the page: in an opaque-origin sandbox it can neither use
  * cookies nor call our API, so the scene is inlined. Asset URLs are absolute for the same reason.
  */
-export function renderEmbedPage({ state, text, scene, boardUrl, assets, staticUrl }) {
-  const title = state.meta.title ?? 'Board'
+export function renderEmbedPage({ state, text, scene, boardUrl, assets, staticUrl, t = EN }) {
+  const title = state.meta.title ?? t('pages.untitledBoard')
   const scripts = assets.scripts.map((file) => `<script type="module" crossorigin src="${staticUrl}/${file}"></script>`).join('\n')
   const styles = [
     ...assets.styles.map((file) => `<link rel="stylesheet" crossorigin href="${staticUrl}/${file}">`),
     ...(assets.modules ?? []).map((file) => `<link rel="modulepreload" crossorigin href="${staticUrl}/${file}">`),
   ].join('\n')
   return `<!doctype html>
-<html lang="en">
+<html lang="${t.locale}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -197,7 +204,7 @@ ${styles}
 <pre id="embed-text">${escape(text)}</pre>
 <div id="embed-root"></div>
 <script type="application/json" id="embed-data">${safeJson({ title, boardUrl, scene })}</script>
-${scripts || '<p>The viewer is not built: run npm run build.</p>'}
+${scripts || `<p>${t('pages.viewerNotBuilt')}</p>`}
 </body>
 </html>
 `
@@ -216,10 +223,10 @@ export function pageHeaders({ frameAncestors = "'self'" } = {}) {
 }
 
 /** "No such board" for people: the same 404 as a wrong key, but readable. */
-export function renderNotFound(staticBase, homeUrl = '/b/') {
+export function renderNotFound(staticBase, homeUrl = '/b/', t = EN) {
   return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex"><title>Board not found · boards</title>
+<html lang="${t.locale}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex"><title>${t('pages.notFoundTitle')} · boards</title>
 <link rel="icon" href="${staticBase}/favicon.svg" type="image/svg+xml">
 <style>${BASE_STYLE}
   body { min-height: 100vh; display: grid; place-items: center; }
@@ -228,17 +235,17 @@ export function renderNotFound(staticBase, homeUrl = '/b/') {
 </style></head>
 <body><main>
 ${brand(staticBase, homeUrl)}
-<h1>No such board</h1>
-<p>The link is mistyped, its key is outdated, or the board was deleted. See <a href="${escape(homeUrl)}">all boards</a>.</p>
+<h1>${t('pages.notFoundHeading')}</h1>
+<p>${t('pages.notFoundBody', { link: `<a href="${escape(homeUrl)}">${t('pages.allBoards')}</a>` })}</p>
 </main></body></html>
 `
 }
 
 /** Token-mode sign-in: paste an API token once, get a session. */
-export function renderTokenLogin({ staticBase, next, error = null }) {
+export function renderTokenLogin({ staticBase, next, error = null, t = EN }) {
   return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex"><title>Sign in · boards</title>
+<html lang="${t.locale}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex"><title>${t('pages.signInTitle')} · boards</title>
 <link rel="icon" href="${staticBase}/favicon.svg" type="image/svg+xml">
 <style>${BASE_STYLE}
   body { min-height: 100vh; display: grid; place-items: center; }
@@ -254,39 +261,39 @@ export function renderTokenLogin({ staticBase, next, error = null }) {
 ${brand(staticBase)}
 <form method="post" action="/b/auth/login">
   <input type="hidden" name="next" value="${escape(next)}">
-  <label>Your name <input name="name" autocomplete="name" required maxlength="60" placeholder="Ada Lovelace"></label>
-  <label>Access token <input name="token" type="password" autocomplete="current-password" required></label>
+  <label>${t('pages.yourName')} <input name="name" autocomplete="name" required maxlength="60" placeholder="${escape(t('pages.namePlaceholder'))}"></label>
+  <label>${t('pages.accessToken')} <input name="token" type="password" autocomplete="current-password" required></label>
   ${error ? `<p class="error">${escape(error)}</p>` : ''}
-  <button type="submit">Sign in</button>
-  <p class="hint">Ask whoever runs this instance for a token. Your name signs your edits.</p>
+  <button type="submit">${t('pages.signIn')}</button>
+  <p class="hint">${t('pages.signInHint')}</p>
 </form>
 </main></body></html>
 `
 }
 
-const relative = (iso) => {
-  const t = Date.parse(iso ?? '')
-  if (!Number.isFinite(t)) return ''
-  const minutes = Math.round((Date.now() - t) / 60000)
-  if (minutes < 1) return 'just now'
-  if (minutes < 60) return `${minutes} min ago`
-  if (minutes < 60 * 24) return `${Math.round(minutes / 60)} h ago`
-  return new Date(t).toISOString().slice(0, 10)
+const relative = (iso, t = EN) => {
+  const at = Date.parse(iso ?? '')
+  if (!Number.isFinite(at)) return ''
+  const minutes = Math.round((Date.now() - at) / 60000)
+  if (minutes < 1) return t('pages.justNow')
+  if (minutes < 60) return t('pages.minutesAgo', { count: minutes })
+  if (minutes < 60 * 24) return t('pages.hoursAgo', { count: Math.round(minutes / 60) })
+  return new Date(at).toISOString().slice(0, 10)
 }
 
 /** The boards list: every board with its thumbnail, plus "New board". */
-export function renderHome({ staticBase, boards, templates, user, canSignOut, q = '' }) {
+export function renderHome({ staticBase, boards, templates, user, canSignOut, q = '', t = EN }) {
   const cards = boards
     .map(
       (b) => `<a class="card" href="${escape(`/b/${b.slug}?k=${encodeURIComponent(b.key)}`)}">
-  <div class="thumb">${b.hasPreview ? `<img loading="lazy" alt="" src="${escape(`/b/${b.slug}/preview.svg?k=${encodeURIComponent(b.key)}`)}">` : '<span>no preview yet</span>'}</div>
-  <div class="meta"><strong>${escape(b.title)}</strong><span>${escape(relative(b.updatedAt))}${b.author ? ` · ${escape(b.author)}` : ''}</span>${(b.tags ?? []).length ? `<span class="tags">${b.tags.map((t) => `<i>${escape(t)}</i>`).join('')}</span>` : ''}</div>
+  <div class="thumb">${b.hasPreview ? `<img loading="lazy" alt="" src="${escape(`/b/${b.slug}/preview.svg?k=${encodeURIComponent(b.key)}`)}">` : `<span>${t('pages.noPreview')}</span>`}</div>
+  <div class="meta"><strong>${escape(b.title)}</strong><span>${escape(relative(b.updatedAt, t))}${b.author ? ` · ${escape(b.author)}` : ''}</span>${(b.tags ?? []).length ? `<span class="tags">${b.tags.map((t) => `<i>${escape(t)}</i>`).join('')}</span>` : ''}</div>
 </a>`,
     )
     .join('\n')
   return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex"><title>Boards</title>
+<html lang="${t.locale}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex"><title>${t('pages.boardsTitle')}</title>
 <link rel="icon" href="${staticBase}/favicon.svg" type="image/svg+xml">
 <style>${BASE_STYLE}
   header { display: flex; align-items: center; gap: 1rem; padding: 1rem clamp(1rem, 4vw, 2.5rem); border-bottom: 1px solid var(--line); }
@@ -309,18 +316,18 @@ export function renderHome({ staticBase, boards, templates, user, canSignOut, q 
   @media (prefers-color-scheme: dark) { .thumb { background: #f4f4f6; } }
 </style></head>
 <body>
-<header>${brand(staticBase)}<span class="spacer"></span>${user ? `<span class="who">${escape(user.name)}</span>${canSignOut ? '<a href="/b/auth/logout?next=/b/">Sign out</a>' : ''}` : ''}</header>
+<header>${brand(staticBase)}<span class="spacer"></span>${user ? `<span class="who">${escape(user.name)}</span>${canSignOut ? `<a href="/b/auth/logout?next=/b/">${t('pages.signOut')}</a>` : ''}` : ''}</header>
 <main>
 <div class="bar">
-  <h1>Boards</h1>
-  <form method="get" action="/b/"><input type="search" name="q" value="${escape(q)}" placeholder="Search boards" aria-label="Search boards"></form>
+  <h1>${t('pages.boardsTitle')}</h1>
+  <form method="get" action="/b/"><input type="search" name="q" value="${escape(q)}" placeholder="${escape(t('pages.searchBoards'))}" aria-label="${escape(t('pages.searchBoards'))}"></form>
   <form id="create">
-    <input name="title" required minlength="2" maxlength="120" placeholder="New board title" aria-label="New board title">
-    <select name="template" aria-label="Template"><option value="">Blank</option>${templates.map((t) => `<option value="${escape(t.id)}">${escape(t.title)}</option>`).join('')}</select>
-    <button class="primary" type="submit">New board</button>
+    <input name="title" required minlength="2" maxlength="120" placeholder="${escape(t('pages.newBoardTitle'))}" aria-label="${escape(t('pages.newBoardTitle'))}">
+    <select name="template" aria-label="${escape(t('pages.template'))}"><option value="">${t('pages.blank')}</option>${templates.map((t) => `<option value="${escape(t.id)}">${escape(t.title)}</option>`).join('')}</select>
+    <button class="primary" type="submit">${t('pages.newBoard')}</button>
   </form>
 </div>
-${boards.length ? `<div class="grid">${cards}</div>` : `<p class="empty">${q ? 'No boards match.' : 'No boards yet — create the first one.'}</p>`}
+${boards.length ? `<div class="grid">${cards}</div>` : `<p class="empty">${q ? t('pages.noMatches') : t('pages.noBoards')}</p>`}
 </main>
 <script>
 document.getElementById('create').addEventListener('submit', async (event) => {
@@ -329,7 +336,7 @@ document.getElementById('create').addEventListener('submit', async (event) => {
   const response = await fetch('/b/api/boards', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: form.get('title'), template: form.get('template') || undefined }) })
   const body = await response.json().catch(() => ({}))
   if (response.ok) location.href = body.url
-  else alert(body.error || 'Could not create the board')
+  else alert(body.error || ${jsString(t('pages.createFailed'))})
 })
 </script>
 </body></html>

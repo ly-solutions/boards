@@ -15,6 +15,7 @@ import { CaptureUpdateAction, convertToExcalidrawElements, newElementWith, resto
 import { CameraLayer, inWindow, useSceneVersion, useSceneWindow } from './camera'
 import type { StudioApi } from './studio'
 import { classify, fallbackLabel } from '../../shared/links.mjs'
+import { dateLocale, t } from './i18n'
 
 type Target = { kind: 'board' | 'link'; ref: string; url: string; slug?: string; host?: string }
 export type Meta = { kind: 'board'; slug: string; title: string; updatedAt: string | null }
@@ -94,7 +95,7 @@ const ago = (iso: string | null) => {
   const d = new Date(iso)
   if (Number.isNaN(d.valueOf())) return ''
   const days = Math.floor((Date.now() - d.valueOf()) / 86_400_000)
-  return days <= 0 ? 'updated today' : days === 1 ? 'updated yesterday' : `updated ${d.toLocaleDateString(undefined, { day: 'numeric', month: 'long' })}`
+  return days <= 0 ? t('editor.updatedToday') : days === 1 ? t('editor.updatedYesterday') : t('editor.updatedOn', { date: d.toLocaleDateString(dateLocale, { day: 'numeric', month: 'long' }) })
 }
 
 function Card({ target, meta, staticBase }: { target: Target; meta: Meta | null; staticBase: string }) {
@@ -102,7 +103,7 @@ function Card({ target, meta, staticBase }: { target: Target; meta: Meta | null;
   let title: string
   let foot: string | null = null
   if (meta?.kind === 'board') {
-    head = 'Board'
+    head = t('editor.cardBoard')
     title = meta.title
     foot = ago(meta.updatedAt)
   } else if (target.kind === 'link') {
@@ -111,7 +112,7 @@ function Card({ target, meta, staticBase }: { target: Target; meta: Meta | null;
     title = decodeURIComponent(new URL(target.url).pathname.replace(/\/$/, '').split('/').pop() || target.host || target.url).replace(/^\d+[-_]/, '').replace(/[-_]+/g, ' ')
   } else {
     // The server did not answer or the board is gone: the card stays a link.
-    head = 'Board'
+    head = t('editor.cardBoard')
     title = fallbackLabel(null, target)
   }
   return (
@@ -192,7 +193,7 @@ export function linkToBlock(api: StudioApi, hostId: string, url: string, boardOr
   const href = target?.url ?? url
   const next = api.getSceneElementsIncludingDeleted().map((el) => (el.id === hostId ? newElementWith(el as never, { link: href } as never) : el))
   api.updateScene({ elements: next, captureUpdate: CaptureUpdateAction.IMMEDIATELY })
-  api.setToast({ message: 'Link attached to the block', closable: true, duration: 3500 })
+  api.setToast({ message: t('editor.linkAttached'), closable: true, duration: 3500 })
 }
 
 /**
@@ -242,7 +243,7 @@ export async function addCard(api: StudioApi, base: string, q: string, url: stri
     meta = known.get(target.ref)?.meta ?? null
   }
   if (!meta) return true
-  const label = cut(fallbackLabel(meta, target) as string, LABEL_MAX)
+  const label = cut(fallbackLabel(meta, target, { boardWord: t('editor.cardBoard') }) as string, LABEL_MAX)
   const current = api.getSceneElementsIncludingDeleted()
   const renamed = current.map((el) => ((el as SceneEl).containerId === id && el.type === 'text' ? newElementWith(el as never, { text: label, originalText: label } as never) : el))
   api.updateScene({ elements: restoreElements(renamed as never, null, { refreshDimensions: true, repairBindings: true }) as never, captureUpdate: CaptureUpdateAction.NEVER })

@@ -18,6 +18,15 @@ import { CaptureUpdateAction, convertToExcalidrawElements, exportToSvg, newEleme
 import { INK, STICKY_COLORS, STYLE, TONES, VARIANTS, paint, stickyStroke } from '../../shared/palette.mjs'
 import { sticky as stickySkeleton } from '../../shared/templates.mjs'
 import { analyzeSlop } from '../../shared/slop.mjs'
+import { locale, t } from './i18n'
+
+/** `prefix` + capitalised id: the catalog key for a palette or template name, e.g. `studio.toneBlue`. */
+const nameKey = (prefix: string, id: string) => `studio.${prefix}${id.charAt(0).toUpperCase()}${id.slice(1)}`
+/** A translated name for a palette entry or template; unknown ids (added elsewhere) keep their own name. */
+const nameOf = (prefix: string, id: string, fallback: string) => {
+  const key = nameKey(prefix, id)
+  return t.has(key) ? t(key) : fallback
+}
 
 type El = {
   id: string
@@ -198,17 +207,17 @@ export function ToolbarTools({ tool, onTool, panel, setPanel, stickyColor }: Omi
   return (
     <>
       <div className="App-toolbar__divider" />
-      <ToolButton label="Sticky" title="Sticky — select, then click the board" checked={tool === 'sticky'} onClick={() => onTool(tool === 'sticky' ? null : 'sticky')}>
+      <ToolButton label={t('studio.sticky')} title={t('studio.stickyToolTitle')} checked={tool === 'sticky'} onClick={() => onTool(tool === 'sticky' ? null : 'sticky')}>
         <StickyIcon color={stickyColor} />
       </ToolButton>
-      <ToolButton label="Comment" title="Comment — select, then click where to place it" checked={tool === 'comment'} onClick={() => onTool(tool === 'comment' ? null : 'comment')}>
+      <ToolButton label={t('studio.comment')} title={t('studio.commentToolTitle')} checked={tool === 'comment'} onClick={() => onTool(tool === 'comment' ? null : 'comment')}>
         <Icon d={ICONS.comment} />
       </ToolButton>
       <div className="App-toolbar__divider" />
-      <ToolButton label="Templates" title="Board templates" checked={panel === 'templates'} onClick={() => toggle('templates')}>
+      <ToolButton label={t('studio.templates')} title={t('studio.templatesTitle')} checked={panel === 'templates'} onClick={() => toggle('templates')}>
         <Icon d={ICONS.templates} />
       </ToolButton>
-      <ToolButton label="Palette" title="Palette" checked={panel === 'palette'} onClick={() => toggle('palette')}>
+      <ToolButton label={t('studio.palette')} title={t('studio.palette')} checked={panel === 'palette'} onClick={() => toggle('palette')}>
         <Icon d={ICONS.palette} />
       </ToolButton>
     </>
@@ -250,7 +259,7 @@ export function BarMenu({ items }: { items: BarMenuItem[] }) {
   }, [open])
   return (
     <>
-      <button type="button" className={`bar-btn bar-btn--more${open ? ' is-on' : ''}`} onClick={() => setOpen(!open)} title="More: timer, checkpoints, check, library" aria-label="More" aria-haspopup="menu" aria-expanded={open}>
+      <button type="button" className={`bar-btn bar-btn--more${open ? ' is-on' : ''}`} onClick={() => setOpen(!open)} title={t('studio.moreTitle')} aria-label={t('studio.more')} aria-haspopup="menu" aria-expanded={open}>
         <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden>
           <circle cx="5.5" cy="12" r="1.7" />
           <circle cx="12" cy="12" r="1.7" />
@@ -308,27 +317,27 @@ function StickyIcon({ color }: { color: string }) {
 export function Dock({ tool, onTool, panel, setPanel, stickyColor, workboard, children }: ToolsProps) {
   const toggle = (id: string) => setPanel(panel === id ? null : id)
   return (
-    <div className="studio-dock" role="toolbar" aria-label="Board tools">
-      <button type="button" className={`studio-dock__btn${tool === 'sticky' ? ' is-on' : ''}`} onClick={() => onTool(tool === 'sticky' ? null : 'sticky')} title="Sticky — select, then tap the board">
+    <div className="studio-dock" role="toolbar" aria-label={t('studio.boardTools')}>
+      <button type="button" className={`studio-dock__btn${tool === 'sticky' ? ' is-on' : ''}`} onClick={() => onTool(tool === 'sticky' ? null : 'sticky')} title={t('studio.stickyDockTitle')}>
         <span className="studio-dock__swatch" style={{ background: stickyColor }} />
-        <span className="studio-dock__label">Sticky</span>
+        <span className="studio-dock__label">{t('studio.sticky')}</span>
       </button>
-      <button type="button" className={`studio-dock__btn${panel === 'palette' ? ' is-on' : ''}`} onClick={() => toggle('palette')} title="Palette">
+      <button type="button" className={`studio-dock__btn${panel === 'palette' ? ' is-on' : ''}`} onClick={() => toggle('palette')} title={t('studio.palette')}>
         <Icon d={ICONS.palette} />
-        <span className="studio-dock__label">Palette</span>
+        <span className="studio-dock__label">{t('studio.palette')}</span>
       </button>
-      <button type="button" className={`studio-dock__btn${panel === 'templates' ? ' is-on' : ''}`} onClick={() => toggle('templates')} title="Board templates">
+      <button type="button" className={`studio-dock__btn${panel === 'templates' ? ' is-on' : ''}`} onClick={() => toggle('templates')} title={t('studio.templatesTitle')}>
         <Icon d={ICONS.templates} />
-        <span className="studio-dock__label">Templates</span>
+        <span className="studio-dock__label">{t('studio.templates')}</span>
       </button>
-      <button type="button" className={`studio-dock__btn${tool === 'comment' ? ' is-on' : ''}`} onClick={() => onTool(tool === 'comment' ? null : 'comment')} title="Comment — select, then tap the board">
+      <button type="button" className={`studio-dock__btn${tool === 'comment' ? ' is-on' : ''}`} onClick={() => onTool(tool === 'comment' ? null : 'comment')} title={t('studio.commentDockTitle')}>
         <Icon d={ICONS.comment} />
-        <span className="studio-dock__label">Comment</span>
+        <span className="studio-dock__label">{t('studio.comment')}</span>
       </button>
       {workboard && (
-        <button type="button" className={`studio-dock__btn${panel === 'checkpoints' ? ' is-on' : ''}`} onClick={() => toggle('checkpoints')} title="Checkpoints — what changed and board history">
+        <button type="button" className={`studio-dock__btn${panel === 'checkpoints' ? ' is-on' : ''}`} onClick={() => toggle('checkpoints')} title={t('studio.checkpointsTitle')}>
           <Icon d={ICONS.checkpoints} />
-          <span className="studio-dock__label">Checkpoints</span>
+          <span className="studio-dock__label">{t('studio.checkpoints')}</span>
         </button>
       )}
       {children && <span className="studio-dock__sep" />}
@@ -341,7 +350,7 @@ export function Dock({ tool, onTool, panel, setPanel, stickyColor, workboard, ch
 
 /** Paint the selection in a tone; each element type uses the tone in its own role. */
 export function applyTone(api: StudioApi, toneId: string, variant: string) {
-  const tone = TONES.find((t) => t.id === toneId)!
+  const tone = TONES.find((item) => item.id === toneId)!
   const p = paint(tone, variant)
   const selected = api.getAppState().selectedElementIds as Record<string, boolean>
   const all = api.getSceneElementsIncludingDeleted()
@@ -349,7 +358,8 @@ export function applyTone(api: StudioApi, toneId: string, variant: string) {
   if (!ids.size) {
     // Nothing selected: the palette sets the colour of the next shapes.
     api.updateScene({ appState: { currentItemStrokeColor: p.strokeColor, currentItemBackgroundColor: p.backgroundColor, currentItemFillStyle: 'solid' }, captureUpdate: CaptureUpdateAction.NEVER })
-    api.setToast({ message: `Next shapes: ${tone.name}, ${VARIANTS.find((v) => v.id === variant)?.name.toLowerCase()}`, duration: 2500 })
+    const variantInfo = VARIANTS.find((v) => v.id === variant)
+    api.setToast({ message: t('studio.nextShapes', { tone: nameOf('tone', tone.id, tone.name), variant: variantInfo ? nameOf('variant', variantInfo.id, variantInfo.name).toLowerCase() : '' }), duration: 2500 })
     return
   }
   const labelColor = new Map<string, string>()
@@ -386,16 +396,16 @@ export function paintStickies(api: StudioApi, fill: string) {
 
 export function PalettePanel({ api, onClose, stickyColor, setStickyColor }: { api: StudioApi; onClose: () => void; stickyColor: string; setStickyColor: (c: string) => void }) {
   return (
-    <div className="studio-panel studio-panel--palette" role="dialog" aria-label="Palette">
+    <div className="studio-panel studio-panel--palette" role="dialog" aria-label={t('studio.palette')}>
       <div className="studio-panel__head">
-        <strong>Palette</strong>
-        <span>Select shapes and pick a tone. With nothing selected it sets the colour of the next shapes.</span>
-        <button type="button" className="studio-panel__close" onClick={onClose} aria-label="Close">×</button>
+        <strong>{t('studio.palette')}</strong>
+        <span>{t('studio.paletteHint')}</span>
+        <button type="button" className="studio-panel__close" onClick={onClose} aria-label={t('studio.close')}>×</button>
       </div>
       <div className="studio-palette">
         {VARIANTS.map((variant) => (
           <div className="studio-palette__row" key={variant.id}>
-            <span className="studio-palette__label">{variant.name}</span>
+            <span className="studio-palette__label">{nameOf('variant', variant.id, variant.name)}</span>
             {TONES.map((tone) => {
               const p = paint(tone, variant.id)
               return (
@@ -403,24 +413,24 @@ export function PalettePanel({ api, onClose, stickyColor, setStickyColor }: { ap
                   type="button"
                   key={tone.id}
                   className="studio-swatch"
-                  title={`${tone.name} — ${variant.name.toLowerCase()}`}
+                  title={t('studio.swatchTitle', { tone: nameOf('tone', tone.id, tone.name), variant: nameOf('variant', variant.id, variant.name).toLowerCase() })}
                   style={{ background: p.backgroundColor, borderColor: p.strokeColor, color: p.text }}
                   onClick={() => applyTone(api, tone.id, variant.id)}
                 >
-                  Aa
+                  {t('studio.toneSample')}
                 </button>
               )
             })}
           </div>
         ))}
         <div className="studio-palette__row">
-          <span className="studio-palette__label">Stickies</span>
+          <span className="studio-palette__label">{t('studio.stickies')}</span>
           {STICKY_COLORS.map((c) => (
             <button
               type="button"
               key={c.id}
               className={`studio-swatch studio-swatch--sticky${stickyColor === c.fill ? ' is-on' : ''}`}
-              title={c.name}
+              title={nameOf('sticky', c.id, c.name)}
               style={{ background: c.fill }}
               onClick={() => {
                 setStickyColor(c.fill)
@@ -528,7 +538,7 @@ export const StickyOverlay = memo(function StickyOverlay({ api, me, reactions, v
         const shown = reactions.filter((e) => (mineVotes[e]?.length ?? 0) > 0)
         return (
           <div key={v.id} className="studio-sticky" style={{ left: v.x, top: v.y, width: v.width, height: v.height }}>
-            {v.author && !v.authorCovered && <span className="studio-sticky__author" title={`Author: ${v.author}`}>{v.author.replace(/^guest:\s*/, '')}</span>}
+            {v.author && !v.authorCovered && <span className="studio-sticky__author" title={t('studio.author', { name: v.author })}>{v.author.replace(/^guest:\s*/, '')}</span>}
             {/* Reactions go below the sticky, as in FigJam: on the sticky they covered the text. */}
             <span className="studio-sticky__reactions" style={v.reactionsCovered ? { display: 'none' } : undefined}>
               {shown.map((emoji) => {
@@ -542,7 +552,7 @@ export const StickyOverlay = memo(function StickyOverlay({ api, me, reactions, v
               })}
               {canReact && (
                 <span className="studio-reaction-add">
-                  <button type="button" className="studio-reaction studio-reaction--add" title="React" onClick={() => setOpen(open === v.id ? null : v.id)}>
+                  <button type="button" className="studio-reaction studio-reaction--add" title={t('studio.react')} onClick={() => setOpen(open === v.id ? null : v.id)}>
                     +
                   </button>
                   {open === v.id && (
@@ -621,7 +631,7 @@ function TemplatePreview({ id, staticBase }: { id: string; staticBase: string })
     }
   }, [id, staticBase])
   if (svg === null) return <span className="studio-template__loading">…</span>
-  if (!svg) return <span className="studio-template__blank">blank</span>
+  if (!svg) return <span className="studio-template__blank">{t('studio.templateBlank')}</span>
   return <span className="studio-template__svg" dangerouslySetInnerHTML={{ __html: svg }} />
 }
 
@@ -631,7 +641,7 @@ export function TemplatesPanel({ api, onClose, staticBase }: { api: StudioApi; o
   useEffect(() => {
     fetch('/b/api/templates')
       .then((r) => r.json())
-      .then((body) => setList((body.templates ?? []).filter((t: TemplateInfo) => t.id !== 'blank')))
+      .then((body) => setList((body.templates ?? []).filter((tpl: TemplateInfo) => tpl.id !== 'blank')))
       .catch(() => setList([]))
   }, [])
   const insert = async (id: string) => {
@@ -654,20 +664,20 @@ export function TemplatesPanel({ api, onClose, staticBase }: { api: StudioApi; o
     }
   }
   return (
-    <div className="studio-panel studio-panel--templates" role="dialog" aria-label="Templates">
+    <div className="studio-panel studio-panel--templates" role="dialog" aria-label={t('studio.templates')}>
       <div className="studio-panel__head">
-        <strong>Templates</strong>
-        <span>Inserted next to what is already on the board. Individual components are in the library on the right.</span>
-        <button type="button" className="studio-panel__close" onClick={onClose} aria-label="Close">×</button>
+        <strong>{t('studio.templates')}</strong>
+        <span>{t('studio.templatesHint')}</span>
+        <button type="button" className="studio-panel__close" onClick={onClose} aria-label={t('studio.close')}>×</button>
       </div>
       <div className="studio-templates">
-        {list.map((t) => (
-          <button type="button" key={t.id} className="studio-template" onClick={() => insert(t.id)} disabled={busy !== null}>
+        {list.map((tpl) => (
+          <button type="button" key={tpl.id} className="studio-template" onClick={() => insert(tpl.id)} disabled={busy !== null}>
             <span className="studio-template__preview">
-              <TemplatePreview id={t.id} staticBase={staticBase} />
+              <TemplatePreview id={tpl.id} staticBase={staticBase} />
             </span>
-            <span className="studio-template__title">{busy === t.id ? 'Inserting…' : t.title}</span>
-            <span className="studio-template__desc">{t.description}</span>
+            <span className="studio-template__title">{busy === tpl.id ? t('studio.inserting') : nameOf('template', `${tpl.id}Title`, tpl.title)}</span>
+            <span className="studio-template__desc">{nameOf('template', `${tpl.id}Description`, tpl.description)}</span>
           </button>
         ))}
       </div>
@@ -688,7 +698,7 @@ export async function loadLibrary(api: StudioApi) {
 // ── Slop check ──────────────────────────────────────────────────────────────
 
 type Slop = ReturnType<typeof analyzeSlop>
-const SLOP_TEXT = { clean: 'Clean', warn: 'Some signs', slop: 'AI slop' } as const
+const SLOP_TEXT = { clean: 'studio.slopClean', warn: 'studio.slopWarn', slop: 'studio.slopSlop' } as const
 
 /**
  * One check worker per page. If the browser won't create it, run on the main
@@ -709,11 +719,11 @@ function checkSlop(elements: readonly El[]): Promise<Slop | null> {
       slopWorker = null
     }
   }
-  if (!slopWorker) return Promise.resolve(analyzeSlop(elements as never))
+  if (!slopWorker) return Promise.resolve(analyzeSlop(elements as never, { locale }))
   const id = ++slopSeq
   return new Promise((resolve) => {
     slopWaiters.set(id, resolve)
-    slopWorker!.postMessage({ id, elements })
+    slopWorker!.postMessage({ id, elements, locale })
   })
 }
 
@@ -759,23 +769,23 @@ export function SlopBadge({ api, placement = 'bottom', quiet, open: openProp, on
   return (
     <span className="studio-slop-wrap">
       {!quiet && (
-        <button type="button" className={`${placement === 'bar' ? 'bar-btn bar-btn--wide' : 'studio-slop'} studio-slop--${result.level}${open ? ' is-on' : ''}`} onClick={() => setOpen(!open)} title="Slop check: how much the board looks like generated eye candy">
+        <button type="button" className={`${placement === 'bar' ? 'bar-btn bar-btn--wide' : 'studio-slop'} studio-slop--${result.level}${open ? ' is-on' : ''}`} onClick={() => setOpen(!open)} title={t('studio.slopButtonTitle')}>
           <span className="studio-slop__dot" />
-          <span className="studio-dock__label">{SLOP_TEXT[result.level as keyof typeof SLOP_TEXT]} · </span>
+          <span className="studio-dock__label">{t(SLOP_TEXT[result.level as keyof typeof SLOP_TEXT])} · </span>
           {result.score}
         </button>
       )}
       {/* Portal into body: Excalidraw's top-right corner clips anything wider than itself. */}
       {open && createPortal(
-        <div className={`studio-panel studio-panel--slop studio-panel--${placement}`} role="dialog" aria-label="Slop check">
+        <div className={`studio-panel studio-panel--slop studio-panel--${placement}`} role="dialog" aria-label={t('studio.slopCheck')}>
           <div className="studio-panel__head">
-            <strong>Slop check — {result.score}/100</strong>
+            <strong>{t('studio.slopHeading', { score: result.score })}</strong>
             <span>
               {result.level === 'clean'
-                ? 'The board looks made by a person: one hand, few bright colours, no decoration.'
-                : 'Click a sign to select the elements causing it.'}
+                ? t('studio.slopCleanHint')
+                : t('studio.slopIssuesHint')}
             </span>
-            <button type="button" className="studio-panel__close" onClick={() => setOpen(false)} aria-label="Close">×</button>
+            <button type="button" className="studio-panel__close" onClick={() => setOpen(false)} aria-label={t('studio.close')}>×</button>
           </div>
           <ul className="studio-slop__list">
             {result.issues.map((issue) => (
@@ -786,7 +796,7 @@ export function SlopBadge({ api, placement = 'bottom', quiet, open: openProp, on
                 </button>
               </li>
             ))}
-            {!result.issues.length && <li className="studio-slop__empty">No issues.</li>}
+            {!result.issues.length && <li className="studio-slop__empty">{t('studio.slopNoIssues')}</li>}
           </ul>
         </div>,
         document.body,
@@ -804,46 +814,46 @@ export function PropertiesDialog({ meta, canEdit, onSave, onClose }: { meta: Boa
   const [tags, setTags] = useState(meta.tags.join(', '))
   const [task, setTask] = useState(meta.task ?? '')
   const [error, setError] = useState<string | null>(null)
-  const parsed = useMemo(() => tags.split(',').map((t) => t.trim()).filter(Boolean), [tags])
+  const parsed = useMemo(() => tags.split(',').map((tag) => tag.trim()).filter(Boolean), [tags])
   const save = async () => {
     const ref = task.trim()
-    if (ref.length > 64) return setError('Reference must be at most 64 characters')
+    if (ref.length > 64) return setError(t('studio.referenceTooLong'))
     if (await onSave({ description: description.trim(), tags: parsed, task: ref || null })) onClose()
   }
   return (
     <div className="board-dialog__backdrop" onClick={onClose}>
-      <div className="board-dialog" role="dialog" aria-label="Board properties" onClick={(e) => e.stopPropagation()}>
+      <div className="board-dialog" role="dialog" aria-label={t('studio.properties')} onClick={(e) => e.stopPropagation()}>
         <div className="board-dialog__head">
-          <h2>Board properties</h2>
-          <button type="button" className="board-dialog__close" onClick={onClose} aria-label="Close">×</button>
+          <h2>{t('studio.properties')}</h2>
+          <button type="button" className="board-dialog__close" onClick={onClose} aria-label={t('studio.close')}>×</button>
         </div>
         <fieldset className="studio-form" disabled={!canEdit}>
           <label>
-            <span>Description</span>
-            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} maxLength={500} placeholder="A sentence or two: what is on the board and why" />
+            <span>{t('studio.description')}</span>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} maxLength={500} placeholder={t('studio.descriptionPlaceholder')} />
           </label>
           <label>
-            <span>Tags — comma-separated</span>
-            <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="Architecture, Flow" />
+            <span>{t('studio.tags')}</span>
+            <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder={t('studio.tagsPlaceholder')} />
           </label>
           {parsed.length > 0 && (
             <span className="studio-tags">
-              {parsed.slice(0, 10).map((t) => (
-                <span key={t} className="studio-tag">{t}</span>
+              {parsed.slice(0, 10).map((tag) => (
+                <span key={tag} className="studio-tag">{tag}</span>
               ))}
             </span>
           )}
           <label>
-            <span>Reference — an issue key or URL</span>
-            <input value={task} onChange={(e) => setTask(e.target.value)} maxLength={64} placeholder="PROJ-123 or https://…" />
+            <span>{t('studio.reference')}</span>
+            <input value={task} onChange={(e) => setTask(e.target.value)} maxLength={64} placeholder={t('studio.referencePlaceholder')} />
           </label>
           {error && <p className="studio-form__error">{error}</p>}
         </fieldset>
         <div className="board-dialog__foot">
           {canEdit ? (
-            <button type="button" className="board-button" onClick={save}>Save</button>
+            <button type="button" className="board-button" onClick={save}>{t('studio.save')}</button>
           ) : (
-            <span>Only signed-in team members can change properties.</span>
+            <span>{t('studio.propertiesReadOnly')}</span>
           )}
         </div>
       </div>

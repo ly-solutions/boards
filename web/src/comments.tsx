@@ -48,6 +48,7 @@ import {
   type Thread,
 } from './comments-model'
 import './comments.css'
+import { t, dateLocale } from './i18n'
 
 export type { Draft, Message, Thread } from './comments-model'
 export { pinColor } from './comments-model'
@@ -159,7 +160,7 @@ const ICON = {
 /** Opens the comments panel; the badge counts open threads. Same look as every island button. */
 export function CommentsButton({ count, open, onClick }: { count: number; open: boolean; onClick(): void }) {
   return (
-    <BarButton label={count ? `Comments — ${count} open` : 'Comments'} on={open} onClick={onClick}>
+    <BarButton label={count ? t('comments.buttonOpen', { count }) : t('comments.title')} on={open} onClick={onClick}>
       <Glyph d={ICON.comment} size={18} />
       {count > 0 && <span className="note-count">{count > 99 ? '99+' : count}</span>}
     </BarButton>
@@ -178,8 +179,8 @@ function Who({ message }: { message: Pick<Message, 'author' | 'authorKind'> }) {
   return (
     <>
       <span className="note-who">{displayName(message.author)}</span>
-      {message.authorKind === 'agent' && <span className="note-badge">agent</span>}
-      {isGuest(message.author) && <span className="note-badge note-badge--quiet">guest</span>}
+      {message.authorKind === 'agent' && <span className="note-badge">{t('comments.badgeAgent')}</span>}
+      {isGuest(message.author) && <span className="note-badge note-badge--quiet">{t('comments.badgeGuest')}</span>}
     </>
   )
 }
@@ -245,7 +246,7 @@ function TextBox({ value, onChange, onSend, onEscape, placeholder, autoFocus, bu
           }
         }}
       />
-      <button type="button" className="note-send" disabled={!value.trim() || busy} onClick={send} aria-label="Send" title="Send (Enter)">
+      <button type="button" className="note-send" disabled={!value.trim() || busy} onClick={send} aria-label={t('comments.send')} title={t('comments.sendHint')}>
         <Glyph d={ICON.send} />
       </button>
     </div>
@@ -285,7 +286,7 @@ const Pin = memo(function Pin({ id, x, y, author, text, replies, unseen, active,
         className={`note-pin${active ? ' is-active' : ''}${resolved ? ' is-resolved' : ''}${shift ? ' is-dragging' : ''}`}
         style={{ background: pinColor(author), transform: shift ? `translate(${shift.dx}px, ${shift.dy}px)` : undefined }}
         title={`${displayName(author)}: ${excerpt(text, 100)}`}
-        aria-label={`Comment by ${displayName(author)}${replies ? `, ${replies} ${replies === 1 ? 'reply' : 'replies'}` : ''}${unseen ? ', new' : ''}`}
+        aria-label={`${t('comments.pinLabel', { name: displayName(author) })}${replies ? t('comments.pinReplies', { count: replies }) : ''}${unseen ? t('comments.pinNew') : ''}`}
         aria-expanded={active}
         onPointerDown={(e) => {
           swallowClick.current = false
@@ -363,7 +364,7 @@ function CardSpot({ at, children }: { at: Point; children: ReactNode }) {
   const { dx, dy } = cardOffset(toScreen(at.x, at.y, view), size, view)
   return (
     <div className="camera-fixed" style={{ left: at.x, top: at.y }}>
-      <div ref={ref} className="note-card" style={{ left: dx, top: dy }} role="dialog" aria-label="Comment thread">
+      <div ref={ref} className="note-card" style={{ left: dx, top: dy }} role="dialog" aria-label={t('comments.thread')}>
         {children}
       </div>
     </div>
@@ -534,9 +535,9 @@ function ThreadBody({ api, thread, me, isTeam, canComment, memory, onUpdate, onC
   return (
     <>
       <div className="note-card__head">
-        <span className="note-card__place">{placeName(sceneOf(api), thread.elementId)}</span>
-        {thread.resolved && <span className="note-badge note-badge--done">Resolved</span>}
-        <button type="button" className="icon-button" onClick={onClose} aria-label="Close" title="Close">
+        <span className="note-card__place">{placeName(sceneOf(api), thread.elementId, t)}</span>
+        {thread.resolved && <span className="note-badge note-badge--done">{t('comments.resolvedBadge')}</span>}
+        <button type="button" className="icon-button" onClick={onClose} aria-label={t('comments.close')} title={t('comments.close')}>
           <Glyph d={ICON.close} />
         </button>
       </div>
@@ -550,12 +551,12 @@ function ThreadBody({ api, thread, me, isTeam, canComment, memory, onUpdate, onC
               <div className="note-msg__body">
                 <div className="note-msg__meta">
                   <Who message={m} />
-                  <time className="note-msg__time" dateTime={m.at} title={fullTime(m.at)}>
-                    {relativeTime(m.at, now)}
+                  <time className="note-msg__time" dateTime={m.at} title={fullTime(m.at, dateLocale)}>
+                    {relativeTime(m.at, now, t, dateLocale)}
                   </time>
                   {canComment && (
                     <span className="note-msg__actions">
-                      <button type="button" className="icon-button" onClick={() => setReplyTo(m.id)} aria-label={`Reply to ${displayName(m.author)}`} title="Reply">
+                      <button type="button" className="icon-button" onClick={() => setReplyTo(m.id)} aria-label={t('comments.replyTo', { name: displayName(m.author) })} title={t('comments.reply')}>
                         <Glyph d={ICON.reply} size={14} />
                       </button>
                       {deletable && (
@@ -564,10 +565,10 @@ function ThreadBody({ api, thread, me, isTeam, canComment, memory, onUpdate, onC
                           className={`icon-button note-delete${armed === m.id ? ' is-armed' : ''}`}
                           onClick={() => void remove(m, i)}
                           onBlur={() => armed === m.id && setArmed(null)}
-                          aria-label={armed === m.id ? 'Confirm delete' : i === 0 ? 'Delete thread' : 'Delete message'}
-                          title={i === 0 ? 'Delete thread' : 'Delete message'}
+                          aria-label={armed === m.id ? t('comments.confirmDelete') : i === 0 ? t('comments.deleteThread') : t('comments.deleteMessage')}
+                          title={i === 0 ? t('comments.deleteThread') : t('comments.deleteMessage')}
                         >
-                          {armed === m.id ? 'Delete?' : <Glyph d={ICON.trash} size={14} />}
+                          {armed === m.id ? t('comments.deleteAsk') : <Glyph d={ICON.trash} size={14} />}
                         </button>
                       )}
                     </span>
@@ -575,11 +576,11 @@ function ThreadBody({ api, thread, me, isTeam, canComment, memory, onUpdate, onC
                 </div>
                 {m.replyTo &&
                   (original ? (
-                    <button type="button" className="note-quote" onClick={() => jumpTo(original.id)} title="Show the original message">
+                    <button type="button" className="note-quote" onClick={() => jumpTo(original.id)} title={t('comments.showOriginal')}>
                       <b>{displayName(original.author)}</b> {excerpt(original.text, 80)}
                     </button>
                   ) : (
-                    <span className="note-quote note-quote--gone">Reply to a deleted message</span>
+                    <span className="note-quote note-quote--gone">{t('comments.replyToDeleted')}</span>
                   ))}
                 <div className="note-msg__text">{m.text}</div>
               </div>
@@ -587,20 +588,20 @@ function ThreadBody({ api, thread, me, isTeam, canComment, memory, onUpdate, onC
           )
         })}
       </div>
-      {thread.resolved && thread.resolvedBy && <div className="note-card__note">Resolved by {displayName(thread.resolvedBy)}</div>}
+      {thread.resolved && thread.resolvedBy && <div className="note-card__note">{t('comments.resolvedBy', { name: displayName(thread.resolvedBy) })}</div>}
       {canComment && (
         <div className="note-card__foot">
           {target && (
             <div className="note-replying">
               <span>
-                Replying to <b>{displayName(target.author)}</b>: {excerpt(target.text, 60)}
+                {t('comments.replyingTo')} <b>{displayName(target.author)}</b>: {excerpt(target.text, 60)}
               </span>
-              <button type="button" className="icon-button" onClick={() => setReplyTo(undefined)} aria-label="Do not reply to this message" title="Cancel reply">
+              <button type="button" className="icon-button" onClick={() => setReplyTo(undefined)} aria-label={t('comments.dontReply')} title={t('comments.cancelReply')}>
                 <Glyph d={ICON.close} size={14} />
               </button>
             </div>
           )}
-          <TextBox value={text} onChange={setText} onSend={send} onEscape={onClose} placeholder="Reply" label="Reply" busy={busy} autoFocus={Boolean(target)} />
+          <TextBox value={text} onChange={setText} onSend={send} onEscape={onClose} placeholder={t('comments.reply')} label={t('comments.reply')} busy={busy} autoFocus={Boolean(target)} />
         </div>
       )}
     </>
@@ -610,7 +611,7 @@ function ThreadBody({ api, thread, me, isTeam, canComment, memory, onUpdate, onC
 /** On phones the card is a bottom sheet outside the camera layer. */
 function Sheet({ children }: { children: ReactNode }) {
   return createPortal(
-    <div className="note-card note-card--sheet" role="dialog" aria-label="Comment thread">
+    <div className="note-card note-card--sheet" role="dialog" aria-label={t('comments.thread')}>
       {children}
     </div>,
     document.body,
@@ -628,12 +629,12 @@ function Composer({ api, draft, memory, onSend, onCancel }: { api: StudioApi; dr
     else memory.delete(NEW)
   }
   return (
-    <div className="note-composer" role="dialog" aria-label="New comment">
+    <div className="note-composer" role="dialog" aria-label={t('comments.newComment')}>
       <div className="note-composer__head">
         <span>
-          New comment · <span className="note-composer__place">{placeName(sceneOf(api), draft.elementId)}</span>
+          {t('comments.newComment')} · <span className="note-composer__place">{placeName(sceneOf(api), draft.elementId, t)}</span>
         </span>
-        <button type="button" className="icon-button" onClick={onCancel} aria-label="Cancel" title="Cancel (Esc)">
+        <button type="button" className="icon-button" onClick={onCancel} aria-label={t('comments.cancel')} title={t('comments.cancelHint')}>
           <Glyph d={ICON.close} />
         </button>
       </div>
@@ -641,8 +642,8 @@ function Composer({ api, draft, memory, onSend, onCancel }: { api: StudioApi; dr
         value={text}
         onChange={change}
         onEscape={onCancel}
-        placeholder="Add a comment"
-        label="Comment"
+        placeholder={t('comments.addComment')}
+        label={t('comments.comment')}
         busy={busy}
         autoFocus
         onSend={async (value) => {
@@ -693,13 +694,13 @@ function Row({ thread, active, unseen, now, canComment, onPick, onUpdate }: { th
       <div className="note-row__body">
         <div className="note-row__meta">
           <span className="note-who">{displayName(author)}</span>
-          <time dateTime={last?.at ?? thread.createdAt} title={fullTime(last?.at ?? thread.createdAt)}>
-            {relativeTime(last?.at ?? thread.createdAt, now)}
+          <time dateTime={last?.at ?? thread.createdAt} title={fullTime(last?.at ?? thread.createdAt, dateLocale)}>
+            {relativeTime(last?.at ?? thread.createdAt, now, t, dateLocale)}
           </time>
-          {unseen && <span className="note-dot" aria-label="new" />}
+          {unseen && <span className="note-dot" aria-label={t('comments.new')} />}
         </div>
         <div className="note-row__text">{excerpt(first?.text ?? '', 140)}</div>
-        {replies > 0 && <div className="note-row__replies">{replies === 1 ? '1 reply' : `${replies} replies`}</div>}
+        {replies > 0 && <div className="note-row__replies">{t('comments.replies', { count: replies })}</div>}
       </div>
       {canComment && (
         <button
@@ -709,9 +710,9 @@ function Row({ thread, active, unseen, now, canComment, onPick, onUpdate }: { th
             e.stopPropagation()
             void onUpdate(thread.id, { resolved: !thread.resolved })
           }}
-          title={thread.resolved ? 'Reopen the thread' : 'Mark as resolved'}
+          title={thread.resolved ? t('comments.reopenHint') : t('comments.resolveHint')}
         >
-          {thread.resolved ? 'Reopen' : 'Resolve'}
+          {thread.resolved ? t('comments.reopen') : t('comments.resolve')}
         </button>
       )}
     </div>
@@ -724,20 +725,20 @@ function Panel({ threads, openId, seen, me, canComment, hidden, setHidden, onPic
   const { open, resolved } = useMemo(() => sortThreads(threads), [threads])
   const row = (t: Thread) => <Row key={t.id} thread={t} active={t.id === openId} unseen={isUnseen(t, seen, me)} now={now} canComment={canComment} onPick={onPick} onUpdate={onUpdate} />
   return (
-    <aside className="note-panel" aria-label="Comments">
+    <aside className="note-panel" aria-label={t('comments.title')}>
       <div className="note-panel__head">
-        <strong>Comments</strong>
+        <strong>{t('comments.title')}</strong>
         {open.length > 0 && <span className="note-panel__count">{open.length}</span>}
         <span className="note-panel__tools">
           {canComment && (
-            <button type="button" className="icon-button" onClick={onStartComment} aria-label="New comment" title="New comment — then click the board">
+            <button type="button" className="icon-button" onClick={onStartComment} aria-label={t('comments.newComment')} title={t('comments.newCommentHint')}>
               <Glyph d={ICON.plus} />
             </button>
           )}
-          <button type="button" className={`icon-button${hidden ? ' is-off' : ''}`} onClick={() => setHidden(!hidden)} aria-pressed={!hidden} aria-label={hidden ? 'Show pins' : 'Hide pins'} title={hidden ? 'Show pins on the board' : 'Hide pins on the board'}>
+          <button type="button" className={`icon-button${hidden ? ' is-off' : ''}`} onClick={() => setHidden(!hidden)} aria-pressed={!hidden} aria-label={hidden ? t('comments.showPins') : t('comments.hidePins')} title={hidden ? t('comments.showPinsHint') : t('comments.hidePinsHint')}>
             <Glyph d={hidden ? ICON.eyeOff : ICON.eye} />
           </button>
-          <button type="button" className="icon-button" onClick={onClose} aria-label="Close" title="Close">
+          <button type="button" className="icon-button" onClick={onClose} aria-label={t('comments.close')} title={t('comments.close')}>
             <Glyph d={ICON.close} />
           </button>
         </span>
@@ -746,11 +747,11 @@ function Panel({ threads, openId, seen, me, canComment, hidden, setHidden, onPic
         {open.map(row)}
         {!open.length && (
           <div className="note-empty">
-            {resolved.length ? <p>No open threads.</p> : <p>No comments yet.</p>}
-            {canComment && <p>Pick the comment tool and click the board, or right-click a shape and choose “Comment”.</p>}
+            {resolved.length ? <p>{t('comments.noOpen')}</p> : <p>{t('comments.none')}</p>}
+            {canComment && <p>{t('comments.emptyHint')}</p>}
             {canComment && (
               <button type="button" className="board-button board-button--ghost" onClick={onStartComment}>
-                Add a comment
+                {t('comments.addComment')}
               </button>
             )}
           </div>
@@ -758,7 +759,7 @@ function Panel({ threads, openId, seen, me, canComment, hidden, setHidden, onPic
         {resolved.length > 0 && (
           <button type="button" className={`note-toggle${showResolved ? ' is-open' : ''}`} onClick={() => setShowResolved(!showResolved)} aria-expanded={showResolved}>
             <Glyph d={ICON.chevron} size={14} />
-            Resolved ({resolved.length})
+            {t('comments.resolvedCount', { count: resolved.length })}
           </button>
         )}
         {showResolved && resolved.map(row)}

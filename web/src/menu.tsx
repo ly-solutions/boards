@@ -21,6 +21,7 @@ import { CaptureUpdateAction } from '@excalidraw/excalidraw'
 import { hostOf } from './links'
 import type { StudioApi } from './studio'
 import { useFit } from './popover'
+import { t } from './i18n'
 
 /** What the editor opened: screen position, scene point and what is selected under the cursor. */
 export type MenuState = { left: number; top: number; at: { x: number; y: number }; ids: string[] }
@@ -35,32 +36,32 @@ const MOD = MAC ? '⌘' : 'Ctrl+'
  * listed here shows the editor's label.
  */
 const MORE_LABEL: Record<string, string> = {
-  paste: 'Paste',
-  copyAsPng: 'Copy as PNG',
-  copyAsSvg: 'Copy as SVG',
-  copyText: 'Copy as text',
-  copyStyles: 'Copy styles',
-  pasteStyles: 'Paste styles',
-  group: 'Group',
-  ungroup: 'Ungroup',
-  unbindText: 'Unbind text from shape',
-  bindText: 'Bind text to shape',
-  wrapTextInContainer: 'Wrap text in a shape',
-  addToLibrary: 'Add to library',
-  sendBackward: 'Send backward',
-  bringForward: 'Bring forward',
-  flipHorizontal: 'Flip horizontal',
-  flipVertical: 'Flip vertical',
-  copyElementLink: 'Copy link to block',
-  wrapSelectionInFrame: 'Wrap in frame',
-  selectAllElementsInFrame: 'Select all in frame',
-  removeAllElementsFromFrame: 'Remove all from frame',
-  unlockAllElements: 'Unlock all',
-  gridMode: 'Grid',
-  objectsSnapMode: 'Snap to objects',
-  zenMode: 'Zen mode',
-  viewMode: 'View mode',
-  stats: 'Canvas and shape properties',
+  paste: t('editor.menuPaste'),
+  copyAsPng: t('editor.menuCopyAsPng'),
+  copyAsSvg: t('editor.menuCopyAsSvg'),
+  copyText: t('editor.menuCopyText'),
+  copyStyles: t('editor.menuCopyStyles'),
+  pasteStyles: t('editor.menuPasteStyles'),
+  group: t('editor.menuGroup'),
+  ungroup: t('editor.menuUngroup'),
+  unbindText: t('editor.menuUnbindText'),
+  bindText: t('editor.menuBindText'),
+  wrapTextInContainer: t('editor.menuWrapTextInContainer'),
+  addToLibrary: t('editor.menuAddToLibrary'),
+  sendBackward: t('editor.menuSendBackward'),
+  bringForward: t('editor.menuBringForward'),
+  flipHorizontal: t('editor.menuFlipHorizontal'),
+  flipVertical: t('editor.menuFlipVertical'),
+  copyElementLink: t('editor.menuCopyElementLink'),
+  wrapSelectionInFrame: t('editor.menuWrapSelectionInFrame'),
+  selectAllElementsInFrame: t('editor.menuSelectAllInFrame'),
+  removeAllElementsFromFrame: t('editor.menuRemoveAllFromFrame'),
+  unlockAllElements: t('editor.menuUnlockAll'),
+  gridMode: t('editor.menuGrid'),
+  objectsSnapMode: t('editor.menuSnapToObjects'),
+  zenMode: t('editor.menuZenMode'),
+  viewMode: t('editor.menuViewMode'),
+  stats: t('editor.menuStats'),
 }
 
 type Props = {
@@ -191,28 +192,28 @@ export function BoardMenu({ api, menu, onClose, onComment, onSticky }: Props) {
   }
   if (onBlock) {
     // The block link is a real editor action: it opens the editor's URL popup.
-    if (hosts.size === 1) add('hyperlink', (host as { link?: string | null } | null)?.link ? 'Edit link…' : 'Link…', ICON.link, `${MOD}K`)
-    items.push({ key: 'comment', label: 'Comment', icon: ICON.comment, run: own(() => onComment(menu.at)) })
+    if (hosts.size === 1) add('hyperlink', (host as { link?: string | null } | null)?.link ? t('editor.menuEditLink') : t('editor.menuLink'), ICON.link, `${MOD}K`)
+    items.push({ key: 'comment', label: t('editor.menuComment'), icon: ICON.comment, run: own(() => onComment(menu.at)) })
     items.push('sep')
-    add('copy', 'Copy', ICON.copy, `${MOD}C`)
-    add('cut', 'Cut', ICON.cut, `${MOD}X`)
-    add('duplicateSelection', 'Duplicate', ICON.duplicate, `${MOD}D`)
+    add('copy', t('editor.menuCopy'), ICON.copy, `${MOD}C`)
+    add('cut', t('editor.menuCut'), ICON.cut, `${MOD}X`)
+    add('duplicateSelection', t('editor.menuDuplicate'), ICON.duplicate, `${MOD}D`)
     items.push('sep')
-    add('bringToFront', 'Bring to front', ICON.front)
-    add('sendToBack', 'Send to back', ICON.back)
+    add('bringToFront', t('editor.menuBringToFront'), ICON.front)
+    add('sendToBack', t('editor.menuSendToBack'), ICON.back)
     // The editor offers grouping for a single labelled shape too — pointless.
-    if (hosts.size > 1) add('group', 'Group', ICON.group, `${MOD}G`)
-    add('ungroup', 'Ungroup', ICON.group)
-    add('toggleElementLock', locked ? 'Unlock' : 'Lock in place', ICON.lock)
+    if (hosts.size > 1) add('group', t('editor.menuGroup'), ICON.group, `${MOD}G`)
+    add('ungroup', t('editor.menuUngroup'), ICON.group)
+    add('toggleElementLock', locked ? t('editor.menuUnlock') : t('editor.menuLock'), ICON.lock)
     items.push('sep')
-    add('deleteSelectedElements', 'Delete', ICON.trash, 'Del', true)
+    add('deleteSelectedElements', t('editor.menuDelete'), ICON.trash, t('editor.menuDeleteHint'), true)
   } else {
-    add('paste', 'Paste', ICON.paste, `${MOD}V`)
-    items.push({ key: 'sticky', label: 'Sticky here', icon: ICON.sticky, run: own(() => onSticky(menu.at)) })
-    items.push({ key: 'comment', label: 'Comment here', icon: ICON.comment, run: own(() => onComment(menu.at)) })
+    add('paste', t('editor.menuPaste'), ICON.paste, `${MOD}V`)
+    items.push({ key: 'sticky', label: t('editor.menuStickyHere'), icon: ICON.sticky, run: own(() => onSticky(menu.at)) })
+    items.push({ key: 'comment', label: t('editor.menuCommentHere'), icon: ICON.comment, run: own(() => onComment(menu.at)) })
     items.push('sep')
-    add('selectAll', 'Select all', ICON.select, `${MOD}A`)
-    add('toggleElementLock', 'Unlock', ICON.lock)
+    add('selectAll', t('editor.menuSelectAll'), ICON.select, `${MOD}A`)
+    add('toggleElementLock', t('editor.menuUnlock'), ICON.lock)
   }
   // No separator at the start or end, and never two in a row.
   const tidy = <T,>(list: (T | 'sep')[]) => {
@@ -253,7 +254,7 @@ export function BoardMenu({ api, menu, onClose, onComment, onSticky }: Props) {
             onClick={(e) => setMore(more ? null : { top: e.currentTarget.offsetTop })}
           >
             {ICON.more}
-            <span className="board-menu__label">More</span>
+            <span className="board-menu__label">{t('editor.menuMore')}</span>
             <span className="board-menu__chevron" aria-hidden>
               ›
             </span>

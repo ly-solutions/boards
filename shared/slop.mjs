@@ -14,11 +14,15 @@
  *
  * Shared by the server (board text for agents) and the editor (the badge that
  * highlights offending elements), so it has no Node imports or dependencies.
+ * Issue titles and details come from the `slop` area of the message catalog, in
+ * the locale passed as `options.locale` (English by default).
  *
  * Each rule yields a weight and the offending ids. The score is a saturating sum
  * of weights: one or two nits do not make a board slop, five different rules at
  * once almost certainly do.
  */
+
+import { translator } from './locales/index.mjs'
 
 const SHAPE_TYPES = new Set(['rectangle', 'ellipse', 'diamond'])
 const BOX_TYPES = new Set(['rectangle', 'ellipse', 'diamond', 'image', 'embeddable', 'iframe'])
@@ -323,9 +327,11 @@ function minority(list, key) {
  * Run the slop check on a board.
  *
  * `palette` is an optional list of palette colors; colors outside it are
- * reported as a separate rule.
+ * reported as a separate rule. `locale` picks the language of issue titles and
+ * details (`en` by default).
  */
-export function analyzeSlop(elements, { palette } = {}) {
+export function analyzeSlop(elements, { palette, locale = 'en' } = {}) {
+  const tr = translator(locale)
   const live = (Array.isArray(elements) ? elements : []).filter((el) => el && !el.isDeleted && typeof el.id === 'string')
   const byId = new Map(live.map((el) => [el.id, el]))
   const issues = []
@@ -370,8 +376,8 @@ export function analyzeSlop(elements, { palette } = {}) {
   if (quietUse.size > MAX_QUIET_FAMILIES) {
     add({
       id: 'pastel-rainbow',
-      title: 'Too many tints',
-      detail: `${quietUse.size} pastel tints: a zone color should mean something, turn the extra ones neutral`,
+      title: tr('slop.pastelRainbowTitle'),
+      detail: tr('slop.pastelRainbowDetail', { count: quietUse.size }),
       elementIds: [],
       weight: weigh(quietUse.size - MAX_QUIET_FAMILIES, 3, 9),
     })
@@ -381,8 +387,8 @@ export function analyzeSlop(elements, { palette } = {}) {
     const extra = new Set(ranked.slice(MAX_HUE_FAMILIES))
     add({
       id: 'rainbow',
-      title: 'Color rainbow',
-      detail: `${familyUse.size} bright fills of different colors where ${MAX_HUE_FAMILIES} is plenty: keep one accent and a couple of meaningful colors, make the rest palette pastels or neutral`,
+      title: tr('slop.rainbowTitle'),
+      detail: tr('slop.rainbowDetail', { count: familyUse.size, max: MAX_HUE_FAMILIES }),
       elementIds: colored.filter((el) => [...familiesOf.get(el.id)].some((f) => extra.has(f))).map((el) => el.id),
       weight: weigh(familyUse.size - MAX_HUE_FAMILIES, 7, 21),
     })
@@ -399,8 +405,8 @@ export function analyzeSlop(elements, { palette } = {}) {
     if (offColors.size) {
       add({
         id: 'off-palette',
-        title: 'Off-palette colors',
-        detail: `${offColors.size} ${offColors.size === 1 ? 'color is' : 'colors are'} not from the palette (${[...offColors].slice(0, 5).join(', ')}): pick the closest palette color`,
+        title: tr('slop.offPaletteTitle'),
+        detail: tr('slop.offPaletteDetail', { count: offColors.size, colors: [...offColors].slice(0, 5).join(', ') }),
         elementIds: off.map((el) => el.id),
         weight: weigh(offColors.size, 3, 15),
       })
@@ -419,8 +425,11 @@ export function analyzeSlop(elements, { palette } = {}) {
   if (emojiHeavy || bulletLines.length >= EMOJI_BULLETS_MIN) {
     add({
       id: 'emoji',
-      title: 'Emoji instead of meaning',
-      detail: `emoji in ${withEmoji.length} of ${texts.length} labels${bulletLines.length ? `, ${bulletLines.length} ${bulletLines.length === 1 ? 'line starts' : 'lines start'} with an emoji bullet` : ''}: words, color and shape carry meaning — remove the emoji or keep one meaningful symbol`,
+      title: tr('slop.emojiTitle'),
+      detail: tr('slop.emojiDetail', {
+        share: tr('slop.emojiShare', { used: withEmoji.length, count: texts.length }),
+        bullets: bulletLines.length ? tr('slop.emojiBullets', { count: bulletLines.length }) : '',
+      }),
       elementIds: withEmoji.map((t) => (boundText(t) ? t.containerId : t.id)),
       weight: 8 + Math.min(12, Math.round(emojiShare * 12) + bulletLines.length),
     })
@@ -436,8 +445,8 @@ export function analyzeSlop(elements, { palette } = {}) {
   if (families.size > MAX_FONT_FAMILIES) {
     add({
       id: 'font-families',
-      title: 'Font mix',
-      detail: `${families.size} different fonts: one is enough, two at most (headings and body)`,
+      title: tr('slop.fontFamiliesTitle'),
+      detail: tr('slop.fontFamiliesDetail', { count: families.size }),
       elementIds: minority(texts, (t) => t.fontFamily).map((t) => t.id),
       weight: weigh(families.size - MAX_FONT_FAMILIES, 8, 16),
     })
@@ -447,8 +456,8 @@ export function analyzeSlop(elements, { palette } = {}) {
     const keep = new Set(ranked.slice(0, MAX_FONT_SIZES))
     add({
       id: 'font-sizes',
-      title: 'Too many font sizes',
-      detail: `${sizes.size} text sizes (${[...sizes].sort((a, b) => a - b).join(', ')}): reduce to a scale of three or four`,
+      title: tr('slop.fontSizesTitle'),
+      detail: tr('slop.fontSizesDetail', { count: sizes.size, sizes: [...sizes].sort((a, b) => a - b).join(', ') }),
       elementIds: sized.filter((t) => !keep.has(round(t.fontSize))).map((t) => t.id),
       weight: weigh(sizes.size - MAX_FONT_SIZES, 3, 9),
     })
@@ -470,22 +479,22 @@ export function analyzeSlop(elements, { palette } = {}) {
   const styleParts = []
   const styleIds = []
   if (roughOdd.length) {
-    styleParts.push('some shapes hand-drawn, some straight')
+    styleParts.push(tr('slop.styleRough'))
     styleIds.push(...roughOdd.map((el) => el.id))
   }
   if (fillOdd.length) {
-    styleParts.push('hatching mixed with solid fills')
+    styleParts.push(tr('slop.styleHatching'))
     styleIds.push(...fillOdd.map((el) => el.id))
   }
   if (widths.size > MAX_STROKE_WIDTHS) {
-    styleParts.push(`${widths.size} stroke widths`)
+    styleParts.push(tr('slop.styleWidths', { count: widths.size }))
     styleIds.push(...minority(styled, (el) => el.strokeWidth).map((el) => el.id))
   }
   if (styleParts.length) {
     add({
       id: 'style-mix',
-      title: 'Style mix',
-      detail: `${styleParts.join('; ')}: pick one shape style and keep it across the board`,
+      title: tr('slop.styleMixTitle'),
+      detail: tr('slop.styleMixDetail', { parts: styleParts.join(tr('slop.partsSeparator')) }),
       elementIds: styleIds,
       weight: styleParts.length * 6,
     })
@@ -518,8 +527,8 @@ export function analyzeSlop(elements, { palette } = {}) {
   if (nearPairs.length >= ALIGN_MIN_PAIRS) {
     add({
       id: 'near-miss',
-      title: 'Almost aligned',
-      detail: `${nearPairs.length} element pairs are off by 1–${ALIGN_MISS} px at an edge or center: align them exactly`,
+      title: tr('slop.nearMissTitle'),
+      detail: tr('slop.nearMissDetail', { count: nearPairs.length, miss: ALIGN_MISS }),
       elementIds: nearPairs.flat(),
       weight: weigh(nearPairs.length, 1, 6),
     })
@@ -571,8 +580,8 @@ export function analyzeSlop(elements, { palette } = {}) {
   if (uneven.length) {
     add({
       id: 'uneven-siblings',
-      title: 'Uneven neighbours',
-      detail: `${uneven.length} ${uneven.length === 1 ? 'row' : 'rows'} of same-type cards with different ${uneven.some((u) => u.axis === 'row') ? 'heights' : 'widths'}: make cards of one role the same size`,
+      title: tr('slop.unevenTitle'),
+      detail: tr(uneven.some((u) => u.axis === 'row') ? 'slop.unevenHeightsDetail' : 'slop.unevenWidthsDetail', { count: uneven.length }),
       elementIds: uneven.flatMap((u) => u.ids),
       weight: weigh(uneven.length, 3, 9),
     })
@@ -632,8 +641,8 @@ export function analyzeSlop(elements, { palette } = {}) {
   if (dangling.length) {
     add({
       id: 'dangling-arrows',
-      title: 'Arrows to nowhere',
-      detail: `${dangling.length} ${dangling.length === 1 ? 'arrow is' : 'arrows are'} not bound to a shape at one end or both: bind both ends or remove the arrow`,
+      title: tr('slop.danglingTitle'),
+      detail: tr('slop.danglingDetail', { count: dangling.length }),
       elementIds: dangling,
       weight: weigh(dangling.length, 4, 16),
     })
@@ -641,8 +650,8 @@ export function analyzeSlop(elements, { palette } = {}) {
   if (crossing.length) {
     add({
       id: 'crossing-arrows',
-      title: 'Arrows through shapes',
-      detail: `${crossing.length} ${crossing.length === 1 ? 'arrow passes' : 'arrows pass'} through other shapes: move the shapes apart or route the arrow around`,
+      title: tr('slop.crossingTitle'),
+      detail: tr('slop.crossingDetail', { count: crossing.length }),
       elementIds: crossing,
       weight: weigh(crossing.length, 3, 12),
     })
@@ -660,8 +669,8 @@ export function analyzeSlop(elements, { palette } = {}) {
   if (overlaps.length) {
     add({
       id: 'overlap',
-      title: 'Overlapping elements',
-      detail: `${overlaps.length} ${overlaps.length === 1 ? 'pair' : 'pairs'} of shapes or texts partly overlap: move them apart or nest one fully inside the other`,
+      title: tr('slop.overlapTitle'),
+      detail: tr('slop.overlapDetail', { count: overlaps.length }),
       elementIds: overlaps.flat(),
       weight: weigh(overlaps.length, 4, 16),
     })
@@ -680,12 +689,12 @@ export function analyzeSlop(elements, { palette } = {}) {
   metrics.textOverflow = overflow.length
   if (walls.length || overflow.length) {
     const parts = []
-    if (walls.length) parts.push(`${walls.length} ${walls.length === 1 ? 'label is' : 'labels are'} longer than ${LABEL_WALL} characters — move paragraphs to a document and keep the gist on the diagram`)
-    if (overflow.length) parts.push(`${overflow.length} ${overflow.length === 1 ? 'label sticks' : 'labels stick'} out of its shape`)
+    if (walls.length) parts.push(tr('slop.textWallsLong', { count: walls.length, max: LABEL_WALL }))
+    if (overflow.length) parts.push(tr('slop.textWallsOverflow', { count: overflow.length }))
     add({
       id: 'text-walls',
-      title: 'Walls of text',
-      detail: parts.join('; '),
+      title: tr('slop.textWallsTitle'),
+      detail: parts.join(tr('slop.partsSeparator')),
       elementIds: [...walls, ...overflow].map((t) => (boundText(t) ? t.containerId : t.id)),
       weight: weigh(walls.length, 4, 12) + weigh(overflow.length, 3, 9),
     })
@@ -702,8 +711,8 @@ export function analyzeSlop(elements, { palette } = {}) {
   if (decor.length >= DECOR_MIN) {
     add({
       id: 'decor',
-      title: 'Meaningless decor',
-      detail: `${decor.length} small shapes without labels or connections: if they mean nothing, remove them`,
+      title: tr('slop.decorTitle'),
+      detail: tr('slop.decorDetail', { count: decor.length }),
       elementIds: decor.map((el) => el.id),
       weight: weigh(decor.length, 2, 8),
     })
@@ -722,12 +731,12 @@ export function analyzeSlop(elements, { palette } = {}) {
   const crowdedFrames = frames.filter((f) => live.filter((el) => el.frameId === f.id && !boundText(el)).length > FRAME_CROWD)
   if ((solid.length >= CROWD_MIN_ELEMENTS && coverage > CROWD_COVERAGE) || crowdedFrames.length) {
     const parts = []
-    if (coverage > CROWD_COVERAGE && solid.length >= CROWD_MIN_ELEMENTS) parts.push(`shapes cover ${Math.round(coverage * 100)}% of the board area`)
-    if (crowdedFrames.length) parts.push(`${crowdedFrames.length} ${crowdedFrames.length === 1 ? 'frame has' : 'frames have'} more than ${FRAME_CROWD} elements`)
+    if (coverage > CROWD_COVERAGE && solid.length >= CROWD_MIN_ELEMENTS) parts.push(tr('slop.crowdedCoverage', { percent: Math.round(coverage * 100) }))
+    if (crowdedFrames.length) parts.push(tr('slop.crowdedFrames', { count: crowdedFrames.length, max: FRAME_CROWD }))
     add({
       id: 'crowded',
-      title: 'Crowded',
-      detail: `${parts.join('; ')}: add whitespace — increase spacing or split into frames`,
+      title: tr('slop.crowdedTitle'),
+      detail: tr('slop.crowdedDetail', { parts: parts.join(tr('slop.partsSeparator')) }),
       elementIds: crowdedFrames.length ? crowdedFrames.map((f) => f.id) : [],
       weight: 10,
     })

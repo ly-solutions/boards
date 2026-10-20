@@ -16,6 +16,7 @@ import type { ExcalidrawImperativeAPI, ExcalidrawInitialDataState } from '@excal
 import '@excalidraw/excalidraw/index.css'
 import './embed-view.css'
 import { debounce, fitScene, type Fit, type FitElement } from './fit'
+import { excalidrawLang, t } from './i18n'
 
 type EmbedData = {
   title?: string
@@ -161,17 +162,17 @@ function FullscreenIcon({ active }: { active: boolean }) {
 function Controls({ boardUrl, title }: { boardUrl: string | null; title: string }) {
   const fullscreen = useFullscreen()
   return (
-    <nav className="embed-controls" aria-label="Board">
+    <nav className="embed-controls" aria-label={t('embed.board')}>
       {boardUrl && (
-        <a className="embed-control" href={boardUrl} target="_blank" rel="noopener noreferrer" title={`Open “${title}” in a new tab`}>
+        <a className="embed-control" href={boardUrl} target="_blank" rel="noopener noreferrer" title={t('embed.openInNewTab', { title })}>
           <OpenIcon />
-          <span>Open board</span>
+          <span>{t('embed.openBoard')}</span>
         </a>
       )}
       {fullscreen.supported && (
         <button type="button" className="embed-control" onClick={() => void toggleFullscreen()} aria-pressed={fullscreen.active}>
           <FullscreenIcon active={fullscreen.active} />
-          <span>{fullscreen.active ? 'Exit fullscreen' : 'Fullscreen'}</span>
+          <span>{fullscreen.active ? t('embed.exitFullscreen') : t('embed.fullscreen')}</span>
         </button>
       )}
     </nav>
@@ -273,7 +274,7 @@ function EmbedView({ data }: { data: EmbedData }) {
   }, [])
 
   const boardUrl = useMemo(() => safeUrl(data.boardUrl), [data])
-  const title = typeof data.title === 'string' && data.title ? data.title : 'Board'
+  const title = typeof data.title === 'string' && data.title ? data.title : t('embed.board')
 
   return (
     <div className="embed-view" ref={rootRef}>
@@ -285,7 +286,7 @@ function EmbedView({ data }: { data: EmbedData }) {
           zenModeEnabled
           gridModeEnabled={false}
           theme={theme}
-          langCode="en"
+          langCode={excalidrawLang}
           UIOptions={UI_OPTIONS}
           onScrollChange={onScrollChange}
           name={title}

@@ -240,3 +240,21 @@ test('focus point keeps the pin and its card in sight', () => {
   assert.equal(phone.x, p.x)
   assert.equal(v.height / 2 - (phone.y - p.y) * v.zoom, v.height / 4)
 })
+
+test('the model speaks the interface language: its English matches the catalog, Russian comes through the translator', async () => {
+  const { CATALOGS, translator } = await import('../shared/locales/index.mjs')
+  for (const [key, value] of Object.entries(M.MODEL_EN)) assert.equal(CATALOGS.en[key], value, `${key}: comments-model.ts and shared/locales/en/comments.mjs disagree`)
+  const ru = translator('ru')
+  const scene = [rect('box', 0, 0, 100, 50), { id: 'label', type: 'text', x: 10, y: 10, width: 80, height: 20, containerId: 'box', text: 'Платежи' }, rect('bare', 200, 0, 100, 50), rect('stick', 400, 0, 100, 100, { customData: { kind: 'sticky' } })]
+  assert.equal(M.placeName(scene, 'box', ru), '«Платежи»')
+  assert.equal(M.placeName(scene, 'bare', ru), 'Прямоугольник')
+  assert.equal(M.placeName(scene, 'stick', ru), 'Стикер')
+  assert.equal(M.placeName(scene, null, ru), 'Холст')
+  const now = Date.parse('2026-10-19T12:00:00.000Z')
+  assert.equal(M.relativeTime('2026-10-19T11:59:30.000Z', now, ru), 'только что')
+  assert.equal(M.relativeTime('2026-10-19T11:55:00.000Z', now, ru), '5 мин')
+  assert.equal(M.relativeTime('2026-10-19T10:00:00.000Z', now, ru), '2 ч')
+  assert.equal(ru('comments.replies', { count: 1 }), '1 ответ')
+  assert.equal(ru('comments.replies', { count: 3 }), '3 ответа')
+  assert.equal(ru('comments.replies', { count: 11 }), '11 ответов')
+})

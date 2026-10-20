@@ -55,9 +55,9 @@ export function refsOf(elements, { boardOrigin } = {}) {
   return refs
 }
 
-/** Fallback card label: what stays in exports and in the board text for agents. */
-export function fallbackLabel(meta, target) {
-  if (meta?.kind === 'board') return `Board · ${meta.title}`
+/** Fallback card label: what stays in exports and in the board text for agents. `boardWord` is the localized "Board". */
+export function fallbackLabel(meta, target, { boardWord = 'Board' } = {}) {
+  if (meta?.kind === 'board') return `${boardWord} · ${meta.title}`
   if (target.kind === 'link') return `${target.host}${new URL(target.url).pathname.replace(/\/$/, '')}`.slice(0, 80)
   return target.url
 }

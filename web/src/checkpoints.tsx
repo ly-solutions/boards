@@ -14,6 +14,7 @@ import { createPortal } from 'react-dom'
 import { CameraLayer, useSceneVersion } from './camera'
 import type { StudioApi } from './studio'
 import { diff, isEmpty, summarize, weekOutcome } from '../../shared/checkpoints.mjs'
+import { t, dateLocale } from './i18n'
 
 export type Summary = { added: number; stickies: number; changed: number; removed: number; moved: number; byAuthor: Record<string, number> }
 export type Week = { done: number; failed: number; open: number }
@@ -22,23 +23,25 @@ type Unit = { id: string; text: string; fill: string | null; kind: string; autho
 type Changes = { added: Unit[]; changed: Unit[]; removed: Unit[]; moved: number }
 type SceneEl = { id: string; x: number; y: number; width: number; height: number; isDeleted?: boolean }
 
-const day = (d: Date) => d.toLocaleDateString(undefined, { day: 'numeric', month: 'long' })
+const day = (d: Date) => d.toLocaleDateString(dateLocale, { day: 'numeric', month: 'long' })
 const when = (iso: string) => {
   const d = new Date(iso)
   if (Number.isNaN(d.valueOf())) return ''
-  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-  return new Date().toDateString() === d.toDateString() ? `today ${time}` : `${day(d)}, ${time}`
+  const time = d.toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' })
+  return new Date().toDateString() === d.toDateString() ? t('checkpoints.todayAt', { time }) : t('checkpoints.dayAt', { day: day(d), time })
 }
 const short = (name: string) => name.replace(/^guest:\s*/, '').split(' ')[0]
 const cut = (text: string, n: number) => (text.length > n ? `${text.slice(0, n - 1)}…` : text)
+/** An image has no text of its own: the diff calls it "image", the interface says it in its language. */
+const label = (u: Unit) => (u.kind === 'image' ? t('checkpoints.image') : u.text)
 
 function Chips({ summary }: { summary: Summary }) {
-  if (isEmpty(summary)) return <span className="cp-chip">no changes</span>
+  if (isEmpty(summary)) return <span className="cp-chip">{t('checkpoints.noChanges')}</span>
   return (
     <>
-      {summary.added > 0 && <span className="cp-chip cp-chip--add" title={summary.stickies ? `${summary.stickies} of them sticky notes` : undefined}>+{summary.added}</span>}
-      {summary.changed > 0 && <span className="cp-chip cp-chip--chg">{summary.changed} changed</span>}
-      {summary.removed > 0 && <span className="cp-chip cp-chip--del">{summary.removed} removed</span>}
+      {summary.added > 0 && <span className="cp-chip cp-chip--add" title={summary.stickies ? t('checkpoints.ofThemStickies', { count: summary.stickies }) : undefined}>+{summary.added}</span>}
+      {summary.changed > 0 && <span className="cp-chip cp-chip--chg">{t('checkpoints.changedCount', { count: summary.changed })}</span>}
+      {summary.removed > 0 && <span className="cp-chip cp-chip--del">{t('checkpoints.removedCount', { count: summary.removed })}</span>}
     </>
   )
 }
@@ -52,9 +55,9 @@ function Authors({ summary }: { summary: Summary }) {
 function WeekLine({ week }: { week: Week }) {
   return (
     <span className="cp-week">
-      <span className="cp-chip cp-chip--add">{week.done} done</span>
-      <span className="cp-chip cp-chip--del">{week.failed} missed</span>
-      <span className="cp-chip">{week.open} in progress</span>
+      <span className="cp-chip cp-chip--add">{t('checkpoints.weekDone', { count: week.done })}</span>
+      <span className="cp-chip cp-chip--del">{t('checkpoints.weekMissed', { count: week.failed })}</span>
+      <span className="cp-chip">{t('checkpoints.weekOpen', { count: week.open })}</span>
     </span>
   )
 }
@@ -77,18 +80,18 @@ export const CheckpointHighlights = memo(function CheckpointHighlights({ api, ch
     <CameraLayer className="cp-marks">
       {changes.added.map((u) => (
         <div key={u.id} className="cp-mark cp-mark--add" style={box(u)}>
-          <span className="camera-fixed"><span className="cp-mark__tag">new</span></span>
+          <span className="camera-fixed"><span className="cp-mark__tag">{t('checkpoints.tagNew')}</span></span>
         </div>
       ))}
       {changes.changed.map((u) => (
-        <div key={u.id} className="cp-mark cp-mark--chg" style={box(u)} title={`Was: ${u.before?.text ?? ''}`}>
-          <span className="camera-fixed"><span className="cp-mark__tag">{u.before && u.before.text !== u.text ? `was: ${cut(u.before.text, 34)}` : 'colour changed'}</span></span>
+        <div key={u.id} className="cp-mark cp-mark--chg" style={box(u)} title={t('checkpoints.wasTitle', { text: u.before?.text ?? '' })}>
+          <span className="camera-fixed"><span className="cp-mark__tag">{u.before && u.before.text !== u.text ? t('checkpoints.tagWas', { text: cut(u.before.text, 34) }) : t('checkpoints.tagColour')}</span></span>
         </div>
       ))}
       {changes.removed.map((u) => (
         <div key={u.id} className="cp-mark cp-mark--del" style={{ left: u.x, top: u.y, width: u.width, height: u.height, background: u.fill && u.fill !== 'transparent' ? u.fill : undefined }}>
-          <span className="cp-mark__ghost">{cut(u.text, 80)}</span>
-          <span className="camera-fixed"><span className="cp-mark__tag">removed</span></span>
+          <span className="cp-mark__ghost">{cut(label(u), 80)}</span>
+          <span className="camera-fixed"><span className="cp-mark__tag">{t('checkpoints.tagRemoved')}</span></span>
         </div>
       ))}
     </CameraLayer>
@@ -188,7 +191,7 @@ export const Checkpoints = memo(function Checkpoints({ api, base, q, guest, canE
 
   const openForm = (kind: 'plain' | 'week') => {
     setError(null)
-    setTitle(kind === 'week' ? `Week to ${day(new Date())}` : `Checkpoint ${day(new Date())}`)
+    setTitle(kind === 'week' ? t('checkpoints.defaultWeekTitle', { day: day(new Date()) }) : t('checkpoints.defaultTitle', { day: day(new Date()) }))
     setForm(kind)
   }
   const create = useCallback(async () => {
@@ -198,7 +201,7 @@ export const Checkpoints = memo(function Checkpoints({ api, base, q, guest, canE
     try {
       const response = await fetch(`${base}/checkpoints${q}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: title.trim(), closeWeek: form === 'week', guest: guest || undefined }) })
       const data = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(data.error ?? 'Checkpoint was not saved')
+      if (!response.ok) throw new Error(data.error ?? t('checkpoints.notSaved'))
       setList(data.checkpoints)
       setForm(null)
       setSelected('now')
@@ -214,7 +217,7 @@ export const Checkpoints = memo(function Checkpoints({ api, base, q, guest, canE
     try {
       const response = await fetch(`${base}/checkpoints/${id}/copy${q}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ guest: guest || undefined }) })
       const data = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(data.error ?? 'Could not create a copy')
+      if (!response.ok) throw new Error(data.error ?? t('checkpoints.copyFailed'))
       const url = new URL(data.url)
       window.open(`${location.origin}${url.pathname}${url.search}`, '_blank')
     } catch (e) {
@@ -229,30 +232,30 @@ export const Checkpoints = memo(function Checkpoints({ api, base, q, guest, canE
     <>
       {shown && !isEmpty(summarize(shown)) && <CheckpointHighlights api={api} changes={shown} />}
       {createPortal(
-        <aside className="cp-panel" aria-label="Checkpoints">
+        <aside className="cp-panel" aria-label={t('checkpoints.title')}>
           <div className="cp-panel__head">
-            <strong>Checkpoints</strong>
-            <button type="button" className="icon-button" onClick={onClose} aria-label="Close checkpoints panel">
+            <strong>{t('checkpoints.title')}</strong>
+            <button type="button" className="icon-button" onClick={onClose} aria-label={t('checkpoints.closePanel')}>
               ✕
             </button>
           </div>
           <div className="cp-panel__body">
             <button type="button" className={`cp-row${selected === 'now' ? ' is-on' : ''}`} onClick={() => setSelected(selected === 'now' ? null : 'now')}>
-              <span className="cp-row__title">Now</span>
-              <span className="cp-row__meta">{last ? `since “${cut(last.title, 28)}”` : 'no checkpoints yet'}</span>
-              <span className="cp-row__chips">{pendingSummary ? <Chips summary={pendingSummary} /> : <span className="cp-chip">counting…</span>}</span>
+              <span className="cp-row__title">{t('checkpoints.now')}</span>
+              <span className="cp-row__meta">{last ? t('checkpoints.since', { title: cut(last.title, 28) }) : t('checkpoints.noneYet')}</span>
+              <span className="cp-row__chips">{pendingSummary ? <Chips summary={pendingSummary} /> : <span className="cp-chip">{t('checkpoints.counting')}</span>}</span>
               {pendingSummary && <Authors summary={pendingSummary} />}
-              {pendingSummary && pendingSummary.moved > 0 && <span className="cp-row__note">Moved without changes: {pendingSummary.moved}. Not part of the diff.</span>}
+              {pendingSummary && pendingSummary.moved > 0 && <span className="cp-row__note">{t('checkpoints.movedNote', { count: pendingSummary.moved })}</span>}
             </button>
 
             {canEdit && !form && (
               <div className="cp-actions">
                 <button type="button" className="board-button" onClick={() => openForm('plain')}>
-                  Save checkpoint
+                  {t('checkpoints.save')}
                 </button>
                 {hasStickies && (
                   <button type="button" className="board-button board-button--ghost" onClick={() => openForm('week')}>
-                    Close week…
+                    {t('checkpoints.closeWeekEllipsis')}
                   </button>
                 )}
               </div>
@@ -266,13 +269,13 @@ export const Checkpoints = memo(function Checkpoints({ api, base, q, guest, canE
                   void create()
                 }}
               >
-                <strong>{form === 'week' ? 'Close week' : 'New checkpoint'}</strong>
+                <strong>{form === 'week' ? t('checkpoints.closeWeek') : t('checkpoints.newCheckpoint')}</strong>
                 <input
                   type="text"
                   value={title}
                   maxLength={80}
                   autoFocus
-                  aria-label="Checkpoint name"
+                  aria-label={t('checkpoints.nameLabel')}
                   onChange={(e) => setTitle(e.target.value)}
                   onKeyDown={(e) => {
                     e.stopPropagation()
@@ -282,23 +285,23 @@ export const Checkpoints = memo(function Checkpoints({ api, base, q, guest, canE
                 {form === 'week' && (
                   <>
                     <WeekLine week={week} />
-                    <span className="cp-row__note">Done (green) stickies leave the board and stay in this checkpoint. Missed ones go back to the “in progress” colour. Everything else stays as is.</span>
+                    <span className="cp-row__note">{t('checkpoints.closeWeekNote')}</span>
                   </>
                 )}
                 {error && <span className="cp-error">{error}</span>}
                 <div className="cp-actions">
                   <button type="button" className="board-button board-button--ghost" onClick={() => setForm(null)}>
-                    Cancel
+                    {t('checkpoints.cancel')}
                   </button>
                   <button type="submit" className="board-button" disabled={busy || !title.trim()}>
-                    {form === 'week' ? 'Close week' : 'Save checkpoint'}
+                    {form === 'week' ? t('checkpoints.closeWeek') : t('checkpoints.save')}
                   </button>
                 </div>
               </form>
             )}
 
-            {list === null && <p className="cp-empty">Loading…</p>}
-            {list?.length === 0 && <p className="cp-empty">Save a checkpoint once you agree on something. A week later you'll see here what changed and what was merely moved.</p>}
+            {list === null && <p className="cp-empty">{t('checkpoints.loading')}</p>}
+            {list?.length === 0 && <p className="cp-empty">{t('checkpoints.empty')}</p>}
             {[...(list ?? [])].reverse().map((c) => (
               <div key={c.id} className={`cp-row cp-row--past${selected === c.id ? ' is-on' : ''}`}>
                 <button type="button" className="cp-row__main" onClick={() => setSelected(selected === c.id ? null : c.id)}>
@@ -324,18 +327,18 @@ export const Checkpoints = memo(function Checkpoints({ api, base, q, guest, canE
                         ))}
                         {changes.removed.slice(0, 6).map((u) => (
                           <li key={u.id} className="is-del">
-                            removed: {cut(u.text, 60)}
+                            {t('checkpoints.removedItem', { text: cut(label(u), 60) })}
                           </li>
                         ))}
                       </ul>
                     )}
                     <div className="cp-actions">
                       <a className="board-button board-button--ghost" href={`${base}${q}&at=${c.id}`} target="_blank" rel="noopener">
-                        Open as it was
+                        {t('checkpoints.openAsItWas')}
                       </a>
                       {canEdit && (
                         <button type="button" className="board-button board-button--ghost" disabled={busy} onClick={() => copy(c.id)}>
-                          Copy
+                          {t('checkpoints.copy')}
                         </button>
                       )}
                     </div>
@@ -369,7 +372,7 @@ export function CheckpointView({ api, base, q, guest, at, canCopy, boardUrl }: {
       if (response.ok) {
         const url = new URL(data.url)
         location.href = `${location.origin}${url.pathname}${url.search}`
-      } else api.setToast({ message: data.error ?? 'Could not create a copy', closable: true, duration: 5000 })
+      } else api.setToast({ message: data.error ?? t('checkpoints.copyFailed'), closable: true, duration: 5000 })
     } finally {
       setBusy(false)
     }
@@ -381,7 +384,7 @@ export function CheckpointView({ api, base, q, guest, at, canCopy, boardUrl }: {
       {createPortal(
         <div className="cp-banner" role="status">
           <span className="cp-banner__title">
-            Checkpoint “{at.title}” · {when(at.at)}
+            {t('checkpoints.bannerTitle', { title: at.title, when: when(at.at) })}
             {at.by ? ` · ${short(at.by)}` : ''}
           </span>
           {summary && (
@@ -389,13 +392,13 @@ export function CheckpointView({ api, base, q, guest, at, canCopy, boardUrl }: {
               <Chips summary={summary} />
             </span>
           )}
-          <span className="cp-banner__note">read-only</span>
+          <span className="cp-banner__note">{t('checkpoints.readOnly')}</span>
           <a className="board-button board-button--ghost" href={new URL(boardUrl, location.origin).pathname + new URL(boardUrl, location.origin).search}>
-            Back to current board
+            {t('checkpoints.backToBoard')}
           </a>
           {canCopy && (
             <button type="button" className="board-button" disabled={busy} onClick={copy}>
-              Copy
+              {t('checkpoints.copy')}
             </button>
           )}
         </div>,

@@ -9,6 +9,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { t } from './i18n'
 
 export type TimerState = { endsAt: number | null; leftMs: number | null; durationMs: number; by: string | null } | null
 export type TimerAction = { do: 'start' | 'pause' | 'resume' | 'add' | 'stop'; minutes?: number }
@@ -141,18 +142,18 @@ export function TimerTool({ timer, offset, canEdit, onAct, dock, quiet, open: op
 
   const state = done ? ' is-done' : paused ? ' is-paused' : left <= LAST_MS ? ' is-last' : ''
   const trigger = shown ? (
-    <button type="button" className={`timer-pill${state}${dock ? ' timer-pill--dock' : ' timer-pill--bar'}`} onClick={() => setOpen(!open)} title={`Timer${timer?.by ? ` · started by ${timer.by.replace(/^guest:\s*/, '')}` : ''}`} aria-label={`Timer: ${clock(left)} left`}>
+    <button type="button" className={`timer-pill${state}${dock ? ' timer-pill--dock' : ' timer-pill--bar'}`} onClick={() => setOpen(!open)} title={timer?.by ? t('checkpoints.timerStartedBy', { name: timer.by.replace(/^guest:\s*/, '') }) : t('checkpoints.timer')} aria-label={t('checkpoints.timerLeft', { time: clock(left) })}>
       <TimerIcon />
       <span className="timer-pill__time">{clock(left)}</span>
     </button>
   ) : canEdit && !quiet ? (
     dock ? (
-      <button type="button" className={`studio-dock__btn${open ? ' is-on' : ''}`} onClick={() => setOpen(!open)} title="Shared timer">
+      <button type="button" className={`studio-dock__btn${open ? ' is-on' : ''}`} onClick={() => setOpen(!open)} title={t('checkpoints.sharedTimer')}>
         <TimerIcon />
-        <span className="studio-dock__label">Timer</span>
+        <span className="studio-dock__label">{t('checkpoints.timer')}</span>
       </button>
     ) : (
-      <button type="button" className={`bar-btn${open ? ' is-on' : ''}`} onClick={() => setOpen(!open)} title="Shared timer: runs for everyone on the board" aria-label="Timer" aria-pressed={open}>
+      <button type="button" className={`bar-btn${open ? ' is-on' : ''}`} onClick={() => setOpen(!open)} title={t('checkpoints.sharedTimerHint')} aria-label={t('checkpoints.timer')} aria-pressed={open}>
         <TimerIcon />
       </button>
     )
@@ -163,33 +164,33 @@ export function TimerTool({ timer, offset, canEdit, onAct, dock, quiet, open: op
       {trigger}
       {open &&
         createPortal(
-          <div className={`timer-pop${dock ? ' timer-pop--dock' : ' timer-pop--bar'}`} role="dialog" aria-label="Timer" onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}>
+          <div className={`timer-pop${dock ? ' timer-pop--dock' : ' timer-pop--bar'}`} role="dialog" aria-label={t('checkpoints.timer')} onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}>
             <div className="timer-pop__head">
-              <strong>Timer{shown && timer?.by ? ` · started by ${timer.by.replace(/^guest:\s*/, '').split(' ')[0]}` : ''}</strong>
-              <button type="button" className="icon-button" onClick={() => setOpen(false)} aria-label="Close">
+              <strong>{shown && timer?.by ? t('checkpoints.timerStartedBy', { name: timer.by.replace(/^guest:\s*/, '').split(' ')[0] }) : t('checkpoints.timer')}</strong>
+              <button type="button" className="icon-button" onClick={() => setOpen(false)} aria-label={t('checkpoints.close')}>
                 ✕
               </button>
             </div>
-            {shown && <div className={`timer-pop__time${state}`}>{done ? 'Time is up' : clock(left)}</div>}
+            {shown && <div className={`timer-pop__time${state}`}>{done ? t('checkpoints.timeIsUp') : clock(left)}</div>}
             {shown && canEdit && (
               <div className="timer-pop__row">
                 {!done && (
                   <button type="button" className="board-button board-button--ghost" onClick={() => onAct({ do: paused ? 'resume' : 'pause' })}>
-                    {paused ? 'Resume' : 'Pause'}
+                    {paused ? t('checkpoints.resume') : t('checkpoints.pause')}
                   </button>
                 )}
                 <button type="button" className="board-button board-button--ghost" onClick={() => onAct({ do: 'add', minutes: 1 })}>
-                  +1 min
+                  {t('checkpoints.addMinute')}
                 </button>
                 <button type="button" className="board-button board-button--ghost" onClick={() => onAct({ do: 'stop' })}>
-                  Stop
+                  {t('checkpoints.stop')}
                 </button>
               </div>
             )}
             {canEdit && (
               <div className="timer-pop__row timer-pop__presets">
                 {PRESETS.map((m) => (
-                  <button type="button" key={m} className="timer-preset" onClick={() => start(m)} title={`Start for ${m} min`}>
+                  <button type="button" key={m} className="timer-preset" onClick={() => start(m)} title={t('checkpoints.startFor', { count: m })}>
                     {m}
                   </button>
                 ))}
@@ -203,20 +204,20 @@ export function TimerTool({ timer, offset, canEdit, onAct, dock, quiet, open: op
                     id="timer-custom"
                     className="timer-custom"
                     inputMode="decimal"
-                    placeholder="custom"
-                    aria-label="Custom number of minutes"
+                    placeholder={t('checkpoints.customPlaceholder')}
+                    aria-label={t('checkpoints.customMinutes')}
                     value={custom}
                     maxLength={5}
                     onChange={(e) => setCustom(e.target.value)}
                     onKeyDown={(e) => e.stopPropagation()}
                   />
                 </form>
-                <span className="timer-pop__unit">minutes</span>
+                <span className="timer-pop__unit">{t('checkpoints.minutes')}</span>
               </div>
             )}
             <label className="timer-pop__sound">
               <input type="checkbox" checked={sound} onChange={(e) => toggleSound(e.target.checked)} />
-              Chime at the end (for me)
+              {t('checkpoints.chime')}
             </label>
           </div>,
           document.body,
