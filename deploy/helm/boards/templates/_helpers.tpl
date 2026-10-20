@@ -72,13 +72,9 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- define "boards.strategy" -}}
 {{- if .Values.strategy }}
 {{- toYaml .Values.strategy }}
-{{- else if and (eq .Values.storage.driver "fs") .Values.persistence.enabled }}
-type: Recreate
 {{- else }}
-type: RollingUpdate
-rollingUpdate:
-  maxSurge: 1
-  maxUnavailable: 0
+{{- /* One replica: two pods never overlap, so the result does not depend on the store's conditional writes. */}}
+type: Recreate
 {{- end }}
 {{- end }}
 

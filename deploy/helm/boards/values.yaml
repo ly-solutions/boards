@@ -40,8 +40,8 @@ storage:
     region: ""
     # -- Use path-style URLs (`BOARDS_S3_FORCE_PATH_STYLE`); needed by MinIO and most self-hosted stores.
     forcePathStyle: false
-    # -- `auto` probes whether the store honours `If-Match`/`If-None-Match` on PUT; `on` forces conditional
-    # writes; `off` always compares first (`BOARDS_S3_CONDITIONAL_WRITES`).
+    # -- `auto` probes with overlapping writes whether the store enforces `If-Match`/`If-None-Match` on PUT
+    # atomically; `on` trusts the store; `off` always compares first (`BOARDS_S3_CONDITIONAL_WRITES`).
     conditionalWrites: auto
     # -- Create the bucket at start-up if it does not exist (`BOARDS_S3_CREATE_BUCKET`).
     createBucket: false
@@ -210,9 +210,10 @@ topologySpreadConstraints: []
 # -- Priority class of the pod.
 priorityClassName: ""
 
-# -- Deployment strategy. Empty = `RollingUpdate` with `maxSurge: 1, maxUnavailable: 0` (safe: writes use ETag
-# preconditions and the loser merges), except `Recreate` for `storage.driver: fs` with persistence, where a
-# ReadWriteOnce volume cannot be mounted by two pods.
+# -- Deployment strategy. Empty = `Recreate`: the one pod stops (flushing every board) before the new one starts, so
+# two pods never write at once. On a store whose conditional writes are atomic (the startup log line
+# `s3_conditional_writes` says `mode: native`, e.g. AWS S3, MinIO) you may set
+# `{type: RollingUpdate, rollingUpdate: {maxSurge: 1, maxUnavailable: 0}}` for upgrades without a gap.
 strategy: {}
 # -- Seconds the pod gets to flush boards to storage after SIGTERM.
 terminationGracePeriodSeconds: 30

@@ -573,7 +573,14 @@ export function createStore({
    * Save a checkpoint. `closeWeek` is the planning-board ritual: after the checkpoint, done stickies leave the
    * board and failed ones go back to "in progress". The done ones remain in the checkpoint itself.
    */
-  async function addCheckpoint(state, { title, by = null, closeWeek = false } = {}) {
+  function addCheckpoint(state, options = {}) {
+    // checkpoints.json is a read-modify-write of one object: two checkpoints saved at once must not drop one.
+    const run = (state.checkpointWrite ?? Promise.resolve()).then(() => addCheckpointLocked(state, options))
+    state.checkpointWrite = run.catch(() => {})
+    return run
+  }
+
+  async function addCheckpointLocked(state, { title, by = null, closeWeek = false } = {}) {
     const list = await checkpoints(state)
     if (list.length >= MAX_CHECKPOINTS) throw new LimitError(`a board holds at most ${MAX_CHECKPOINTS} checkpoints`)
     const name = String(title ?? '').replace(/\s+/g, ' ').trim().slice(0, MAX_CHECKPOINT_TITLE)

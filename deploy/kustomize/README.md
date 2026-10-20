@@ -37,5 +37,6 @@ patches:
           - { name: BOARDS_METRICS_PORT, value: "9090" }
 ```
 
-Keep `replicas: 1`: live board state is in process memory. For `BOARDS_STORAGE=fs`, mount a PVC at
-`BOARDS_DATA_DIR` and switch the strategy to `Recreate`.
+Keep `replicas: 1`: live board state is in process memory. The base uses `strategy: Recreate`, so two pods never
+write at once; see [storage.md](../../docs/storage.md#concurrency) for when a rolling update is safe. For
+`BOARDS_STORAGE=fs`, mount a PVC at `BOARDS_DATA_DIR` and keep `Recreate`.

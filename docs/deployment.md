@@ -12,7 +12,8 @@ bucket or a local folder. Pick whichever fits; all of them use the same [configu
 | [Argo CD](#argo-cd) | as Helm | GitOps | manifest renders with the chart |
 | [kustomize](#kustomize) | S3 | Kubernetes without Helm | `kubectl kustomize` |
 
-Run a **single replica** everywhere — see [storage.md](storage.md#concurrency) for why rollouts are still safe.
+Run a **single replica** everywhere, and on Kubernetes keep the default `Recreate` rollout unless your store's
+conditional writes are atomic — see [storage.md](storage.md#concurrency).
 
 ## docker compose
 

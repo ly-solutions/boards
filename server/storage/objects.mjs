@@ -16,8 +16,9 @@
  *   getVersion(key, versionId)       -> { body, etag, versionId } | null
  *
  * `ifMatch` / `ifNoneMatch: '*'` give optimistic concurrency: the write only lands when the object is still the
- * one we read (or still absent). That is what lets two replicas briefly overlap during a rolling update without
- * one silently overwriting the other's snapshot.
+ * one we read (or still absent). Inside one process every driver also serialises writes per key, so the guarantee
+ * holds there even on a store whose preconditions are not atomic under concurrency. Between processes it holds
+ * only as far as the store's own conditional writes do (see s3.mjs and docs/storage.md).
  */
 import { createHash, randomBytes } from 'node:crypto'
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
@@ -34,8 +35,12 @@ export const etagOf = (body) => `"${createHash('md5').update(body).digest('hex')
 
 const toBuffer = (body) => (Buffer.isBuffer(body) ? body : Buffer.from(body ?? ''))
 
-/** Serialises check-and-write per key inside one process. */
-function keyedLock() {
+/**
+ * Serialises work per key inside one process: calls for the same key run one after another, other keys are not
+ * held up. Used for check-and-write on every driver, because some S3-compatible stores check `If-Match` /
+ * `If-None-Match` correctly one request at a time but not when requests for one key overlap.
+ */
+export function keyedLock() {
   const tails = new Map()
   return async function withLock(key, fn) {
     const previous = tails.get(key) ?? Promise.resolve()

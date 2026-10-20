@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- Concurrent writes to one board within a process no longer depend on the store's preconditions: the S3 driver
+  serialises writes per key in both modes, checkpoints are saved one at a time per board, and the snapshot manifest
+  is updated under a per-board lock. On a store whose preconditions are not atomic (seen on Selectel ru-3), two
+  checkpoints or snapshots saved at once could drop one.
+
 ### Added
 
 - Plugins: `BOARDS_PLUGINS` loads server plugins at start-up. A plugin can add routes, card resolvers (rich cards
@@ -25,6 +32,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Kubernetes: the Helm chart and the kustomize base roll out with `Recreate` by default, so two pods never write at
+  once. On a store whose conditional writes are atomic you can opt back into an overlapping `RollingUpdate`.
+- The `auto` conditional-write probe now fires overlapping requests (8 parallel creates, then 8 parallel `If-Match`
+  replaces) and trusts the store only if each phase lets exactly one write through. A sequential probe passed on
+  stores that check preconditions correctly one request at a time but not under concurrency. The verdict is logged
+  with the counts.
 - The editor fits the whole board into the view on first load when it is embedded in a frame or a narrow pane
   (under 1024 px), never zooming above 100 %; `?fit=1` / `?fit=0` force it either way. Wide windows keep the
   usual 100 % view.

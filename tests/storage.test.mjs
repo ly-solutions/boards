@@ -4,7 +4,8 @@
  *   - fs       (temporary directory)
  *   - s3       (MinIO in Docker when available, otherwise the in-process fake in tests/helpers/fake-s3.mjs —
  *               the test names say which one ran)
- * plus fake-only tests for S3-compatible stores that ignore or reject conditional writes.
+ * plus fake-only tests for S3-compatible stores that ignore or reject conditional writes, or check them correctly only
+ * one request at a time.
  */
 import { describe, test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -81,6 +82,16 @@ for (const [name, make] of Object.entries(DRIVERS)) {
       await assert.rejects(o.put('k', 'v3', { ifMatch: first.etag }), ConflictError)
       await o.put('k', 'v3', { ifMatch: second.etag })
       assert.equal((await o.get('k')).body.toString(), 'v3')
+    })
+
+    test('overlapping If-None-Match creates and If-Match replaces of one key: exactly one of each wins', async () => {
+      const o = await make()
+      const outcomes = async (writes) => (await Promise.allSettled(writes)).map((r) => (r.status === 'fulfilled' ? 'ok' : r.reason instanceof ConflictError ? 'conflict' : String(r.reason)))
+      const created = await outcomes(Array.from({ length: 8 }, (_, i) => o.put('race', `c${i}`, { ifNoneMatch: '*' })))
+      assert.deepEqual(created.toSorted(), ['conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'conflict', 'ok'])
+      const { etag } = await o.get('race')
+      const replaced = await outcomes(Array.from({ length: 8 }, (_, i) => o.put('race', `r${i}`, { ifMatch: etag })))
+      assert.equal(replaced.filter((x) => x === 'ok').length, 1, replaced.join(','))
     })
 
     test('list with prefix and delimiter', async () => {
@@ -228,6 +239,90 @@ describe('S3 stores with partial conditional-write support (fake)', () => {
     assert.deepEqual(parseS3Url('s3://my-bucket'), { bucket: 'my-bucket', prefix: '' })
     assert.deepEqual(parseS3Url('s3://my-bucket/team/boards'), { bucket: 'my-bucket', prefix: 'team/boards/' })
     assert.throws(() => parseS3Url('https://x'))
+  })
+})
+
+describe('S3 store whose preconditions are not atomic under concurrency (fake)', () => {
+  const racy = async (overrides = {}) => {
+    const fake = await startFakeS3({ conditionals: 'racy' })
+    const events = []
+    const objects = s3Objects({ bucket: 'b', endpoint: fake.endpoint, forcePathStyle: true, accessKeyId: 'x', secretAccessKey: 'y', createBucket: true, log: (e) => events.push(e), ...overrides })
+    await objects.ensureBucket()
+    return { fake, objects, events }
+  }
+
+  test('auto: the concurrent probe sees it and falls back to compare-then-write, logging the counts', async () => {
+    const { fake, objects, events } = await racy()
+    try {
+      await objects.put('k', 'v1', { ifNoneMatch: '*' })
+      assert.equal(objects.conditionalMode, 'emulated')
+      const verdict = events.find((e) => e.event === 's3_conditional_writes')
+      assert.equal(verdict.level, 'warn')
+      assert.match(verdict.create, /^[2-8]\/8$/)
+      assert.match(verdict.note, /atomically/)
+      assert.equal((await objects.list('.boards-probe/')).keys.length, 0, 'probe keys are cleaned up')
+    } finally {
+      await fake.close()
+    }
+  })
+
+  test('a store that is atomic passes the probe with exactly one winner per phase', async () => {
+    const fake = await startFakeS3()
+    const events = []
+    try {
+      const objects = s3Objects({ bucket: 'b', endpoint: fake.endpoint, forcePathStyle: true, accessKeyId: 'x', secretAccessKey: 'y', createBucket: true, log: (e) => events.push(e) })
+      await objects.ensureBucket()
+      await objects.put('k', 'v1', { ifNoneMatch: '*' })
+      const verdict = events.find((e) => e.event === 's3_conditional_writes')
+      assert.deepEqual({ mode: verdict.mode, create: verdict.create, replace: verdict.replace }, { mode: 'native', create: '1/8', replace: '1/8' })
+    } finally {
+      await fake.close()
+    }
+  })
+
+  for (const conditionalWrites of ['on', 'auto']) {
+    test(`conditionalWrites=${conditionalWrites}: one process never lets two overlapping writes of a key through`, async () => {
+      const { fake, objects } = await racy({ conditionalWrites })
+      try {
+        const settle = async (writes) => (await Promise.allSettled(writes)).filter((r) => r.status === 'fulfilled').length
+        assert.equal(await settle(Array.from({ length: 8 }, (_, i) => objects.put('k', `c${i}`, { ifNoneMatch: '*' }))), 1)
+        const { etag } = await objects.get('k')
+        assert.equal(await settle(Array.from({ length: 8 }, (_, i) => objects.put('k', `r${i}`, { ifMatch: etag }))), 1)
+      } finally {
+        await fake.close()
+      }
+    })
+  }
+
+  test('concurrent edits, flushes, checkpoints and snapshots of one board lose nothing', async () => {
+    const { fake, objects } = await racy({ conditionalWrites: 'on' })
+    try {
+      const storage = createBoardStorage({ objects, snapshots: 'objects', snapshotIntervalMs: 0 })
+      const store = createStore({ storage, flushDelayMs: 10_000, log: () => {} })
+      const slug = 'racy-board-1'
+      const board = await store.create({ slug, meta: { title: 'Racy', key: 'k' }, elements: [rect('base')] })
+      const N = 8
+      await Promise.all([
+        ...Array.from({ length: N }, async (_, i) => {
+          store.apply(board, [rect(`edit-${i}`)])
+          await store.flush(board)
+        }),
+        ...Array.from({ length: N }, (_, i) => store.addCheckpoint(board, { title: `cp ${i}` })),
+        ...Array.from({ length: N }, (_, i) => storage.addSnapshot(slug, scene([rect(`snap-${i}`)]), { source: 'restore', extra: { n: i } })),
+      ])
+      await store.flushAll()
+
+      const fresh = createBoardStorage({ objects: s3Objects({ bucket: 'b', endpoint: fake.endpoint, forcePathStyle: true, accessKeyId: 'x', secretAccessKey: 'y' }), snapshots: 'objects' })
+      const loaded = await fresh.readBoard(slug)
+      const ids = loaded.scene.elements.map((e) => e.id)
+      for (let i = 0; i < N; i += 1) assert.ok(ids.includes(`edit-${i}`), `edit-${i} is in the stored scene`)
+      const checkpoints = JSON.parse(await fresh.readFile(slug, 'checkpoints.json'))
+      assert.equal(checkpoints.length, N)
+      const restored = (await fresh.listSnapshots(slug)).filter((s) => s.source === 'restore')
+      assert.equal(restored.length, N)
+    } finally {
+      await fake.close()
+    }
   })
 })
 

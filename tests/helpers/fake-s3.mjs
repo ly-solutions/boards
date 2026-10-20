@@ -5,6 +5,8 @@
  *
  * Used by tests when Docker (and therefore MinIO) is not available. Knobs simulate real-world stores:
  *   conditionals: 'native' | 'ignore' (accepts and ignores the headers) | 'reject' (501 NotImplemented)
+ *                 | 'racy' (checks the headers, then stores after a pause: correct one request at a time, but
+ *                   overlapping requests for one key all pass the check, as seen on a real S3-compatible store)
  *   pageSize: ListObjectsV2 page size, to exercise pagination
  */
 import { createHash } from 'node:crypto'
@@ -96,12 +98,14 @@ export async function startFakeS3({ conditionals = 'native', pageSize = 1000 } =
       const ifMatch = req.headers['if-match']
       const ifNoneMatch = req.headers['if-none-match']
       if ((ifMatch || ifNoneMatch) && conditionals === 'reject') return error(res, 501, 'NotImplemented', 'conditional writes are not supported')
-      if (conditionals === 'native') {
+      if (conditionals === 'native' || conditionals === 'racy') {
         if (ifNoneMatch === '*' && latest) return error(res, 412, 'PreconditionFailed')
         if (ifMatch && (!latest || latest.etag !== ifMatch)) return error(res, 412, 'PreconditionFailed')
       }
+      if (conditionals === 'racy') await new Promise((resolve) => setTimeout(resolve, 30))
+      const current = bucket.objects.get(key)
       const entry = { body, etag: `"${createHash('md5').update(body).digest('hex')}"`, lastModified: new Date(), versionId: `v${String(++counter).padStart(6, '0')}`, contentType: req.headers['content-type'] }
-      bucket.objects.set(key, bucket.versioning ? [entry, ...(versions ?? [])] : [entry])
+      bucket.objects.set(key, bucket.versioning ? [entry, ...(current ?? [])] : [entry])
       res.writeHead(200, { etag: entry.etag, ...(bucket.versioning ? { 'x-amz-version-id': entry.versionId } : {}) })
       return res.end()
     }

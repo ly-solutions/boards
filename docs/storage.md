@@ -31,16 +31,45 @@ share a bucket.
 
 ## Concurrency
 
-Run **one replica**. A board's live state (open sockets, merged edits) must exist once. During a rolling update two
-processes overlap for a few seconds: each writes `scene.excalidraw` with `If-Match: <the ETag it read>`. The loser
-gets a precondition failure, re-reads the winner's scene, merges element by element (higher `version` wins, then
-lower `versionNonce` — the same rule Excalidraw uses) and writes again. Nobody's edits are lost. Hard kills lose at
-most the last few seconds on the server, and open browsers resend their scene when they notice the new server epoch.
+Run **one replica**. A board's live state (open sockets, merged edits) must exist once.
 
-S3-compatible stores differ in their support for conditional writes. With `BOARDS_S3_CONDITIONAL_WRITES=auto` the
-driver probes once at the first conditional write — it attempts a PUT that must fail — and uses native preconditions
-when the store enforces them, otherwise HEAD + compare + PUT. Force either with `on` / `off`. Tested against AWS-style
-semantics in an in-process fake, against MinIO, and against fakes that ignore or reject the headers.
+Inside the process, writes are serialised: every object key is written by one request at a time, a board's scene
+flushes run one after another, and so do its checkpoints and its snapshot manifest. No two requests for the same
+object ever reach the store at once, whatever the store does with preconditions.
+
+Between processes, safety rests on the store's conditional writes. When two processes write one board (a second
+replica by mistake, the overlap of a rolling update, a person editing the bucket), each writes `scene.excalidraw`
+with `If-Match: <the ETag it read>`. The loser gets a precondition failure, re-reads the winner's scene, merges
+element by element (higher `version` wins, then lower `versionNonce` — the same rule Excalidraw uses) and writes
+again. Hard kills lose at most the last few seconds on the server, and open browsers resend their scene when they
+notice the new server epoch.
+
+### Stores whose preconditions are not atomic
+
+S3-compatible stores differ in their support for conditional writes. Some reject `If-Match` / `If-None-Match`, some
+silently ignore them, and some check them correctly one request at a time but not when requests for one key overlap.
+The last kind was seen on Selectel ru-3 in 2026: 8 parallel `If-None-Match: *` creates of one key gave 7 or 8
+successes, and 8 parallel `If-Match` replaces with the same ETag all succeeded. A sequential test passes on such a
+store, so it looks fine until two writers actually race.
+
+With `BOARDS_S3_CONDITIONAL_WRITES=auto` the driver probes once, at the first conditional write, with overlapping
+requests: 8 parallel creates of a fresh `.boards-probe/…` key, then 8 parallel replaces conditional on the same ETag.
+Each phase must let exactly one write through. Only then does it use the store's preconditions (`native`); otherwise
+it compares ETags itself before writing (`emulated`). The verdict is logged once with the counts:
+
+```json
+{"event":"s3_conditional_writes","mode":"native","create":"1/8","replace":"1/8"}
+{"level":"warn","event":"s3_conditional_writes","mode":"emulated","create":"8/8","note":"the store does not enforce If-Match / If-None-Match atomically under concurrency; …"}
+```
+
+Force either mode with `on` / `off`. Neither mode makes two processes safe on a store whose preconditions are not
+atomic, so on such a store (or whenever the probe says `emulated`) run exactly one process and roll it out with
+`Recreate`, never with an overlapping rolling update. That is the Helm chart's and the kustomize base's default.
+On a store where the probe says `native` (AWS S3, MinIO) an overlapping rolling update is safe and avoids the few
+seconds of downtime.
+
+Tested against MinIO, against an in-process fake with AWS semantics, and against fakes that ignore or reject the
+headers or check them non-atomically.
 
 ## History
 

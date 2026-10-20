@@ -24,11 +24,13 @@
  * `boards migrate --from-git` are always snapshot objects, so both kinds are listed together.
  *
  * Concurrency. The scene is written with `If-Match: <etag we read>` (or `If-None-Match: *` for a new board). A
- * conflict means someone else wrote the board — typically the other pod during a rolling update; the store then
- * re-reads, merges element by element and writes again, so neither side loses edits.
+ * conflict means someone else wrote the board (another process, or a person by hand); the store then re-reads,
+ * merges element by element and writes again, so neither side loses edits. Inside one process the snapshot
+ * manifest, a read-modify-write of one object, is updated under a per-board lock, and the store (store.mjs)
+ * serialises scene flushes and checkpoints per board.
  */
 import { parse as parseYaml } from 'yaml'
-import { ConflictError } from './objects.mjs'
+import { ConflictError, keyedLock } from './objects.mjs'
 
 export { ConflictError }
 
@@ -108,6 +110,7 @@ export function createBoardStorage({
   const manifestKey = (slug) => keyOf(slug, 'snapshots/index.json')
   const snapshotKey = (slug, id) => keyOf(slug, `snapshots/${id}.excalidraw`)
   const lastSnapshotAt = new Map()
+  const withBoardLock = keyedLock()
   let resolvedMode = snapshots === 'auto' ? null : snapshots
 
   const text = async (key) => {
@@ -142,7 +145,11 @@ export function createBoardStorage({
   }
 
   /** Store one immutable snapshot of the scene and list it in the manifest. */
-  async function addSnapshot(slug, body, { at = new Date(now()).toISOString(), source = 'auto', extra = {} } = {}) {
+  function addSnapshot(slug, body, options = {}) {
+    return withBoardLock(slug, () => addSnapshotLocked(slug, body, options))
+  }
+
+  async function addSnapshotLocked(slug, body, { at = new Date(now()).toISOString(), source = 'auto', extra = {} } = {}) {
     const list = await readManifest(slug)
     let id = snapshotIdAt(at)
     for (let n = 2; list.some((s) => s.id === id); n += 1) id = `${snapshotIdAt(at)}-${n}`
@@ -170,8 +177,10 @@ export function createBoardStorage({
       const last = (await readManifest(slug)).at(-1)
       lastSnapshotAt.set(slug, last?.at ? Date.parse(last.at) : 0)
     }
-    if (now() - lastSnapshotAt.get(slug) < snapshotIntervalMs) return
-    await addSnapshot(slug, body)
+    await withBoardLock(slug, async () => {
+      if (now() - lastSnapshotAt.get(slug) < snapshotIntervalMs) return
+      await addSnapshotLocked(slug, body)
+    })
   }
 
   return {
@@ -260,29 +269,34 @@ export function createBoardStorage({
      * Bulk import (the git migration): write many snapshots, then the manifest once. `items`: [{ at, body, extra }].
      * Existing snapshots with the same id are left alone, so re-running an import is harmless.
      */
-    async importSnapshots(slug, items) {
-      const list = await readManifest(slug)
-      const ids = new Set(list.map((s) => s.id))
-      let added = 0
-      for (const item of items) {
-        if (item.extra?.commit && list.some((s) => s.commit === item.extra.commit)) continue
-        let id = snapshotIdAt(item.at)
-        for (let n = 2; ids.has(id); n += 1) id = `${snapshotIdAt(item.at)}-${n}`
-        await objects.put(snapshotKey(slug, id), item.body, { contentType: 'application/json' })
-        let elements = null
-        try {
-          elements = JSON.parse(item.body).elements?.filter((el) => !el.isDeleted).length ?? null
-        } catch {
-          elements = null
-        }
-        list.push({ id, at: new Date(item.at).toISOString(), source: 'migration', bytes: Buffer.byteLength(item.body), elements, ...(item.extra ?? {}) })
-        ids.add(id)
-        added += 1
-      }
-      list.sort((a, b) => String(a.at).localeCompare(String(b.at)))
-      if (added) await writeManifest(slug, list)
-      if (list.length) lastSnapshotAt.set(slug, Date.parse(list.at(-1).at) || 0)
-      return added
+    importSnapshots(slug, items) {
+      return withBoardLock(slug, () => importSnapshotsLocked(slug, items))
     },
+  }
+
+  /** Bulk import under the board lock (see importSnapshots). */
+  async function importSnapshotsLocked(slug, items) {
+    const list = await readManifest(slug)
+    const ids = new Set(list.map((s) => s.id))
+    let added = 0
+    for (const item of items) {
+      if (item.extra?.commit && list.some((s) => s.commit === item.extra.commit)) continue
+      let id = snapshotIdAt(item.at)
+      for (let n = 2; ids.has(id); n += 1) id = `${snapshotIdAt(item.at)}-${n}`
+      await objects.put(snapshotKey(slug, id), item.body, { contentType: 'application/json' })
+      let elements = null
+      try {
+        elements = JSON.parse(item.body).elements?.filter((el) => !el.isDeleted).length ?? null
+      } catch {
+        elements = null
+      }
+      list.push({ id, at: new Date(item.at).toISOString(), source: 'migration', bytes: Buffer.byteLength(item.body), elements, ...(item.extra ?? {}) })
+      ids.add(id)
+      added += 1
+    }
+    list.sort((a, b) => String(a.at).localeCompare(String(b.at)))
+    if (added) await writeManifest(slug, list)
+    if (list.length) lastSnapshotAt.set(slug, Date.parse(list.at(-1).at) || 0)
+    return added
   }
 }

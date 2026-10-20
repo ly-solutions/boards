@@ -29,16 +29,18 @@ OIDC fields, `publicUrl` shape, `cookieSameSite=none` without https, unknown fea
 ## Why one replica
 
 Live board state (open boards, WebSocket rooms, pending writes) lives in process memory, so the Deployment is pinned
-to `replicas: 1` and the chart offers no HPA or PodDisruptionBudget. Rollouts are still safe:
+to `replicas: 1` and the chart offers no HPA or PodDisruptionBudget.
 
-- With S3 (and `fs` without persistence) the strategy is `RollingUpdate` with `maxSurge: 1, maxUnavailable: 0`. For a
-  few seconds two pods overlap; writes carry ETag preconditions (`If-Match`), so the pod that loses a race re-reads and
-  merges instead of overwriting.
-- With `storage.driver=fs` and persistence the strategy is `Recreate`: a ReadWriteOnce volume cannot be mounted by
-  two pods. Expect a short gap during upgrades.
-- On SIGTERM the pod flushes every dirty board before exiting (`terminationGracePeriodSeconds: 30`).
-
-Override with `strategy` if you know better for your storage.
+- The default strategy is `Recreate`: on SIGTERM the old pod flushes every dirty board
+  (`terminationGracePeriodSeconds: 30`), then the new pod starts. Two pods never write at once, which keeps boards
+  safe on any store, including S3-compatible stores whose `If-Match` / `If-None-Match` are not atomic when requests
+  overlap (seen on Selectel ru-3 in 2026). Expect a gap of a few seconds during upgrades; open browsers reconnect
+  and resend their scene.
+- On a store whose conditional writes are atomic (AWS S3, MinIO; the startup log line `s3_conditional_writes` says
+  `mode: native`) you can set `strategy: {type: RollingUpdate, rollingUpdate: {maxSurge: 1, maxUnavailable: 0}}`
+  for upgrades without a gap: for a few seconds two pods overlap, and the one that loses a write race re-reads and
+  merges. Keep `Recreate` with `storage.driver=fs` and persistence, since a ReadWriteOnce volume cannot be mounted by
+  two pods.
 
 ## Install
 
@@ -212,8 +214,8 @@ namespace). Egress is not restricted, since S3, the OIDC provider and the webhoo
 
 ## Upgrading
 
-- One replica: an upgrade replaces the pod. With S3 the new pod is started before the old one stops; with `fs` +
-  persistence the old pod stops first.
+- One replica: an upgrade replaces the pod. By default (`Recreate`) the old pod flushes and stops first; with
+  `strategy.type=RollingUpdate` the new pod starts before the old one stops.
 - Generated values (the session secret and, in token mode, the API token) are read back from the existing Secret
   with `lookup` and kept. Tools that render without cluster access (Argo CD, `helm template | kubectl apply`) cannot
   do that and would regenerate them on every render — set `auth.sessionSecret`/`auth.apiTokens` or use
@@ -237,7 +239,7 @@ namespace). Egress is not restricted, since S3, the OIDC provider and the webhoo
 | storage.s3.endpoint | string | `""` | Endpoint for S3-compatible stores such as MinIO, Ceph or R2 (`BOARDS_S3_ENDPOINT`). Empty for AWS. |
 | storage.s3.region | string | `""` | Region (`BOARDS_S3_REGION`). Empty = `$AWS_REGION`, else `us-east-1`. |
 | storage.s3.forcePathStyle | bool | `false` | Use path-style URLs (`BOARDS_S3_FORCE_PATH_STYLE`); needed by MinIO and most self-hosted stores. |
-| storage.s3.conditionalWrites | string | `"auto"` | `auto` probes whether the store honours `If-Match`/`If-None-Match` on PUT; `on` forces conditional writes; `off` always compares first (`BOARDS_S3_CONDITIONAL_WRITES`). |
+| storage.s3.conditionalWrites | string | `"auto"` | `auto` probes with overlapping writes whether the store enforces `If-Match`/`If-None-Match` on PUT atomically; `on` trusts the store; `off` always compares first (`BOARDS_S3_CONDITIONAL_WRITES`). |
 | storage.s3.createBucket | bool | `false` | Create the bucket at start-up if it does not exist (`BOARDS_S3_CREATE_BUCKET`). |
 | storage.s3.credentials.accessKeyId | string | `""` | Static access key id, stored in the chart Secret (`BOARDS_S3_ACCESS_KEY_ID`). Leave both keys empty to use IRSA / EKS Pod Identity / the AWS default credential chain, or put them in `existingSecret`. |
 | storage.s3.credentials.secretAccessKey | string | `""` | Static secret access key, stored in the chart Secret (`BOARDS_S3_SECRET_ACCESS_KEY`). |
@@ -294,7 +296,7 @@ namespace). Egress is not restricted, since S3, the OIDC provider and the webhoo
 | affinity | object | `{}` | Affinity for the pod. |
 | topologySpreadConstraints | list | `[]` | Topology spread constraints for the pod. |
 | priorityClassName | string | `""` | Priority class of the pod. |
-| strategy | object | `{}` | Deployment strategy. Empty = `RollingUpdate` with `maxSurge: 1, maxUnavailable: 0` (safe: writes use ETag preconditions and the loser merges), except `Recreate` for `storage.driver: fs` with persistence, where a ReadWriteOnce volume cannot be mounted by two pods. |
+| strategy | object | `{}` | Deployment strategy. Empty = `Recreate`: the one pod stops (flushing every board) before the new one starts, so two pods never write at once. On a store whose conditional writes are atomic (the startup log line `s3_conditional_writes` says `mode: native`, e.g. AWS S3, MinIO) you may set `{type: RollingUpdate, rollingUpdate: {maxSurge: 1, maxUnavailable: 0}}` for upgrades without a gap. |
 | terminationGracePeriodSeconds | int | `30` | Seconds the pod gets to flush boards to storage after SIGTERM. |
 | podSecurityContext | object | `{"runAsNonRoot":true,"runAsUser":1000,"runAsGroup":1000,"fsGroup":1000,"seccompProfile":{"type":"RuntimeDefault"}}` | Pod security context. |
 | securityContext | object | `{"allowPrivilegeEscalation":false,"readOnlyRootFilesystem":true,"capabilities":{"drop":["ALL"]}}` | Container security context. The root filesystem is read-only; `/tmp` is an `emptyDir`. |

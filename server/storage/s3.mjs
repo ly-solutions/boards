@@ -6,10 +6,18 @@
  * token (EKS IRSA / pod identity), ECS task role, EC2 instance metadata, shared config/profile.
  *
  * Optimistic concurrency uses conditional writes (`If-Match` / `If-None-Match: *` on PutObject). Support varies
- * between S3-compatible stores — some reject the headers, some silently ignore them — so in `auto` mode the
- * driver probes the store once: a write that must fail is attempted, and if it lands anyway the driver falls
- * back to compare-then-write (HEAD, compare ETag, PUT). That fallback has a small race window, which is fine for
- * the single-writer deployment boards runs as.
+ * between S3-compatible stores: some reject the headers, some silently ignore them, and some check them correctly
+ * one request at a time but not when requests for one key overlap (seen on Selectel ru-3 in 2026: 8 parallel
+ * `If-None-Match: *` creates of one key gave 7 or 8 successes). So:
+ *
+ * - inside this process every write is serialised per key, in both modes, so overlapping requests never reach the
+ *   store for the same key at once;
+ * - in `auto` mode the driver probes the store once with overlapping writes: 8 parallel creates of a fresh key and
+ *   then 8 parallel `If-Match` replaces with the same ETag must each give exactly one success. Only then does it
+ *   trust the store (`native`); otherwise it compares ETags itself before writing (`emulated`).
+ *
+ * Neither mode makes two processes safe on a store whose preconditions are not atomic: run one replica there,
+ * with a `Recreate` rollout so two pods never overlap (docs/storage.md).
  */
 import {
   CreateBucketCommand,
@@ -23,12 +31,15 @@ import {
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3'
-import { ConflictError } from './objects.mjs'
+import { ConflictError, keyedLock } from './objects.mjs'
 
 const status = (error) => error?.$metadata?.httpStatusCode ?? 0
 const isMissing = (error) => status(error) === 404 || ['NoSuchKey', 'NotFound', 'NoSuchVersion'].includes(error?.name)
 const isPrecondition = (error) => status(error) === 412 || status(error) === 409 || ['PreconditionFailed', 'ConditionalRequestConflict'].includes(error?.name)
 const isUnsupported = (error) => status(error) === 501 || error?.name === 'NotImplemented'
+
+/** Parallel writes per probe phase. */
+export const PROBE_WRITES = 8
 
 /** `s3://bucket/some/prefix` → { bucket, prefix }. */
 export function parseS3Url(raw) {
@@ -67,6 +78,7 @@ export function s3Objects({
   /** 'native' | 'emulated' — resolved on first conditional write in auto mode. */
   let conditional = conditionalWrites === 'on' ? 'native' : conditionalWrites === 'off' ? 'emulated' : null
   let probing = null
+  const withLock = keyedLock()
 
   async function head(key) {
     try {
@@ -92,26 +104,58 @@ export function s3Objects({
     return { etag: res.ETag, versionId: res.VersionId }
   }
 
-  /** Decide once whether the store honours conditional writes. */
+  /**
+   * Fire `PROBE_WRITES` conditional writes at once and count the outcomes. A store that answers with something
+   * other than success or a failed precondition (501, 400) does not support the header at all.
+   */
+  async function burst(key, phase, options) {
+    // Bodies differ between phases too: a replace that writes the same bytes keeps the ETag and would let a second
+    // conditional replace through on a perfectly atomic store.
+    const results = await Promise.allSettled(Array.from({ length: PROBE_WRITES }, (_, i) => rawPut(key, `${phase}-${i}`, { contentType: 'text/plain', ...options })))
+    let ok = 0
+    let unsupported = 0
+    for (const result of results) {
+      if (result.status === 'fulfilled') ok += 1
+      else if (isUnsupported(result.reason) || status(result.reason) === 400) unsupported += 1
+      else if (!isPrecondition(result.reason)) throw result.reason
+    }
+    return { ok, unsupported, of: PROBE_WRITES }
+  }
+
+  /**
+   * Decide once whether the store honours conditional writes, including when requests for one key overlap:
+   * parallel creates of a fresh key, then parallel replaces conditional on the same ETag, must each let exactly
+   * one write through.
+   */
   async function probe() {
     const key = `.boards-probe/${Date.now()}-${Math.random().toString(36).slice(2)}`
+    let create = null
+    let replace = null
     try {
-      await rawPut(key, 'probe', { contentType: 'text/plain' })
-      try {
-        await rawPut(key, 'probe-2', { contentType: 'text/plain', ifMatch: '"00000000000000000000000000000000"' })
-        conditional = 'emulated'
-        log({ level: 'warn', event: 's3_conditional_writes_ignored', note: 'the store ignores If-Match; falling back to compare-then-write' })
-      } catch (error) {
-        if (isPrecondition(error)) conditional = 'native'
-        else if (isUnsupported(error) || status(error) === 400) {
-          conditional = 'emulated'
-          log({ level: 'warn', event: 's3_conditional_writes_unsupported', error: String(error?.name ?? error) })
-        } else throw error
+      create = await burst(key, 'create', { ifNoneMatch: '*' })
+      if (create.ok === 1 && !create.unsupported) {
+        const current = await head(key)
+        replace = await burst(key, 'replace', { ifMatch: current?.etag ?? '"00000000000000000000000000000000"' })
       }
     } finally {
       await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key })).catch(() => {})
     }
-    log({ event: 's3_conditional_writes', mode: conditional })
+    const atomic = create.ok === 1 && !create.unsupported && replace?.ok === 1 && !replace.unsupported
+    conditional = atomic ? 'native' : 'emulated'
+    const counts = { create: `${create.ok}/${create.of}`, ...(replace ? { replace: `${replace.ok}/${replace.of}` } : {}) }
+    if (atomic) log({ event: 's3_conditional_writes', mode: conditional, ...counts })
+    else {
+      const unsupported = create.unsupported || replace?.unsupported
+      log({
+        level: 'warn',
+        event: 's3_conditional_writes',
+        mode: conditional,
+        ...counts,
+        note: unsupported
+          ? 'the store does not support conditional writes; comparing ETags before writing (run one replica)'
+          : 'the store does not enforce If-Match / If-None-Match atomically under concurrency; comparing ETags before writing (run one replica with a Recreate rollout)',
+      })
+    }
     return conditional
   }
 
@@ -123,20 +167,24 @@ export function s3Objects({
 
   async function put(key, body, options = {}) {
     const { ifMatch, ifNoneMatch } = options
-    if (!ifMatch && !ifNoneMatch) return rawPut(key, body, options)
-    if ((await mode()) === 'native') {
-      try {
-        return await rawPut(key, body, options)
-      } catch (error) {
-        if (isPrecondition(error)) throw new ConflictError()
-        if (!isUnsupported(error)) throw error
-        conditional = 'emulated'
+    const conditionalWrite = Boolean(ifMatch || ifNoneMatch)
+    if (conditionalWrite) await mode()
+    return withLock(key, async () => {
+      if (!conditionalWrite) return rawPut(key, body, options)
+      if (conditional === 'native') {
+        try {
+          return await rawPut(key, body, options)
+        } catch (error) {
+          if (isPrecondition(error)) throw new ConflictError()
+          if (!isUnsupported(error)) throw error
+          conditional = 'emulated'
+        }
       }
-    }
-    const current = await head(key)
-    if (ifNoneMatch === '*' && current) throw new ConflictError('the object already exists')
-    if (ifMatch && (!current || current.etag !== ifMatch)) throw new ConflictError()
-    return rawPut(key, body, { contentType: options.contentType })
+      const current = await head(key)
+      if (ifNoneMatch === '*' && current) throw new ConflictError('the object already exists')
+      if (ifMatch && (!current || current.etag !== ifMatch)) throw new ConflictError()
+      return rawPut(key, body, { contentType: options.contentType })
+    })
   }
 
   return {
@@ -169,7 +217,7 @@ export function s3Objects({
     put,
 
     async delete(key) {
-      await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }))
+      await withLock(key, () => s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key })))
     },
 
     async list(prefix = '', { delimiter } = {}) {

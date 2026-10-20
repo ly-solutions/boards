@@ -35,7 +35,7 @@ Turn it off explicitly with `BOARDS_AUTH=none` for a local instance.
 | `BOARDS_S3_FORCE_PATH_STYLE` | `false` | Use path-style URLs (`endpoint/bucket/key`); needed by MinIO and most self-hosted stores. |
 | `BOARDS_S3_ACCESS_KEY_ID` | — | Static credentials. Leave empty to use the AWS default chain: `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`, web identity (EKS IRSA), ECS/EC2 roles, profiles. |
 | `BOARDS_S3_SECRET_ACCESS_KEY` | — | Static credentials (see above). |
-| `BOARDS_S3_CONDITIONAL_WRITES` | `auto` | `auto` probes whether the store honours `If-Match`/`If-None-Match` on PUT and falls back to compare-then-write; `on` forces conditional writes; `off` always compares first. |
+| `BOARDS_S3_CONDITIONAL_WRITES` | `auto` | `auto` probes with overlapping writes whether the store enforces `If-Match`/`If-None-Match` on PUT atomically and otherwise compares ETags before writing; `on` trusts the store; `off` always compares first. Writes are serialised per key within the process either way. |
 | `BOARDS_S3_CREATE_BUCKET` | `false` | Create the bucket at start-up if it does not exist (handy for compose and tests). |
 | `BOARDS_SNAPSHOTS` | `auto` | History: `bucket` (rely on bucket versioning), `objects` (immutable `snapshots/<ts>.excalidraw` objects + manifest), `auto` (bucket when versioning is enabled, else objects), `off`. |
 | `BOARDS_SNAPSHOT_INTERVAL` | `600` | `objects` mode: minimum seconds between two snapshots of a board. |
