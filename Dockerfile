@@ -3,7 +3,7 @@
 # boards: the editor (Vite) and the server-side Excalidraw bundle (esbuild) are built here, not at runtime.
 # The runtime image only gets the built files and the server's production dependencies.
 
-ARG NODE_VERSION=22.22.3
+ARG NODE_VERSION=22.23.4
 
 FROM node:${NODE_VERSION}-bookworm-slim AS build
 WORKDIR /app
