@@ -32,6 +32,17 @@ export class ConflictError extends Error {
   }
 }
 
+/**
+ * The store does not answer, or answers 5xx/429: the boards are intact but cannot be read or written right now.
+ * The service answers 503 with Retry-After instead of an internal error.
+ */
+export class StorageUnavailableError extends Error {
+  constructor(message = 'the board storage is unavailable') {
+    super(message)
+    this.name = 'StorageUnavailableError'
+  }
+}
+
 export const etagOf = (body) => `"${createHash('md5').update(body).digest('hex')}"`
 
 const toBuffer = (body) => (Buffer.isBuffer(body) ? body : Buffer.from(body ?? ''))

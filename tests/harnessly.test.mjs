@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { generateKeyPairSync, sign } from 'node:crypto'
 import { startApp, TOKEN, PUBLIC_URL } from './helpers/app.mjs'
-import { createPlatformAuth } from '../server/platform-auth.mjs'
+import { KeysUnavailableError, createPlatformAuth } from '../server/platform-auth.mjs'
 import { boardTools, slugOf } from '../server/mcp-tools.mjs'
 import { appViewHeaders, libraryRow, renderAppView } from '../server/app-view.mjs'
 import { loadConfig } from '../server/config.mjs'
@@ -205,7 +205,7 @@ test('cached hub keys outlive a short hub outage but not KEYS_MAX_AGE', async ()
   clock += 6 * 60_000
   assert.equal((await auth.verify(token())).sub, 'user-42')
   clock += 10 * 60_000
-  await assert.rejects(auth.verify(token()), /keys are unavailable/)
+  await assert.rejects(auth.verify(token()), KeysUnavailableError)
 })
 
 test('an API token works in /mcp; with harnessly off a JWT is refused and board keys work as before', async () => {
