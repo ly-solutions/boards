@@ -197,11 +197,8 @@ export function createApp({
     if (req.ctx) return req.ctx
     const origin = req.headers.origin
     const sameOrigin = !origin || origin === publicUrl
-    // A verified harnessly platform token (see handler) counts as a token: it opens boards without a key and is not
-    // a browser session, so cross-origin rules for cookies do not apply. Edits are signed with the person in it.
-    const platformUser = req.platformUser ?? null
-    const agent = Boolean(platformUser) || auth.agent(req)
-    req.ctx = { origin, sameOrigin, agent, platformUser, user: !agent && sameOrigin ? auth.user(req) : null }
+    const agent = auth.agent(req)
+    req.ctx = { origin, sameOrigin, agent, user: !agent && sameOrigin ? auth.user(req) : null }
     return req.ctx
   }
 
@@ -221,8 +218,7 @@ export function createApp({
    * - otherwise read-only.
    */
   function editor(req, state, body = {}) {
-    const { agent, user, platformUser } = context(req)
-    if (platformUser) return { kind: 'user', name: platformUser.name, email: platformUser.email, sub: platformUser.sub }
+    const { agent, user } = context(req)
     if (agent) return { kind: 'agent', name: authorOf(body) }
     if (user) return { kind: 'user', name: user.name, email: user.email }
     if ((state.meta.access ?? 'team') === 'link') {
@@ -239,8 +235,7 @@ export function createApp({
   }
 
   function requireMember(req) {
-    const { agent, user, platformUser } = context(req)
-    if (platformUser) return { kind: 'user', name: platformUser.name, email: platformUser.email, sub: platformUser.sub }
+    const { agent, user } = context(req)
     if (agent) return { kind: 'agent', name: 'agent' }
     if (user) return { kind: 'user', name: user.name, email: user.email }
     throw new HttpError(401, 'an API token (Authorization: Bearer …) or a signed-in session is required')
@@ -754,7 +749,18 @@ export function createApp({
    * session cookies are neither needed nor accepted.
    */
   async function mcp(req, res) {
-    const { platformUser } = context(req)
+    // A harnessly platform token is accepted here and nowhere else: elsewhere it is not an API token (it cannot mint
+    // hand-off links or call token-only plugin routes) and opens nothing without a board key.
+    let platformUser = null
+    const bearer = bearerOf(req)
+    if (platform.enabled && looksLikeJwt(bearer) && !auth.agent(req)) {
+      try {
+        platformUser = await platform.verify(bearer)
+      } catch (error) {
+        if (!(error instanceof TokenError)) throw error
+        return unauthorized(res, 'invalid_token', error.message)
+      }
+    }
     if (!platformUser && !auth.agent(req)) return unauthorized(res, bearerOf(req) ? 'invalid_token' : null, 'Authorization: Bearer <token> is required')
     if (req.method !== 'POST') {
       res.writeHead(405, { allow: 'POST', 'content-type': 'application/json; charset=utf-8' })
@@ -1173,19 +1179,6 @@ export function createApp({
     }
     res.on('finish', () => metrics.request(req, res.statusCode, Number(process.hrtime.bigint() - started) / 1e9))
     try {
-      // A harnessly platform token is checked before routing; a bad one is refused at once, so the machine retries
-      // with a fresh token instead of the caller getting a 404 for a board it may see.
-      if (platform.enabled) {
-        const bearer = bearerOf(req)
-        if (looksLikeJwt(bearer) && !auth.agent(req)) {
-          try {
-            req.platformUser = await platform.verify(bearer)
-          } catch (error) {
-            if (!(error instanceof TokenError)) throw error
-            return unauthorized(res, 'invalid_token', error.message)
-          }
-        }
-      }
       await route(req, res)
     } catch (error) {
       if (res.headersSent) return res.end()

@@ -70,7 +70,7 @@ export const OPTIONS = [
   ['BOARDS_PROXY_TRUSTED', '127.0.0.1/32,::1/128', '`proxy` mode: comma-separated IPs/CIDRs allowed to set identity headers (the proxy). Requests from elsewhere are anonymous.', 'Auth'],
   ['BOARDS_PROXY_SECRET', '', '`proxy` mode: optional shared secret the proxy must send in `x-boards-proxy-secret`.', 'Auth'],
   ['BOARDS_HARNESSLY_ISSUER', '', 'With `harnessly` in BOARDS_AUTH: the harnessly hub address, the `iss` of its tokens. Keys come from its `/.well-known/openid-configuration` or `/.well-known/jwks.json`. The token audience is BOARDS_PUBLIC_URL, which must then be set.', 'Auth'],
-  ['BOARDS_HARNESSLY_ORGS', '', 'With `harnessly` in BOARDS_AUTH: hub organization ids (comma-separated) whose tokens are accepted. Empty = any organization of that hub.', 'Auth'],
+  ['BOARDS_HARNESSLY_ORGS', '', 'With `harnessly` in BOARDS_AUTH (required then): hub organization ids (comma-separated) whose tokens are accepted, or `*` for every organization of that hub. People of these organizations reach every board through the MCP tools.', 'Auth'],
   ['BOARDS_PROXY_LOGOUT_URL', '', '`proxy` mode: where "Sign out" goes (e.g. `/oauth2/sign_out`).', 'Auth'],
 
   ['BOARDS_FRAME_ANCESTORS', "'self'", 'CSP `frame-ancestors` for the editor: origins allowed to embed it in an iframe, e.g. `\'self\' https://workspace.example.com`. Read-only `?embed=1` views can be embedded anywhere.', 'Integration'],
@@ -159,7 +159,9 @@ export function loadConfig(env = process.env) {
     if (!issuer) problems.push('BOARDS_HARNESSLY_ISSUER: required with BOARDS_AUTH=harnessly (the harnessly hub address)')
     else if (!/^https?:\/\/[^/]+$/.test(issuer)) problems.push(`BOARDS_HARNESSLY_ISSUER: expected an origin like https://hub.example.com, got ${issuer}`)
     if (!env.BOARDS_PUBLIC_URL) problems.push('BOARDS_PUBLIC_URL: required with BOARDS_AUTH=harnessly (its origin is the token audience)')
-    harnessly = { issuer, orgs: list(env.BOARDS_HARNESSLY_ORGS) }
+    const orgs = list(env.BOARDS_HARNESSLY_ORGS)
+    if (!orgs.length) problems.push('BOARDS_HARNESSLY_ORGS: required with BOARDS_AUTH=harnessly — hub organization ids, or * for every organization of the hub')
+    harnessly = { issuer, orgs }
   }
   if (mode === 'token' && tokens.length === 0 && !harnesslyMode) problems.push('BOARDS_API_TOKENS: required with BOARDS_AUTH=token (the default). Generate one with `openssl rand -hex 32`, or set BOARDS_AUTH=none for a local, unauthenticated instance.')
   if (mode === 'oidc') {

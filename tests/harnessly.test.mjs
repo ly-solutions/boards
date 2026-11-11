@@ -59,8 +59,8 @@ before(async () => {
   })
   await new Promise((resolve) => hub.listen(0, '127.0.0.1', resolve))
   hubBase = `http://127.0.0.1:${hub.address().port}`
-  app = await startApp({ config: { auth: { harnessly: { issuer: `${hubBase}/with`, orgs: [] } } } })
-  plain = await startApp({ config: { auth: { harnessly: { issuer: `${hubBase}/plain/`, orgs: [] } } } })
+  app = await startApp({ config: { auth: { harnessly: { issuer: `${hubBase}/with`, orgs: ['org-1'] } } } })
+  plain = await startApp({ config: { auth: { harnessly: { issuer: `${hubBase}/plain/`, orgs: ['*'] } } } })
   off = await startApp()
   view = await startApp({ config: { appView: true, frameAncestors: `'self' ${HUB}` } })
 })
@@ -93,16 +93,18 @@ test('configuration: harnessly is off by default, needs the hub and the public a
   const base = { BOARDS_STORAGE: 'memory', BOARDS_API_TOKENS: 'x'.repeat(32) }
   assert.equal(loadConfig(base).auth.harnessly, null)
   assert.equal(loadConfig(base).appView, false)
-  assert.throws(() => loadConfig({ ...base, BOARDS_AUTH: 'harnessly' }), /BOARDS_HARNESSLY_ISSUER[\s\S]*BOARDS_PUBLIC_URL/)
-  const only = loadConfig({ BOARDS_STORAGE: 'memory', BOARDS_AUTH: 'harnessly', BOARDS_HARNESSLY_ISSUER: `${HUB}/`, BOARDS_PUBLIC_URL: 'https://boards.example' })
+  assert.throws(() => loadConfig({ ...base, BOARDS_AUTH: 'harnessly' }), /BOARDS_HARNESSLY_ISSUER[\s\S]*BOARDS_HARNESSLY_ORGS[\s\S]*BOARDS_PUBLIC_URL/)
+  const only = loadConfig({ BOARDS_STORAGE: 'memory', BOARDS_AUTH: 'harnessly', BOARDS_HARNESSLY_ISSUER: `${HUB}/`, BOARDS_HARNESSLY_ORGS: '*', BOARDS_PUBLIC_URL: 'https://boards.example' })
   assert.equal(only.auth.mode, 'token')
-  assert.deepEqual(only.auth.harnessly, { issuer: HUB, orgs: [] })
+  assert.deepEqual(only.auth.harnessly, { issuer: HUB, orgs: ['*'] })
   const both = loadConfig({ ...base, BOARDS_AUTH: 'oidc,harnessly', BOARDS_OIDC_ISSUER: 'https://id.example', BOARDS_OIDC_CLIENT_ID: 'b', BOARDS_OIDC_CLIENT_SECRET: 's', BOARDS_HARNESSLY_ISSUER: HUB, BOARDS_HARNESSLY_ORGS: 'org-1, org-2', BOARDS_PUBLIC_URL: 'https://boards.example', BOARDS_APP_VIEW: 'on' })
   assert.equal(both.auth.mode, 'oidc')
   assert.deepEqual(both.auth.harnessly.orgs, ['org-1', 'org-2'])
   assert.equal(both.appView, true)
   assert.throws(() => loadConfig({ ...base, BOARDS_AUTH: 'oidc,proxy' }), /one sign-in mode/)
   assert.equal(createPlatformAuth().enabled, false)
+  // Fail closed: no organization list, no platform tokens.
+  assert.throws(() => createPlatformAuth({ harnessly: { issuer: HUB, orgs: [] }, audience: PUBLIC_URL }), /BOARDS_HARNESSLY_ORGS/)
 })
 
 test('/mcp without a token answers 401 with a Bearer challenge', async () => {
@@ -122,6 +124,7 @@ test('a foreign audience, expired, foreign key, wrong issuer, type or algorithm 
     'foreign issuer': jwt(claimsFor('https://evil.example')),
     'wrong type': jwt(claimsFor(iss), { typ: 'JWT' }),
     'wrong algorithm': jwt(claimsFor(iss), { alg: 'HS256' }),
+    'organization not listed': jwt(claimsFor(iss, { org: 'org-2' })),
   }
   for (const [why, token] of Object.entries(bad)) {
     const { status, challenge } = await rpc(app.base, token, 'tools/list')
@@ -174,13 +177,35 @@ test('MCP with a platform token: create, read, edit and comment are signed by th
   assert.equal(missing.isError, true)
 })
 
-test('a platform token opens a board over HTTP without a key; without discovery keys come from jwks.json', async () => {
-  const token = jwt(claimsFor(`${hubBase}/plain`))
+test('a platform token works only in /mcp: no key-less HTTP access, no hand-off links; keys from jwks.json without discovery', async () => {
+  const token = jwt(claimsFor(`${hubBase}/plain`, { org: 'any-org' }))
   const slug = createdSlug(await call(plain.base, token, 'board_create', { title: 'No discovery' }))
-  const md = await fetch(`${plain.base}/b/${slug}.md`, { headers: { authorization: `Bearer ${token}` } })
-  assert.equal(md.status, 200)
   assert.ok(hits.plain >= 1)
   assert.ok(hits.with >= 1)
+  const bearer = { authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+  assert.equal((await fetch(`${plain.base}/b/${slug}.md`, { headers: bearer })).status, 404)
+  assert.equal((await fetch(`${plain.base}/b/api/boards`, { headers: bearer })).status, 401)
+  const handoff = await fetch(`${plain.base}/b/api/handoff`, { method: 'POST', headers: bearer, body: JSON.stringify({ user: { name: 'Someone else', email: 'x@example.org' } }) })
+  assert.equal(handoff.status, 401)
+})
+
+test('cached hub keys outlive a short hub outage but not KEYS_MAX_AGE', async () => {
+  let clock = Date.now()
+  let up = true
+  const jwk = { ...hubKey.publicKey.export({ format: 'jwk' }), kid: KID }
+  const fetchImpl = async (url) => {
+    if (!up) throw new Error('hub down')
+    if (url.endsWith('/openid-configuration')) return new Response('{}', { status: 404 })
+    return new Response(JSON.stringify({ keys: [jwk] }), { status: 200, headers: { 'content-type': 'application/json' } })
+  }
+  const auth = createPlatformAuth({ harnessly: { issuer: HUB, orgs: ['*'] }, audience: PUBLIC_URL, fetchImpl, now: () => clock })
+  const token = () => jwt({ ...claimsFor(HUB), iat: Math.floor(clock / 1000), exp: Math.floor(clock / 1000) + 300 })
+  assert.equal((await auth.verify(token())).sub, 'user-42')
+  up = false
+  clock += 6 * 60_000
+  assert.equal((await auth.verify(token())).sub, 'user-42')
+  clock += 10 * 60_000
+  await assert.rejects(auth.verify(token()), /keys are unavailable/)
 })
 
 test('an API token works in /mcp; with harnessly off a JWT is refused and board keys work as before', async () => {

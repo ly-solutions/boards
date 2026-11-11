@@ -21,6 +21,7 @@ import { createPublicKey, verify as verifySignature } from 'node:crypto'
 export const TOKEN_TYPE = 'harnessly-app+jwt'
 const SKEW_S = 60
 const KEYS_TTL_MS = 5 * 60_000
+const KEYS_MAX_AGE_MS = 15 * 60_000
 const REFETCH_GAP_MS = 30_000
 
 export class TokenError extends Error {}
@@ -60,8 +61,12 @@ export function createPlatformAuth({ harnessly = null, audience = '', fetchImpl 
   const iss = String(harnessly.issuer ?? '').replace(/\/+$/, '')
   if (!iss) throw new Error('BOARDS_AUTH=harnessly needs BOARDS_HARNESSLY_ISSUER')
   const aud = new URL(audience).origin
-  const allowedOrgs = new Set(harnessly.orgs ?? [])
-  let keys = null // { byKid: Map, until }
+  // Fail closed: a hub serves many organizations, so the operator names the ones that may use boards (`*` = all).
+  const orgs = harnessly.orgs ?? []
+  if (!orgs.length) throw new Error('BOARDS_AUTH=harnessly needs BOARDS_HARNESSLY_ORGS (organization ids, or * for every organization of the hub)')
+  const anyOrg = orgs.includes('*')
+  const allowedOrgs = new Set(orgs)
+  let keys = null // { byKid: Map, until, fetchedAt }
   let lastFetch = 0
   let inflight = null
 
@@ -93,7 +98,7 @@ export function createPlatformAuth({ harnessly = null, audience = '', fetchImpl 
         // Skip a broken key; the others still count.
       }
     }
-    keys = { byKid, until: now() + KEYS_TTL_MS }
+    keys = { byKid, until: now() + KEYS_TTL_MS, fetchedAt: now() }
     return keys
   }
 
@@ -109,7 +114,9 @@ export function createPlatformAuth({ harnessly = null, audience = '', fetchImpl 
       try {
         await refresh()
       } catch {
-        if (!keys) throw new TokenError('the hub keys are unavailable')
+        // A hub that is briefly down does not stop the work, but keys are never trusted past KEYS_MAX_AGE_MS: a key
+        // the hub has rotated out must stop working.
+        if (!keys || now() - keys.fetchedAt > KEYS_MAX_AGE_MS) throw new TokenError('the hub keys are unavailable')
       }
     }
     let key = keys.byKid.get(kid)
@@ -142,7 +149,7 @@ export function createPlatformAuth({ harnessly = null, audience = '', fetchImpl 
     if (!Number.isFinite(claims.exp) || claims.exp + SKEW_S < t) throw new TokenError('the token has expired')
     if (Number.isFinite(claims.nbf) && claims.nbf - SKEW_S > t) throw new TokenError('the token is not valid yet')
     if (typeof claims.sub !== 'string' || !claims.sub) throw new TokenError('the token has no sub')
-    if (allowedOrgs.size && !allowedOrgs.has(String(claims.org ?? ''))) throw new TokenError('the token organization has no access to boards')
+    if (!anyOrg && !allowedOrgs.has(String(claims.org ?? ''))) throw new TokenError('the token organization has no access to boards')
     return {
       sub: claims.sub,
       name: platformDisplayName(claims),

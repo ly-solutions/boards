@@ -66,7 +66,7 @@ Turn it off explicitly with `BOARDS_AUTH=none` for a local instance.
 | `BOARDS_PROXY_TRUSTED` | `127.0.0.1/32,::1/128` | `proxy` mode: comma-separated IPs/CIDRs allowed to set identity headers (the proxy). Requests from elsewhere are anonymous. |
 | `BOARDS_PROXY_SECRET` | — | `proxy` mode: optional shared secret the proxy must send in `x-boards-proxy-secret`. |
 | `BOARDS_HARNESSLY_ISSUER` | — | With `harnessly` in BOARDS_AUTH: the harnessly hub address, the `iss` of its tokens. Keys come from its `/.well-known/openid-configuration` or `/.well-known/jwks.json`. The token audience is BOARDS_PUBLIC_URL, which must then be set. |
-| `BOARDS_HARNESSLY_ORGS` | — | With `harnessly` in BOARDS_AUTH: hub organization ids (comma-separated) whose tokens are accepted. Empty = any organization of that hub. |
+| `BOARDS_HARNESSLY_ORGS` | — | With `harnessly` in BOARDS_AUTH (required then): hub organization ids (comma-separated) whose tokens are accepted, or `*` for every organization of that hub. People of these organizations reach every board through the MCP tools. |
 | `BOARDS_PROXY_LOGOUT_URL` | — | `proxy` mode: where "Sign out" goes (e.g. `/oauth2/sign_out`). |
 
 ### Integration

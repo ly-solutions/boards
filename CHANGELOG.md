@@ -10,7 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - harnessly app: `harnessly` in `BOARDS_AUTH` (alone or next to a sign-in mode, e.g. `oidc,harnessly`) accepts
-  harnessly platform tokens — Ed25519 JWTs from the hub (`BOARDS_HARNESSLY_ISSUER`, optional
+  harnessly platform tokens on `/mcp` — Ed25519 JWTs from the hub (`BOARDS_HARNESSLY_ISSUER`, required
   `BOARDS_HARNESSLY_ORGS`), checked against the hub's keys; edits are signed with the person in the token. `POST /mcp`
   serves MCP tools (`board_read`, `board_create`, `board_edit`, `board_comment`, `board_react`, `board_list`,
   `board_library`, `board_templates`) to agents with a platform or API token. `BOARDS_APP_VIEW=on` adds the app view:

@@ -201,7 +201,7 @@ default; board links with a key, API tokens and the configured sign-in mode keep
 BOARDS_PUBLIC_URL=https://boards.example.com     # required: its origin is the token audience
 BOARDS_AUTH=harnessly                            # or oidc,harnessly / proxy,harnessly — people keep that sign-in
 BOARDS_HARNESSLY_ISSUER=https://work.example.com # the hub: the `iss` of its tokens
-# BOARDS_HARNESSLY_ORGS=org-1,org-2              # optional: only these hub organizations
+BOARDS_HARNESSLY_ORGS=org-1,org-2                # required: hub organizations allowed in, or * for all of them
 BOARDS_APP_VIEW=on                               # the full-screen app view
 BOARDS_FRAME_ANCESTORS="'self' https://work.example.com https://*.machines.example.com"
 ```
@@ -218,12 +218,16 @@ A harnessly machine asks the hub for a short-lived JWT (5 minutes) for the perso
   `<iss>/.well-known/jwks.json` when the hub has no discovery document; keys are cached for 5 minutes, an unknown `kid`
   refetches at most every 30 seconds;
 - `iss` equals `BOARDS_HARNESSLY_ISSUER`, `aud` is the origin of `BOARDS_PUBLIC_URL`, `exp`/`nbf` hold with 60 seconds
-  of leeway, `sub` is present and, with `BOARDS_HARNESSLY_ORGS`, `org` is in the list.
+  of leeway, `sub` is present and `org` is in `BOARDS_HARNESSLY_ORGS` (unless it is `*`). Cached keys survive a short
+  hub outage, but never longer than 15 minutes after the last successful fetch.
 
 Any failure is `401` with `WWW-Authenticate: Bearer realm="boards", error="invalid_token"`: the machine fetches a
-fresh token and retries once. A valid token acts like an API token — it opens any board without a key — but edits,
-comments and votes are signed with the person (`name`, else the local part of `email`). Platform tokens are for
-agents; browsers still sign in with `BOARDS_AUTH`'s other mode (`token` when `harnessly` stands alone).
+fresh token and retries once. A platform token is accepted **only by `/mcp`**: there the tools reach every board,
+and edits, comments and votes are signed with the person (`name`, else the local part of `email`). Everywhere else it
+is not an API token — it does not open boards without a key, list boards, mint hand-off links or call token-only
+plugin routes. Since the tools reach every board, `BOARDS_HARNESSLY_ORGS` decides which hub organizations get in;
+there is no per-organization scoping of boards inside one instance — run one instance per tenant if that matters.
+Browsers still sign in with `BOARDS_AUTH`'s other mode (`token` when `harnessly` stands alone).
 
 ### MCP
 

@@ -12,7 +12,7 @@ get a "Boards" entry under Apps — the boards home with the library, and a boar
 ## Install in an organization
 
 1. Run the service with `BOARDS_AUTH=harnessly` (or e.g. `oidc,harnessly`), `BOARDS_HARNESSLY_ISSUER=<hub address>`,
-   `BOARDS_PUBLIC_URL=<public boards address>`, and for the full-screen view `BOARDS_APP_VIEW=on` with the hub and
+   `BOARDS_HARNESSLY_ORGS=<hub organization ids or *>`, `BOARDS_PUBLIC_URL=<public boards address>`, and for the full-screen view `BOARDS_APP_VIEW=on` with the hub and
    machine origins in `BOARDS_FRAME_ANCESTORS` (see [docs/integrations/harnessly.md](../docs/integrations/harnessly.md)).
 2. Give the hub the boards address (the install setting `boardsUrl`).
 3. An organization admin adds an "App" item to the organization's environment: this repository, folder
