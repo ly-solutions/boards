@@ -71,11 +71,11 @@ report "private network addresses" "${ips[@]}"
 
 # 3. Forbidden words.
 if [ -n "${LEAK_CHECK_FORBIDDEN:-}" ]; then
-  mapfile -t hits < <({
-    find . -type f -print | sed 's|^\./||' | grep -iE -- "$LEAK_CHECK_FORBIDDEN" | sed 's/$/ (path)/' || true
-    grep -rnaiEo -- "$LEAK_CHECK_FORBIDDEN" . | sed 's|^\./||' | cut -c1-200 || true
-  } | sort -u)
-  report "forbidden words" "${hits[@]}"
+  # Only where, never the words: the log of a public repository is public too.
+  mapfile -t hits < <(grep -rnaiEo -- "$LEAK_CHECK_FORBIDDEN" . | sed -E 's|^\./||; s/^([^:]+:[0-9]+):.*$/\1/' | sort -u || true)
+  report "forbidden words (file:line)" "${hits[@]}"
+  paths=$(find . -type f -print | grep -ciE -- "$LEAK_CHECK_FORBIDDEN" || true)
+  if [ "$paths" -gt 0 ]; then report "forbidden words" "$paths file paths"; fi
 else
   echo "image-leak-check: LEAK_CHECK_FORBIDDEN is not set, forbidden words are not checked" >&2
 fi
