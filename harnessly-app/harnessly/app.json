@@ -2,7 +2,7 @@
   "id": "harnessly.boards",
   "name": "Boards",
   "description": "Excalidraw whiteboards: the agent reads a board as text, draws a diagram as a graph, adds to it and answers in comments",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "harnessly": ">=0.16.68",
   "trust": "sandboxed",
   "targets": [

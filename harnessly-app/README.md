@@ -5,7 +5,9 @@ The harnessly app package of this service: the agent works with boards through M
 get a "Boards" entry under Apps — the boards home with the library, and a board canvas next to the conversation.
 
 - `harnessly/app.json` — the manifest (`trust: sandboxed`, targets `app`, `pane` and `chat`).
-- `.mcp.json` — the `boards` server: `${install:boardsUrl}/mcp`, signed in with a platform token (`auth: platform`).
+- `.mcp.json` — the `boards` server: `${install:boardsUrl}/b/mcp`, signed in with a platform token (`auth: platform`).
+  `boardsUrl` is the service origin (as in the view `${install:boardsUrl}/b/app`); `/b/mcp` also works where the host
+  gives the service only the `/b` prefix.
 - `instructions.md` and `skills/boards/` — how the agent works with boards.
 - `ui/` — a small pane view with recent boards; `evals/` — scenarios for `harnessly app eval`.
 
