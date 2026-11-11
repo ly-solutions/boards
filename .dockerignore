@@ -13,3 +13,4 @@ skills
 *.log
 .env
 .env.*
+harnessly-app

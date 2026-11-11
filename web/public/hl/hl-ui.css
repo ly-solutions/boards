@@ -1,0 +1,126 @@
+/* hl-ui.css: the host's primitives for an app's view. Classes only, all under .hl-, on the platform's tokens
+   (the SDK puts --t-* on :root and follows the theme), so a view looks like the pane around it in light and dark without
+   a style of its own. Load it with <link rel="stylesheet" href="/__hl/hl-ui.css">; a view's own sheet after it wins. */
+:root {
+  color-scheme: light dark;
+  --hl-gap: 8px;
+  --hl-radius: 8px;
+  --hl-ease: cubic-bezier(0.2, 0, 0, 1);
+}
+.hl-body, .hl-body * { box-sizing: border-box; }
+.hl-body {
+  margin: 0;
+  padding: 12px;
+  background: var(--t-surface, #fff);
+  color: var(--t-text, #111);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Type: the title is the largest thing on a view. */
+.hl-title { margin: 0 0 var(--hl-gap); font-size: 18px; font-weight: 600; line-height: 1.25; }
+.hl-h { margin: 0 0 var(--hl-gap); font-size: 14px; font-weight: 600; line-height: 1.3; }
+.hl-text { margin: 0 0 var(--hl-gap); }
+.hl-muted { color: var(--t-text-secondary, #666); }
+.hl-hint { color: var(--t-text-muted, #888); font-size: 12px; }
+.hl-danger { color: var(--t-danger, #c62828); }
+
+/* Layout on an 8 px grid. */
+.hl-row { display: flex; gap: var(--hl-gap); align-items: center; flex-wrap: wrap; }
+.hl-stack { display: flex; flex-direction: column; gap: var(--hl-gap); }
+.hl-grid { display: grid; gap: var(--hl-gap); grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+.hl-spacer { flex: 1; }
+
+/* A surface: a card, a list. */
+.hl-card {
+  padding: 12px 16px;
+  border: 1px solid var(--t-border, #e5e5e5);
+  border-radius: var(--hl-radius);
+  background: var(--t-bg, #fff);
+}
+.hl-list { margin: 0; padding: 0; list-style: none; }
+.hl-list > li { padding: 8px 0; border-bottom: 1px solid var(--t-border, #e5e5e5); }
+.hl-list > li:last-child { border-bottom: 0; }
+
+/* A number with its context: the figure big, what it is under it. */
+.hl-stat { display: flex; flex-direction: column; gap: 2px; }
+.hl-stat__value { font-size: 28px; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.hl-stat__label { color: var(--t-text-secondary, #666); font-size: 12px; }
+
+/* Controls. */
+.hl-btn {
+  font: inherit;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: var(--hl-radius);
+  border: 1px solid var(--t-border-strong, #ccc);
+  background: var(--t-surface, #fff);
+  color: var(--t-text, #111);
+  transition: background-color 120ms var(--hl-ease), border-color 120ms var(--hl-ease);
+}
+.hl-btn:hover { background: var(--t-surface-hover, #f4f4f4); }
+.hl-btn:focus-visible, .hl-input:focus-visible, .hl-seg > button:focus-visible {
+  outline: 2px solid var(--t-accent, #2563eb);
+  outline-offset: 1px;
+}
+.hl-btn:disabled { cursor: default; opacity: 0.5; }
+.hl-btn--primary { background: var(--t-accent, #2563eb); border-color: var(--t-accent, #2563eb); color: #fff; }
+.hl-btn--primary:hover { background: var(--t-accent, #2563eb); filter: brightness(1.08); }
+.hl-btn--ghost { border-color: transparent; background: transparent; }
+.hl-btn--sm { padding: 4px 8px; font-size: 12px; }
+.hl-input {
+  font: inherit;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: var(--hl-radius);
+  border: 1px solid var(--t-border-strong, #ccc);
+  background: var(--t-bg, #fff);
+  color: var(--t-text, #111);
+}
+.hl-field { display: flex; flex-direction: column; gap: 4px; }
+.hl-label { font-size: 12px; font-weight: 500; color: var(--t-text-secondary, #666); }
+
+/* A choice of a few: segmented buttons, in place of a native <select>. Mark the chosen one aria-pressed="true". */
+.hl-seg {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border-radius: var(--hl-radius);
+  background: var(--t-surface-hover, #f4f4f4);
+}
+.hl-seg > button {
+  font: inherit;
+  cursor: pointer;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: calc(var(--hl-radius) - 2px);
+  background: transparent;
+  color: var(--t-text-secondary, #666);
+}
+.hl-seg > button[aria-pressed="true"] { background: var(--t-bg, #fff); color: var(--t-text, #111); }
+
+/* Tables of figures. */
+.hl-table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+.hl-table th, .hl-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--t-border, #e5e5e5); }
+.hl-table th { color: var(--t-text-secondary, #666); font-weight: 500; }
+
+/* Loading and empty: a skeleton while reading (not the same as nothing there), a plain line when there is nothing. */
+.hl-skeleton {
+  display: block;
+  min-height: 12px;
+  border-radius: 4px;
+  background: var(--t-surface-hover, #f4f4f4);
+  animation: hl-pulse 1.2s var(--hl-ease) infinite alternate;
+}
+.hl-empty { padding: 16px 0; color: var(--t-text-muted, #888); text-align: center; }
+@keyframes hl-pulse { from { opacity: 1; } to { opacity: 0.45; } }
+
+/* Something that opens and closes: give it .hl-closing while it leaves, then remove it after the transition. */
+.hl-pop { animation: hl-in 140ms var(--hl-ease); }
+.hl-pop.hl-closing { animation: hl-out 120ms var(--hl-ease) forwards; }
+@keyframes hl-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes hl-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(4px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .hl-skeleton, .hl-pop, .hl-pop.hl-closing { animation: none; }
+  .hl-btn { transition: none; }
+}

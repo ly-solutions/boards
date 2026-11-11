@@ -51,7 +51,7 @@ export const OPTIONS = [
   ['BOARDS_SNAPSHOT_INTERVAL', '600', '`objects` mode: minimum seconds between two snapshots of a board.', 'Storage'],
   ['BOARDS_SNAPSHOT_KEEP', '500', '`objects` mode: snapshots kept per board; older ones are pruned.', 'Storage'],
 
-  ['BOARDS_AUTH', 'token', 'Who may sign in to the web UI: `token` (paste an API token once; a session cookie follows), `oidc` (any OpenID Connect provider), `proxy` (trust identity headers from a reverse proxy), `none` (everyone is a signed-in user — local use only).', 'Auth'],
+  ['BOARDS_AUTH', 'token', 'Who may sign in to the web UI: `token` (paste an API token once; a session cookie follows), `oidc` (any OpenID Connect provider), `proxy` (trust identity headers from a reverse proxy), `none` (everyone is a signed-in user — local use only). Add `harnessly` to also accept harnessly platform tokens (`oidc,harnessly`); `harnessly` alone keeps the `token` sign-in page, with API tokens optional. See docs/integrations/harnessly.md.', 'Auth'],
   ['BOARDS_API_TOKENS', '', 'Comma-separated bearer tokens for agents and integrations. Required in `token` mode. Works in every mode.', 'Auth'],
   ['BOARDS_SESSION_SECRET', 'random per process', 'HMAC key for session cookies. Set it (32+ random bytes) so sessions survive restarts and replicas agree.', 'Auth'],
   ['BOARDS_SESSION_TTL', '2592000', 'Session lifetime in seconds (30 days).', 'Auth'],
@@ -69,9 +69,12 @@ export const OPTIONS = [
   ['BOARDS_PROXY_NAME_HEADER', 'x-forwarded-preferred-username', '`proxy` mode: header with a display name.', 'Auth'],
   ['BOARDS_PROXY_TRUSTED', '127.0.0.1/32,::1/128', '`proxy` mode: comma-separated IPs/CIDRs allowed to set identity headers (the proxy). Requests from elsewhere are anonymous.', 'Auth'],
   ['BOARDS_PROXY_SECRET', '', '`proxy` mode: optional shared secret the proxy must send in `x-boards-proxy-secret`.', 'Auth'],
+  ['BOARDS_HARNESSLY_ISSUER', '', 'With `harnessly` in BOARDS_AUTH: the harnessly hub address, the `iss` of its tokens. Keys come from its `/.well-known/openid-configuration` or `/.well-known/jwks.json`. The token audience is BOARDS_PUBLIC_URL, which must then be set.', 'Auth'],
+  ['BOARDS_HARNESSLY_ORGS', '', 'With `harnessly` in BOARDS_AUTH (required then): hub organization ids (comma-separated) whose tokens are accepted, or `*` for every organization of that hub. People of these organizations reach every board through the MCP tools.', 'Auth'],
   ['BOARDS_PROXY_LOGOUT_URL', '', '`proxy` mode: where "Sign out" goes (e.g. `/oauth2/sign_out`).', 'Auth'],
 
   ['BOARDS_FRAME_ANCESTORS', "'self'", 'CSP `frame-ancestors` for the editor: origins allowed to embed it in an iframe, e.g. `\'self\' https://workspace.example.com`. Read-only `?embed=1` views can be embedded anywhere.', 'Integration'],
+  ['BOARDS_APP_VIEW', 'off', '`on`: the harnessly app view — `/b/app` (home with the board library) and the bare canvas `/b/<slug>?k=…&app=1`. List the hub and machine origins in BOARDS_FRAME_ANCESTORS so harnessly may frame them.', 'Integration'],
   ['BOARDS_CORS_ORIGINS', '', 'Origins allowed to call the JSON/text API from a browser (no cookies; bearer tokens or board keys only).', 'Integration'],
   ['BOARDS_HANDOFF_TTL', '120', 'Lifetime in seconds of hand-off links minted by `POST /b/api/handoff`.', 'Integration'],
   ['BOARDS_COMMENTS_WEBHOOK_URL', '', 'POST comment events (`thread.created`, `thread.replied`, …) here.', 'Integration'],
@@ -141,14 +144,31 @@ export function loadConfig(env = process.env) {
   const cacheWarm = String(env.BOARDS_CACHE_WARM || 'on').toLowerCase()
   if (!['on', 'off', 'true', 'false', '1', '0', 'yes', 'no'].includes(cacheWarm)) problems.push('BOARDS_CACHE_WARM: expected on or off')
 
-  const mode = (env.BOARDS_AUTH || 'token').toLowerCase()
-  if (!AUTH_MODES.includes(mode)) problems.push(`BOARDS_AUTH: "${mode}" — expected ${AUTH_MODES.join(', ')}`)
+  // A sign-in mode for people, optionally with `harnessly` next to it: platform tokens are for agents, not browsers.
+  const authModes = list(String(env.BOARDS_AUTH || 'token').toLowerCase())
+  const harnesslyMode = authModes.includes('harnessly')
+  const personModes = authModes.filter((m) => m !== 'harnessly')
+  const mode = personModes[0] ?? 'token'
+  if (personModes.length > 1) problems.push(`BOARDS_AUTH: one sign-in mode (${AUTH_MODES.join(', ')}), optionally with harnessly; got "${authModes.join(',')}"`)
+  if (!AUTH_MODES.includes(mode)) problems.push(`BOARDS_AUTH: "${mode}" — expected ${AUTH_MODES.join(', ')}, optionally with harnessly`)
   const tokens = list(env.BOARDS_API_TOKENS ?? env.BOARDS_API_TOKEN)
   for (const t of tokens) if (t.length < 16 && env.BOARDS_ALLOW_SHORT_TOKENS !== '1') problems.push('BOARDS_API_TOKENS: every token must be at least 16 characters (generate one with `openssl rand -hex 32`)')
-  if (mode === 'token' && tokens.length === 0) problems.push('BOARDS_API_TOKENS: required with BOARDS_AUTH=token (the default). Generate one with `openssl rand -hex 32`, or set BOARDS_AUTH=none for a local, unauthenticated instance.')
+  let harnessly = null
+  if (harnesslyMode) {
+    const issuer = String(env.BOARDS_HARNESSLY_ISSUER || '').replace(/\/+$/, '')
+    if (!issuer) problems.push('BOARDS_HARNESSLY_ISSUER: required with BOARDS_AUTH=harnessly (the harnessly hub address)')
+    else if (!/^https?:\/\/[^/]+$/.test(issuer)) problems.push(`BOARDS_HARNESSLY_ISSUER: expected an origin like https://hub.example.com, got ${issuer}`)
+    if (!env.BOARDS_PUBLIC_URL) problems.push('BOARDS_PUBLIC_URL: required with BOARDS_AUTH=harnessly (its origin is the token audience)')
+    const orgs = list(env.BOARDS_HARNESSLY_ORGS)
+    if (!orgs.length) problems.push('BOARDS_HARNESSLY_ORGS: required with BOARDS_AUTH=harnessly — hub organization ids, or * for every organization of the hub')
+    harnessly = { issuer, orgs }
+  }
+  if (mode === 'token' && tokens.length === 0 && !harnesslyMode) problems.push('BOARDS_API_TOKENS: required with BOARDS_AUTH=token (the default). Generate one with `openssl rand -hex 32`, or set BOARDS_AUTH=none for a local, unauthenticated instance.')
   if (mode === 'oidc') {
     for (const name of ['BOARDS_OIDC_ISSUER', 'BOARDS_OIDC_CLIENT_ID', 'BOARDS_OIDC_CLIENT_SECRET']) if (!env[name]) problems.push(`${name}: required with BOARDS_AUTH=oidc`)
   }
+  const appView = String(env.BOARDS_APP_VIEW || 'off').toLowerCase()
+  if (!['on', 'off', 'true', 'false', '1', '0', 'yes', 'no'].includes(appView)) problems.push('BOARDS_APP_VIEW: expected on or off')
   const sameSite = (env.BOARDS_COOKIE_SAMESITE || 'lax').toLowerCase()
   if (!['lax', 'strict', 'none'].includes(sameSite)) problems.push('BOARDS_COOKIE_SAMESITE: expected lax, strict or none')
   const https = publicOrigin.startsWith('https:')
@@ -209,7 +229,9 @@ export function loadConfig(env = process.env) {
         logoutUrl: env.BOARDS_PROXY_LOGOUT_URL || '',
       },
       handoffTtlS: read('BOARDS_HANDOFF_TTL', (v) => int(v, 120)),
+      harnessly,
     },
+    appView: bool(appView),
     frameAncestors: env.BOARDS_FRAME_ANCESTORS || "'self'",
     corsOrigins: list(env.BOARDS_CORS_ORIGINS).map((o) => o.replace(/\/+$/, '')),
     webhook: { url: env.BOARDS_COMMENTS_WEBHOOK_URL || '', secret: env.BOARDS_COMMENTS_WEBHOOK_SECRET || '' },

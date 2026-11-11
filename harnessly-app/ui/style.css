@@ -1,0 +1,20 @@
+:root {
+  --t-bg: #ffffff;
+  --t-text: #1b1b1f;
+  --t-text-secondary: #55555f;
+  --t-text-muted: #8a8a94;
+  --t-border: #e6e6ea;
+  --t-accent: #6d49f4;
+  --t-surface-hover: #f4f4f6;
+}
+body { margin: 0; background: var(--t-bg); color: var(--t-text); font: 15px/1.5 system-ui, sans-serif; }
+.ap { max-width: 44rem; margin: 0 auto; padding: 32px 16px; }
+.ap__title { margin: 0 0 8px; font-size: 28px; line-height: 1.2; }
+.ap__lead { margin: 0 0 32px; color: var(--t-text-secondary); }
+.ap__sub { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--t-text-muted); }
+.ap__note { margin: 0; color: var(--t-text-muted); }
+.ap__note:empty { display: none; }
+.ap__list { list-style: none; margin: 0; padding: 0; }
+.ap__list li { border-bottom: 1px solid var(--t-border); }
+.ap__list a { display: block; padding: 10px 8px; color: var(--t-text); text-decoration: none; border-radius: 6px; }
+.ap__list a:hover, .ap__list a:focus-visible { background: var(--t-surface-hover); color: var(--t-accent); }

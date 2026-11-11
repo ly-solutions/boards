@@ -189,3 +189,82 @@ sends, defaulting to "agent").
 5. **Comment events** (optional): an endpoint for the webhook that verifies `X-Boards-Webhook-Secret` and routes
    threads that mention an agent to it.
 6. **CSP on the harnessly side**: `frame-src https://boards.example.com`.
+
+## 7. boards as a harnessly app
+
+Sections 1–6 describe harnessly calling boards with a shared token. boards can also be installed as a **harnessly
+app**: an agent in a conversation reads, draws and comments on behalf of the person in that conversation, and people
+get an "Apps → Boards" screen with the board library and a canvas next to the conversation. All of it is off by
+default; board links with a key, API tokens and the configured sign-in mode keep working.
+
+```sh
+BOARDS_PUBLIC_URL=https://boards.example.com     # required: its origin is the token audience
+BOARDS_AUTH=harnessly                            # or oidc,harnessly / proxy,harnessly — people keep that sign-in
+BOARDS_HARNESSLY_ISSUER=https://work.example.com # the hub: the `iss` of its tokens
+BOARDS_HARNESSLY_ORGS=org-1,org-2                # required: hub organizations allowed in, or * for all of them
+BOARDS_APP_VIEW=on                               # the full-screen app view
+BOARDS_FRAME_ANCESTORS="'self' https://work.example.com https://*.machines.example.com"
+```
+
+With Helm, pass these through `extraEnv` (and `auth.mode` for `BOARDS_AUTH`).
+
+### Platform tokens
+
+A harnessly machine asks the hub for a short-lived JWT (5 minutes) for the person in the conversation and sends it as
+`Authorization: Bearer` to the app's MCP server. boards (`server/platform-auth.mjs`) accepts it when:
+
+- the signature is Ed25519, `alg: EdDSA` (nothing else is accepted), `typ: harnessly-app+jwt`;
+- the key comes from `<iss>/.well-known/openid-configuration` → `jwks_uri` (on the hub's own host only), or from
+  `<iss>/.well-known/jwks.json` when the hub has no discovery document; keys are cached for 5 minutes, an unknown `kid`
+  refetches at most every 30 seconds;
+- `iss` equals `BOARDS_HARNESSLY_ISSUER`, `aud` is the origin of `BOARDS_PUBLIC_URL`, `exp`/`nbf` hold with 60 seconds
+  of leeway, `sub` is present and `org` is in `BOARDS_HARNESSLY_ORGS` (unless it is `*`). Cached keys survive a short
+  hub outage, but never longer than 15 minutes after the last successful fetch.
+
+Any failure is `401` with `WWW-Authenticate: Bearer realm="boards", error="invalid_token"`: the machine fetches a
+fresh token and retries once. A platform token is accepted **only by `/mcp`**: there the tools reach every board,
+and edits, comments and votes are signed with the person (`name`, else the local part of `email`). Everywhere else it
+is not an API token — it does not open boards without a key, list boards, mint hand-off links or call token-only
+plugin routes. Since the tools reach every board, `BOARDS_HARNESSLY_ORGS` decides which hub organizations get in;
+there is no per-organization scoping of boards inside one instance — run one instance per tenant if that matters.
+Browsers still sign in with `BOARDS_AUTH`'s other mode (`token` when `harnessly` stands alone).
+
+### MCP
+
+`POST /mcp` (and `/b/mcp`, for a host that routes only `/b` to boards): Streamable HTTP without sessions or a stream,
+JSON-RPC 2.0 answered with JSON; `GET` is 405. A platform token or an API token is required; session cookies and board
+keys are not accepted. The tools (`server/mcp-tools.mjs`) wrap the same operations as the HTTP API:
+
+| Tool | What it does | HTTP equivalent |
+| --- | --- | --- |
+| `board_read` | the board as text | `GET /b/<slug>.md` |
+| `board_create` | a new board: empty, from a template, with a `graph` | `POST /b/api/boards` |
+| `board_edit` | `graph`, `add`, `update`, `delete` in one revision | `POST /b/<slug>/edit` |
+| `board_comment` | a new thread, a reply, resolve | `POST /b/<slug>/comments[/<id>]` |
+| `board_react` | a reaction on a sticky | `POST /b/<slug>/react` |
+| `board_list` | boards, newest first, search by words | `GET /b/api/boards` |
+| `board_library` | boards as JSON for the app home, with "mine" | — |
+| `board_templates` | templates | `GET /b/api/templates` |
+
+The `board` argument is a slug or a link. Through MCP a comment has `authorKind: agent`, so the comment webhook does
+not hand an agent its own message back as a person's question. With an API token the signature is the `author`
+argument, or "agent".
+
+### The app view
+
+With `BOARDS_APP_VIEW=on`:
+
+- `GET /b/app` is the app home: a "what shall we draw" field that goes to the agent in the conversation, and the
+  library "All · Mine · Shared" with shelves by tag and a search. It loads harnessly's bridge and SDK
+  (`/b/_static/hl/`) and gets its data through the app's MCP server (`hl.tools.call('boards.board_library')`), so the
+  page itself needs no sign-in.
+- `GET /b/<slug>?k=…&app=1[&theme=dark|light]` is the bare canvas: the editor without its menu, brand, sign-in and
+  share buttons. The home sends `{ type: 'board-theme', theme }` messages to follow harnessly's theme.
+- Both may be framed by the origins in `BOARDS_FRAME_ANCESTORS` — list the hub and the machines there.
+
+### The app package
+
+[`harnessly-app/`](../../harnessly-app/README.md) is the app package: the manifest (views `app` and `pane`), `.mcp.json`
+with the service address from the installation (`${install:boardsUrl}`), instructions and a skill for the agent. An
+organization admin installs it as an "App" item of the organization's environment: this repository, folder
+`harnessly-app`. Without the boards address in the installation the app is simply not there.

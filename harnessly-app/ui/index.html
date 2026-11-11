@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Boards</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="ap">
+  <h1 class="ap__title">Boards</h1>
+  <p class="ap__lead">Diagrams, flows and plans on a whiteboard. Ask the agent in the conversation: "draw the service
+    map", "add … to the board", "what did we decide on the board?" — it reads a board as text and draws with a graph.</p>
+  <h2 class="ap__sub">Recent boards</h2>
+  <p class="ap__note" id="note" role="status">Loading…</p>
+  <ul class="ap__list" id="list"></ul>
+</main>
+<!-- Classic scripts only: the view runs in an opaque-origin frame. -->
+<script src="/__hl/app-sdk.js"></script>
+<script src="main.js"></script>
+</body>
+</html>

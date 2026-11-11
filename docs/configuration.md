@@ -47,7 +47,7 @@ Turn it off explicitly with `BOARDS_AUTH=none` for a local instance.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `BOARDS_AUTH` | `token` | Who may sign in to the web UI: `token` (paste an API token once; a session cookie follows), `oidc` (any OpenID Connect provider), `proxy` (trust identity headers from a reverse proxy), `none` (everyone is a signed-in user — local use only). |
+| `BOARDS_AUTH` | `token` | Who may sign in to the web UI: `token` (paste an API token once; a session cookie follows), `oidc` (any OpenID Connect provider), `proxy` (trust identity headers from a reverse proxy), `none` (everyone is a signed-in user — local use only). Add `harnessly` to also accept harnessly platform tokens (`oidc,harnessly`); `harnessly` alone keeps the `token` sign-in page, with API tokens optional. See docs/integrations/harnessly.md. |
 | `BOARDS_API_TOKENS` | — | Comma-separated bearer tokens for agents and integrations. Required in `token` mode. Works in every mode. |
 | `BOARDS_SESSION_SECRET` | `random per process` | HMAC key for session cookies. Set it (32+ random bytes) so sessions survive restarts and replicas agree. |
 | `BOARDS_SESSION_TTL` | `2592000` | Session lifetime in seconds (30 days). |
@@ -65,6 +65,8 @@ Turn it off explicitly with `BOARDS_AUTH=none` for a local instance.
 | `BOARDS_PROXY_NAME_HEADER` | `x-forwarded-preferred-username` | `proxy` mode: header with a display name. |
 | `BOARDS_PROXY_TRUSTED` | `127.0.0.1/32,::1/128` | `proxy` mode: comma-separated IPs/CIDRs allowed to set identity headers (the proxy). Requests from elsewhere are anonymous. |
 | `BOARDS_PROXY_SECRET` | — | `proxy` mode: optional shared secret the proxy must send in `x-boards-proxy-secret`. |
+| `BOARDS_HARNESSLY_ISSUER` | — | With `harnessly` in BOARDS_AUTH: the harnessly hub address, the `iss` of its tokens. Keys come from its `/.well-known/openid-configuration` or `/.well-known/jwks.json`. The token audience is BOARDS_PUBLIC_URL, which must then be set. |
+| `BOARDS_HARNESSLY_ORGS` | — | With `harnessly` in BOARDS_AUTH (required then): hub organization ids (comma-separated) whose tokens are accepted, or `*` for every organization of that hub. People of these organizations reach every board through the MCP tools. |
 | `BOARDS_PROXY_LOGOUT_URL` | — | `proxy` mode: where "Sign out" goes (e.g. `/oauth2/sign_out`). |
 
 ### Integration
@@ -72,6 +74,7 @@ Turn it off explicitly with `BOARDS_AUTH=none` for a local instance.
 | Variable | Default | Description |
 | --- | --- | --- |
 | `BOARDS_FRAME_ANCESTORS` | `'self'` | CSP `frame-ancestors` for the editor: origins allowed to embed it in an iframe, e.g. `'self' https://workspace.example.com`. Read-only `?embed=1` views can be embedded anywhere. |
+| `BOARDS_APP_VIEW` | `off` | `on`: the harnessly app view — `/b/app` (home with the board library) and the bare canvas `/b/<slug>?k=…&app=1`. List the hub and machine origins in BOARDS_FRAME_ANCESTORS so harnessly may frame them. |
 | `BOARDS_CORS_ORIGINS` | — | Origins allowed to call the JSON/text API from a browser (no cookies; bearer tokens or board keys only). |
 | `BOARDS_HANDOFF_TTL` | `120` | Lifetime in seconds of hand-off links minted by `POST /b/api/handoff`. |
 | `BOARDS_COMMENTS_WEBHOOK_URL` | — | POST comment events (`thread.created`, `thread.replied`, …) here. |
