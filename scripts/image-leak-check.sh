@@ -77,7 +77,7 @@ if [ -n "${LEAK_CHECK_FORBIDDEN:-}" ]; then
   hits=()
   while IFS= read -r -d '' f; do
     lines=$(grep -naiEw -- "$re" "$f" | cut -d: -f1 | head -20 | paste -sd, - || true)
-    if printf '%s' "$f" | grep -qiEw -- "$re"; then
+    if printf '%s' "$f" | grep -qiE -- "$re"; then  # any match, not only whole words: a path is never shown with one
       hits+=("<a file whose path has a forbidden word>: lines $lines")
     else
       hits+=("${f#./}: lines $lines")
