@@ -5,7 +5,7 @@ import { fsObjects, memoryObjects } from './objects.mjs'
 import { s3Objects } from './s3.mjs'
 
 export { ConflictError, createBoardStorage } from './boards.mjs'
-export { fsObjects, memoryObjects } from './objects.mjs'
+export { StorageUnavailableError, fsObjects, memoryObjects } from './objects.mjs'
 export { s3Objects, parseS3Url } from './s3.mjs'
 export { cachedObjects } from './cache.mjs'
 

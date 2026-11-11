@@ -26,6 +26,9 @@ const REFETCH_GAP_MS = 30_000
 
 export class TokenError extends Error {}
 
+/** The hub keys cannot be fetched: the hub is down. The token cannot be checked — that is a 503, not a 401. */
+export class KeysUnavailableError extends TokenError {}
+
 /** Whether a value looks like a JWT: three base64url parts joined by dots. */
 export function looksLikeJwt(value) {
   return typeof value === 'string' && /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(value)
@@ -116,7 +119,7 @@ export function createPlatformAuth({ harnessly = null, audience = '', fetchImpl 
       } catch {
         // A hub that is briefly down does not stop the work, but keys are never trusted past KEYS_MAX_AGE_MS: a key
         // the hub has rotated out must stop working.
-        if (!keys || now() - keys.fetchedAt > KEYS_MAX_AGE_MS) throw new TokenError('the hub keys are unavailable')
+        if (!keys || now() - keys.fetchedAt > KEYS_MAX_AGE_MS) throw new KeysUnavailableError('the hub is unavailable: sign-in cannot be checked, try again later')
       }
     }
     let key = keys.byKid.get(kid)
@@ -124,7 +127,7 @@ export function createPlatformAuth({ harnessly = null, audience = '', fetchImpl 
       try {
         await refresh()
       } catch {
-        throw new TokenError('the hub keys are unavailable')
+        throw new KeysUnavailableError('the hub is unavailable: sign-in cannot be checked, try again later')
       }
       key = keys.byKid.get(kid)
     }

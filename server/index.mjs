@@ -51,12 +51,13 @@ import { createStatic } from './static.mjs'
 import { loadConfig, testConfig } from './config.mjs'
 import { createMetrics } from './metrics.mjs'
 import { SNAPSHOT_ID } from './storage/boards.mjs'
+import { StorageUnavailableError } from './storage/objects.mjs'
 import { createTranslator } from '../shared/i18n.mjs'
 import { CATALOGS } from '../shared/locales/index.mjs'
 import { createPluginHost, PluginHttpError, PluginReply, PLUGIN_API_VERSION } from './plugins.mjs'
 import { createFlags, staticFlags } from './flags.mjs'
 import { linkPreviewResolver } from './link-preview.mjs'
-import { TokenError, bearerOf, createPlatformAuth, looksLikeJwt } from './platform-auth.mjs'
+import { KeysUnavailableError, TokenError, bearerOf, createPlatformAuth, looksLikeJwt } from './platform-auth.mjs'
 import { handleBody as handleMcpBody, ToolError } from './mcp.mjs'
 import { boardTools, slugOf } from './mcp-tools.mjs'
 import { appViewHeaders, libraryRow, renderAppView } from './app-view.mjs'
@@ -82,6 +83,14 @@ const json = (res, status, body) => sendBody(res, status, { 'content-type': 'app
 function unauthorized(res, code, message) {
   const challenge = code ? `Bearer realm="boards", error="${code}", error_description="${encodeURIComponent(message)}"` : 'Bearer realm="boards"'
   return sendBody(res, 401, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'www-authenticate': challenge }, JSON.stringify({ error: message }))
+}
+
+/** What an agent and a person hear when the board storage does not answer: the boards are intact, try later. */
+const STORAGE_UNAVAILABLE = 'the board storage is unavailable right now; the boards are intact, try again later'
+
+/** 503: a dependency of the service (the hub, the storage) does not answer; retry in a minute. */
+function unavailable(res, message) {
+  return sendBody(res, 503, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'retry-after': '60' }, JSON.stringify({ error: message }))
 }
 
 const text = (res, status, body, type = 'text/markdown; charset=utf-8') =>
@@ -458,6 +467,7 @@ export function createApp({
   /** A plugin failure is the plugin's: its own HttpError passes through, anything else is logged and becomes a 500. */
   function pluginFailure(error, plugin) {
     if (error instanceof PluginHttpError || error instanceof HttpError) return new HttpError(error.status, error.message, error.extra)
+    if (error instanceof StorageUnavailableError) return error
     console.error(JSON.stringify({ level: 'error', event: 'plugin_failed', plugin, error: String(error?.stack ?? error) }))
     return new HttpError(500, `internal error in plugin ${plugin}`)
   }
@@ -757,6 +767,9 @@ export function createApp({
       try {
         platformUser = await platform.verify(bearer)
       } catch (error) {
+        // The hub is down: the token cannot be checked, which is not the token's fault — 503, not 401, so the
+        // machine does not throw away a good token and the person sees "unavailable", not "sign in again".
+        if (error instanceof KeysUnavailableError) return unavailable(res, error.message)
         if (!(error instanceof TokenError)) throw error
         return unauthorized(res, 'invalid_token', error.message)
       }
@@ -780,6 +793,10 @@ export function createApp({
       instructions: 'Excalidraw boards: read a board with board_read, draw diagrams with board_create/board_edit through graph (the server lays it out), answer people in threads with board_comment. After an edit read the board again and check the slop section.',
       describeError: (error) => {
         if (error instanceof ToolError || error instanceof HttpError || error instanceof EditError || error instanceof LimitError || error instanceof CommentError) return error.message
+        if (error instanceof StorageUnavailableError) {
+          console.error(JSON.stringify({ level: 'warn', event: 'mcp_storage_unavailable', error: error.message }))
+          return STORAGE_UNAVAILABLE
+        }
         console.error(JSON.stringify({ level: 'error', event: 'mcp_tool_failed', error: String(error?.stack ?? error) }))
         return 'internal error of the boards service'
       },
@@ -1185,6 +1202,10 @@ export function createApp({
       if (error instanceof HttpError && error.status === 404 && req.method === 'GET' && /text\/html/.test(String(req.headers.accept ?? ''))) {
         res.writeHead(404, { 'content-type': 'text/html; charset=utf-8', 'x-robots-tag': 'noindex', 'cache-control': 'no-store' })
         return res.end(renderNotFound(staticBase, homeUrl, t))
+      }
+      if (error instanceof StorageUnavailableError) {
+        console.error(JSON.stringify({ level: 'warn', event: 'storage_unavailable', error: error.message }))
+        return unavailable(res, STORAGE_UNAVAILABLE)
       }
       if (error instanceof HttpError || error instanceof PluginHttpError) return json(res, error.status, { error: error.message, ...error.extra })
       if (error instanceof EditError || error instanceof LimitError) return json(res, 400, { error: error.message, help: `${PREFIX}/api` })

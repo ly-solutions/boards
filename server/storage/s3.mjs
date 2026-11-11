@@ -31,12 +31,20 @@ import {
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3'
-import { ConflictError, keyedLock } from './objects.mjs'
+import { ConflictError, StorageUnavailableError, keyedLock } from './objects.mjs'
 
 const status = (error) => error?.$metadata?.httpStatusCode ?? 0
 const isMissing = (error) => status(error) === 404 || ['NoSuchKey', 'NotFound', 'NoSuchVersion'].includes(error?.name)
 const isPrecondition = (error) => status(error) === 412 || status(error) === 409 || ['PreconditionFailed', 'ConditionalRequestConflict'].includes(error?.name)
 const isUnsupported = (error) => status(error) === 501 || error?.name === 'NotImplemented'
+const NETWORK_CODES = new Set(['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH', 'EPIPE'])
+/** The store is down or overloaded (network failure, 5xx other than 501, 429) — not a fault of the request. */
+export const isUnavailable = (error) => {
+  const code = status(error)
+  if (code === 429 || (code >= 500 && code !== 501)) return true
+  if (code) return false
+  return NETWORK_CODES.has(error?.code) || ['TimeoutError', 'RequestTimeout'].includes(error?.name)
+}
 
 /** Parallel writes per probe phase. */
 export const PROBE_WRITES = 8
@@ -75,6 +83,17 @@ export function s3Objects({
       responseChecksumValidation: 'WHEN_REQUIRED',
     })
 
+  // Every request goes through here: a store that is down becomes StorageUnavailableError (503), every other
+  // error keeps its shape so the precondition and not-found checks below still see it.
+  async function send(command) {
+    try {
+      return await s3.send(command)
+    } catch (error) {
+      if (isUnavailable(error)) throw new StorageUnavailableError(`the board storage is unavailable: ${error?.name ?? 'error'} ${status(error) || ''}`.trim())
+      throw error
+    }
+  }
+
   /** 'native' | 'emulated' — resolved on first conditional write in auto mode. */
   let conditional = conditionalWrites === 'on' ? 'native' : conditionalWrites === 'off' ? 'emulated' : null
   let probing = null
@@ -82,7 +101,7 @@ export function s3Objects({
 
   async function head(key) {
     try {
-      const res = await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: key }))
+      const res = await send(new HeadObjectCommand({ Bucket: bucket, Key: key }))
       return { etag: res.ETag }
     } catch (error) {
       if (isMissing(error)) return null
@@ -91,7 +110,7 @@ export function s3Objects({
   }
 
   async function rawPut(key, body, { contentType, ifMatch, ifNoneMatch } = {}) {
-    const res = await s3.send(
+    const res = await send(
       new PutObjectCommand({
         Bucket: bucket,
         Key: key,
@@ -138,7 +157,7 @@ export function s3Objects({
         replace = await burst(key, 'replace', { ifMatch: current?.etag ?? '"00000000000000000000000000000000"' })
       }
     } finally {
-      await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key })).catch(() => {})
+      await send(new DeleteObjectCommand({ Bucket: bucket, Key: key })).catch(() => {})
     }
     const atomic = create.ok === 1 && !create.unsupported && replace?.ok === 1 && !replace.unsupported
     conditional = atomic ? 'native' : 'emulated'
@@ -196,17 +215,17 @@ export function s3Objects({
 
     async ensureBucket() {
       try {
-        await s3.send(new HeadBucketCommand({ Bucket: bucket }))
+        await send(new HeadBucketCommand({ Bucket: bucket }))
       } catch (error) {
         if (!createBucket || !isMissing(error)) throw error
-        await s3.send(new CreateBucketCommand({ Bucket: bucket }))
+        await send(new CreateBucketCommand({ Bucket: bucket }))
         log({ event: 's3_bucket_created', bucket })
       }
     },
 
     async get(key) {
       try {
-        const res = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }))
+        const res = await send(new GetObjectCommand({ Bucket: bucket, Key: key }))
         return { body: Buffer.from(await res.Body.transformToByteArray()), etag: res.ETag, versionId: res.VersionId }
       } catch (error) {
         if (isMissing(error)) return null
@@ -219,7 +238,7 @@ export function s3Objects({
     put,
 
     async delete(key) {
-      await withLock(key, () => s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key })))
+      await withLock(key, () => send(new DeleteObjectCommand({ Bucket: bucket, Key: key })))
     },
 
     async list(prefix = '', { delimiter } = {}) {
@@ -227,7 +246,7 @@ export function s3Objects({
       const prefixes = []
       let token
       do {
-        const res = await s3.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, ...(delimiter ? { Delimiter: delimiter } : {}), ...(token ? { ContinuationToken: token } : {}) }))
+        const res = await send(new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, ...(delimiter ? { Delimiter: delimiter } : {}), ...(token ? { ContinuationToken: token } : {}) }))
         for (const o of res.Contents ?? []) keys.push({ key: o.Key, etag: o.ETag, size: o.Size, lastModified: o.LastModified })
         for (const p of res.CommonPrefixes ?? []) prefixes.push(p.Prefix)
         token = res.IsTruncated ? res.NextContinuationToken : undefined
@@ -237,7 +256,7 @@ export function s3Objects({
 
     async versioningEnabled() {
       try {
-        const res = await s3.send(new GetBucketVersioningCommand({ Bucket: bucket }))
+        const res = await send(new GetBucketVersioningCommand({ Bucket: bucket }))
         return res.Status === 'Enabled'
       } catch (error) {
         log({ level: 'warn', event: 's3_versioning_unknown', error: String(error?.name ?? error) })
@@ -250,7 +269,7 @@ export function s3Objects({
       let keyMarker
       let versionMarker
       do {
-        const res = await s3.send(new ListObjectVersionsCommand({ Bucket: bucket, Prefix: key, ...(keyMarker ? { KeyMarker: keyMarker, VersionIdMarker: versionMarker } : {}) }))
+        const res = await send(new ListObjectVersionsCommand({ Bucket: bucket, Prefix: key, ...(keyMarker ? { KeyMarker: keyMarker, VersionIdMarker: versionMarker } : {}) }))
         for (const v of res.Versions ?? []) if (v.Key === key) out.push({ versionId: v.VersionId, lastModified: v.LastModified, etag: v.ETag, size: v.Size })
         keyMarker = res.IsTruncated ? res.NextKeyMarker : undefined
         versionMarker = res.IsTruncated ? res.NextVersionIdMarker : undefined
@@ -260,7 +279,7 @@ export function s3Objects({
 
     async getVersion(key, versionId) {
       try {
-        const res = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key, VersionId: versionId }))
+        const res = await send(new GetObjectCommand({ Bucket: bucket, Key: key, VersionId: versionId }))
         return { body: Buffer.from(await res.Body.transformToByteArray()), etag: res.ETag, versionId: res.VersionId }
       } catch (error) {
         if (isMissing(error) || status(error) === 400) return null

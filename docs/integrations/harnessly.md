@@ -221,8 +221,11 @@ A harnessly machine asks the hub for a short-lived JWT (5 minutes) for the perso
   of leeway, `sub` is present and `org` is in `BOARDS_HARNESSLY_ORGS` (unless it is `*`). Cached keys survive a short
   hub outage, but never longer than 15 minutes after the last successful fetch.
 
-Any failure is `401` with `WWW-Authenticate: Bearer realm="boards", error="invalid_token"`: the machine fetches a
-fresh token and retries once. A platform token is accepted **only by `/mcp`**: there the tools reach every board,
+Any failure of the token is `401` with `WWW-Authenticate: Bearer realm="boards", error="invalid_token"`: the machine
+fetches a fresh token and retries once. When the hub itself does not answer and no usable keys are cached, the token
+cannot be checked: that is `503` with `Retry-After: 60`, not a 401. A board storage that is down (network failure,
+5xx, 429) is also `503` with `Retry-After` over HTTP, and a clear "storage is unavailable, the boards are intact"
+error from the MCP tools, instead of an internal error. A platform token is accepted **only by `/mcp`**: there the tools reach every board,
 and edits, comments and votes are signed with the person (`name`, else the local part of `email`). Everywhere else it
 is not an API token — it does not open boards without a key, list boards, mint hand-off links or call token-only
 plugin routes. Since the tools reach every board, `BOARDS_HARNESSLY_ORGS` decides which hub organizations get in;
