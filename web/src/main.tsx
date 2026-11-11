@@ -124,7 +124,14 @@ const config = JSON.parse(document.getElementById('board-config')?.textContent ?
   flags?: Record<string, boolean | string>
   /** What plugins add: web modules, block actions, board properties, reference patterns. */
   plugins?: PluginConfig
+  /** `?app=1`: the board inside the harnessly app view — the canvas only, harnessly draws the chrome. */
+  app?: boolean
+  /** The harnessly theme at opening (`?theme=`); later changes arrive as a `board-theme` message from the view. */
+  theme?: 'dark' | 'light' | null
 }
+
+// The harnessly app view: a class on the root hides the editor's own menu (see editor.css).
+if (config.app) document.documentElement.classList.add('board-app')
 
 // The camera is installed before the editor: Excalidraw looks it up on creation.
 if (config.motion) installMotion()
@@ -400,7 +407,7 @@ function Board() {
         if (scene.notes) setNotes(scene.notes)
         for (const el of scene.elements) s.sent.set(el.id, el.version)
         for (const id of Object.keys(scene.files ?? {})) s.sentFiles.add(id)
-        const dark = window.matchMedia?.('(prefers-color-scheme: dark)').matches
+        const dark = config.theme ? config.theme === 'dark' : window.matchMedia?.('(prefers-color-scheme: dark)').matches
         setInitial({ elements: scene.elements, appState: { ...(config.studio ? STUDIO_APP_STATE : {}), ...scene.appState, ...(config.snap ? { objectsSnapModeEnabled: readSnap() } : {}), theme: dark ? 'dark' : 'light' }, files: scene.files ?? {} })
         setStatus(config.canEdit ? 'saved' : 'readonly')
         document.body.classList.add('ready')
@@ -1073,6 +1080,15 @@ function Board() {
       apiRef.current = api as Api
       if (config.studio) setStudioApi(api as unknown as StudioApi)
       if (!api) return
+      // The harnessly app view: the canvas theme follows harnessly (a message from the view, same origin, our parent).
+      if (config.app) {
+        window.addEventListener('message', (event) => {
+          if (event.origin !== location.origin || event.source !== window.parent) return
+          const data = event.data as { type?: string; theme?: string } | null
+          if (data?.type !== 'board-theme' || (data.theme !== 'dark' && data.theme !== 'light')) return
+          ;(api as Api).updateScene({ appState: { theme: data.theme } } as never)
+        })
+      }
       // In 0.18 follow events only come through the API subscription — the editor
       // never calls the onUserFollow prop.
       ;(api as Api).onScrollChange(() => {
@@ -1423,7 +1439,8 @@ function Board() {
    */
   const excalidrawChildren = useMemo(
     () =>
-      <>
+      // The harnessly app view: no menu and no welcome screen of our own — harnessly draws the chrome.
+      config.app ? null : <>
         <MainMenu>
           <MainMenu.ItemLink href={homeUrl}>{t('editor.allBoards')}</MainMenu.ItemLink>
           {canEdit && <MainMenu.Item onSelect={rename}>{t('editor.rename', { title })}</MainMenu.Item>}
@@ -1557,23 +1574,25 @@ function Board() {
                 <span className="bar-btn__plugin-icon" aria-hidden dangerouslySetInnerHTML={{ __html: button.icon ?? PLUGIN_ICON }} />
               </BarButton>
             ))}
-            <span className="bar-sep bar-sep--share" />
-            {!config.user && config.authEnabled && (
+            {!config.app && <span className="bar-sep bar-sep--share" />}
+            {!config.app && !config.user && config.authEnabled && (
               <a className="board-button board-button--ghost" href={loginUrl()}>
                 {t('editor.signIn')}
               </a>
             )}
+            {!config.app && (
             <button type="button" className="board-button board-button--share" onClick={openShare} title={t('editor.share')} aria-label={t('editor.share')}>
               <svg className="board-button__icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7M16 6l-4-4-4 4M12 2v13" />
               </svg>
               <span className="board-button__label">{t('editor.share')}</span>
             </button>
+            )}
           </>,
           topRight,
         )}
 
-      <Brand />
+      {!config.app && <Brand />}
 
       {studioApi && config.motion && <PulseLayer />}
       {studioApi && <StickyOverlay api={studioApi} me={me} reactions={REACTIONS} votes={notes.reactions} canReact={canEdit} onReact={react} />}

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "boards": {
+      "type": "http",
+      "url": "${install:boardsUrl}/mcp",
+      "auth": { "type": "platform" }
+    }
+  }
+}

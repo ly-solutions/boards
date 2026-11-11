@@ -1,0 +1,53 @@
+{
+  "id": "harnessly.boards",
+  "name": "Boards",
+  "description": "Excalidraw whiteboards: the agent reads a board as text, draws a diagram as a graph, adds to it and answers in comments",
+  "version": "0.2.0",
+  "harnessly": ">=0.16.68",
+  "trust": "sandboxed",
+  "targets": [
+    "app",
+    "pane",
+    "chat"
+  ],
+  "activation": {
+    "on": [
+      "manual"
+    ],
+    "openView": "board"
+  },
+  "permissions": [
+    "chat.prompt",
+    "pane.open"
+  ],
+  "agent": {
+    "instructions": "instructions.md",
+    "skills": [
+      "boards"
+    ],
+    "tools": {}
+  },
+  "views": [
+    {
+      "id": "board",
+      "title": "Boards",
+      "entry": "${install:boardsUrl}/b/app",
+      "targets": [
+        "app"
+      ]
+    },
+    {
+      "id": "home",
+      "title": "Recent boards",
+      "entry": "ui/index.html",
+      "targets": [
+        "pane"
+      ]
+    }
+  ],
+  "network": {
+    "frames": [
+      "${install:boardsUrl}"
+    ]
+  }
+}

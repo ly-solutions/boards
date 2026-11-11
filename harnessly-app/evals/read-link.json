@@ -1,0 +1,12 @@
+{
+  "prompt": "What is drawn on the board https://boards.example.com/b/order-flow ? Do not change anything.",
+  "mocks": { "mcp": { "boards": "fixtures/boards.json" } },
+  "expect": {
+    "tool_used": ["boards.board_read"],
+    "tool_not_used": ["boards.board_edit"],
+    "final_text": ["Orders"],
+    "max_tool_calls": 6
+  },
+  "runs": 3,
+  "baseline": true
+}

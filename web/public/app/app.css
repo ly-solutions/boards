@@ -1,0 +1,204 @@
+/* The boards app view in harnessly: built on the --t-* tokens harnessly sets for its theme (each has a default). */
+:root {
+  --t-bg: #ffffff;
+  --t-surface: #f6f6f7;
+  --t-surface-hover: #ececee;
+  --t-text: #17171a;
+  --t-text-secondary: #4a4a52;
+  --t-text-muted: #76767f;
+  --t-border: #e2e2e6;
+  --t-accent: #3b5bdb;
+}
+html[data-theme='dark'] {
+  --t-bg: #141416;
+  --t-surface: #1c1c1f;
+  --t-surface-hover: #26262a;
+  --t-text: #ececf0;
+  --t-text-secondary: #b4b4bc;
+  --t-text-muted: #8a8a94;
+  --t-border: #2e2e33;
+  --t-accent: #748ffc;
+}
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: var(--t-bg);
+  color: var(--t-text);
+}
+.ba {
+  box-sizing: border-box;
+  min-height: 100%;
+}
+.ba *,
+.ba *::before,
+.ba *::after {
+  box-sizing: border-box;
+}
+
+/* The open board canvas: the whole frame. */
+.ba--canvas {
+  height: 100%;
+}
+.ba__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+/* Home. */
+.ba--home {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 40px 24px 48px;
+}
+.ba__head {
+  display: grid;
+  gap: 12px;
+  max-width: 720px;
+  margin: 0 auto 32px;
+}
+.ba__title {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.2;
+  font-weight: 650;
+  text-align: center;
+}
+.ba__ask {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 8px;
+  border: 1px solid var(--t-border);
+  border-radius: 16px;
+  background: var(--t-surface);
+}
+.ba__field {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+}
+.ba__field:focus {
+  outline: none;
+}
+.ba__ask:focus-within {
+  border-color: var(--t-accent);
+}
+.ba__go {
+  flex: none;
+}
+.ba__starters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+.ba__bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.ba__tabs {
+  display: inline-flex;
+}
+.ba__tab {
+  border: 0;
+  background: transparent;
+  color: var(--t-text-secondary);
+  font: inherit;
+  padding: 6px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.ba__tab[aria-selected='true'] {
+  background: var(--t-bg);
+  color: var(--t-text);
+  font-weight: 600;
+}
+.ba__search {
+  flex: 0 1 280px;
+  min-width: 0;
+}
+.ba__shelf {
+  margin-bottom: 28px;
+}
+.ba__shelf-title {
+  margin: 0 0 12px;
+  font-size: 15px;
+}
+.ba__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+}
+.ba__card {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  min-height: 180px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 12px;
+}
+.ba__thumb {
+  display: block;
+  aspect-ratio: 16 / 10;
+  border: 1px solid var(--t-border);
+  border-radius: 12px;
+  background: var(--t-surface);
+  overflow: hidden;
+  transition: border-color 160ms ease-out;
+}
+.ba__thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.ba__card:hover .ba__thumb,
+.ba__card:focus-visible .ba__thumb {
+  border-color: var(--t-accent);
+}
+.ba__name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+.ba__meta {
+  font-size: 12px;
+}
+.ba__fail {
+  padding: 48px 24px;
+  text-align: center;
+}
+
+@media (max-width: 560px) {
+  .ba--home {
+    padding: 24px 16px 32px;
+  }
+  .ba__title {
+    font-size: 22px;
+  }
+  .ba__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .ba__search {
+    flex: 1 1 100%;
+  }
+}

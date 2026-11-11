@@ -23,6 +23,8 @@
  *   POST /b/<slug>/actions/<plugin>/<id>  run a plugin's block action on selected elements
  *   POST /b/hooks/<name>/…             incoming webhooks for plugins
  *   GET  /b/_plugins/<mount>/…         web plugin modules
+ *   GET  /b/app                        harnessly app view home (BOARDS_APP_VIEW=on); /b/<slug>?k=…&app=1 the bare canvas
+ *   POST /mcp, /b/mcp                  MCP (Streamable HTTP, JSON-RPC) for agents: an API token or a harnessly platform token
  *   GET  /healthz, /readyz             probes
  */
 import { createServer } from 'node:http'
@@ -54,6 +56,10 @@ import { CATALOGS } from '../shared/locales/index.mjs'
 import { createPluginHost, PluginHttpError, PluginReply, PLUGIN_API_VERSION } from './plugins.mjs'
 import { createFlags, staticFlags } from './flags.mjs'
 import { linkPreviewResolver } from './link-preview.mjs'
+import { TokenError, bearerOf, createPlatformAuth, looksLikeJwt } from './platform-auth.mjs'
+import { handleBody as handleMcpBody, ToolError } from './mcp.mjs'
+import { boardTools, slugOf } from './mcp-tools.mjs'
+import { appViewHeaders, libraryRow, renderAppView } from './app-view.mjs'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const PREFIX = '/b'
@@ -68,6 +74,15 @@ class HttpError extends Error {
 }
 
 const json = (res, status, body) => sendBody(res, status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex' }, JSON.stringify(body))
+
+/**
+ * 401 as in RFC 6750. `invalid_token` tells a harnessly machine to fetch a fresh platform token and retry once;
+ * without a code there was no token at all.
+ */
+function unauthorized(res, code, message) {
+  const challenge = code ? `Bearer realm="boards", error="${code}", error_description="${encodeURIComponent(message)}"` : 'Bearer realm="boards"'
+  return sendBody(res, 401, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'www-authenticate': challenge }, JSON.stringify({ error: message }))
+}
 
 const text = (res, status, body, type = 'text/markdown; charset=utf-8') =>
   sendBody(res, status, { 'content-type': type, 'cache-control': 'no-store', 'x-robots-tag': 'noindex, nofollow, noarchive', 'referrer-policy': 'no-referrer' }, body)
@@ -156,6 +171,8 @@ export function createApp({
   }),
   metrics = createMetrics(),
   ready = async () => true,
+  /** harnessly platform tokens (`harnessly` in BOARDS_AUTH); off unless configured. */
+  platform = createPlatformAuth({ harnessly: config.auth?.harnessly ?? null, audience: config.publicUrl }),
 } = {}) {
   // One translator for pages and plugins: a host built elsewhere brings its own, with its plugins' messages in it.
   if (plugins.t) t = plugins.t
@@ -180,8 +197,11 @@ export function createApp({
     if (req.ctx) return req.ctx
     const origin = req.headers.origin
     const sameOrigin = !origin || origin === publicUrl
-    const agent = auth.agent(req)
-    req.ctx = { origin, sameOrigin, agent, user: !agent && sameOrigin ? auth.user(req) : null }
+    // A verified harnessly platform token (see handler) counts as a token: it opens boards without a key and is not
+    // a browser session, so cross-origin rules for cookies do not apply. Edits are signed with the person in it.
+    const platformUser = req.platformUser ?? null
+    const agent = Boolean(platformUser) || auth.agent(req)
+    req.ctx = { origin, sameOrigin, agent, platformUser, user: !agent && sameOrigin ? auth.user(req) : null }
     return req.ctx
   }
 
@@ -201,7 +221,8 @@ export function createApp({
    * - otherwise read-only.
    */
   function editor(req, state, body = {}) {
-    const { agent, user } = context(req)
+    const { agent, user, platformUser } = context(req)
+    if (platformUser) return { kind: 'user', name: platformUser.name, email: platformUser.email, sub: platformUser.sub }
     if (agent) return { kind: 'agent', name: authorOf(body) }
     if (user) return { kind: 'user', name: user.name, email: user.email }
     if ((state.meta.access ?? 'team') === 'link') {
@@ -218,7 +239,8 @@ export function createApp({
   }
 
   function requireMember(req) {
-    const { agent, user } = context(req)
+    const { agent, user, platformUser } = context(req)
+    if (platformUser) return { kind: 'user', name: platformUser.name, email: platformUser.email, sub: platformUser.sub }
     if (agent) return { kind: 'agent', name: 'agent' }
     if (user) return { kind: 'user', name: user.name, email: user.email }
     throw new HttpError(401, 'an API token (Authorization: Bearer …) or a signed-in session is required')
@@ -678,6 +700,91 @@ export function createApp({
     res.end(renderTokenLogin({ staticBase, next, error, t }))
   }
 
+  // ---- MCP ---------------------------------------------------------------------------------------------------------
+
+  /** Pin a new thread: at the given point, or at the top right corner of the given shape. */
+  function pinPoint(state, input) {
+    if (Number.isFinite(input.x) && Number.isFinite(input.y)) return { x: input.x, y: input.y }
+    const el = typeof input.elementId === 'string' ? state.elements.get(input.elementId) : null
+    if (!el || el.isDeleted) throw new ToolError('x, y: the canvas point to pin the comment to (or elementId of a shape on the board)')
+    return { x: el.x + (el.width ?? 0), y: el.y }
+  }
+
+  // Through MCP an agent writes on behalf of a person: comments are signed by the person and marked as the agent's,
+  // so the webhook does not hand the agent its own message back as a person's question.
+  const actorOf = (who) => ({ name: who.name, kind: 'agent', email: who.email ?? null })
+  const mcpTools = boardTools({
+    reactions: REACTIONS,
+    board: async (ref) => {
+      const slug = slugOf(ref)
+      if (!isValidSlug(slug)) throw new ToolError('board: a slug or a board link')
+      const state = await store.get(slug)
+      if (!state) throw new ToolError(`no board ${slug}`)
+      return state
+    },
+    text: (state) => store.text(state),
+    describe,
+    create: (body, who) => createBoard(body, who),
+    edit: applyEdit,
+    comment: (state, who, input) => {
+      const created = store.comment(state, { text: input.text, elementId: input.elementId, ...pinPoint(state, input) }, actorOf(who))
+      emitComment(commentPayload('thread.created', state, created, who, created.messages[0]))
+      return created
+    },
+    changeThread: (state, who, id, change) => {
+      const result = store.changeComment(state, id, change, actorOf(who), () => true)
+      if (result.replied) emitComment(commentPayload('thread.replied', state, result.thread, who, result.replied))
+      if (result.resolvedChanged) emitComment(commentPayload(result.thread.resolved ? 'thread.resolved' : 'thread.reopened', state, result.thread, who))
+      return result.thread
+    },
+    react: (state, who, input) => {
+      if (!REACTIONS.includes(input.emoji)) throw new ToolError(`emoji: one of ${REACTIONS.join(' ')}`)
+      const reactions = store.react(state, String(input.id ?? ''), input.emoji, who.name, input.on !== false)
+      if (!reactions) throw new ToolError('no sticky with that id on the board')
+      return reactions
+    },
+    list: async () => (await store.list()).map((b) => ({ ...b, url: `${publicUrl}${PREFIX}/${b.slug}?k=${encodeURIComponent(b.key)}` })),
+    library: async (me) => (await store.list()).map((b) => libraryRow(b, { publicUrl, prefix: PREFIX, me })),
+    templates: () => localTemplates().map(({ id, title, description }) => ({ id, title, description })),
+  })
+
+  /**
+   * MCP for agents (Streamable HTTP, stateless). Tokens only: a harnessly platform token — edits and comments are
+   * then signed by the person in it — or an API token, signed with the `author` argument or "agent". Board keys and
+   * session cookies are neither needed nor accepted.
+   */
+  async function mcp(req, res) {
+    const { platformUser } = context(req)
+    if (!platformUser && !auth.agent(req)) return unauthorized(res, bearerOf(req) ? 'invalid_token' : null, 'Authorization: Bearer <token> is required')
+    if (req.method !== 'POST') {
+      res.writeHead(405, { allow: 'POST', 'content-type': 'application/json; charset=utf-8' })
+      return res.end(JSON.stringify({ error: 'MCP without a stream: POST only' }))
+    }
+    let body
+    try {
+      body = JSON.parse((await readBody(req, 4 * 1024 * 1024)) || 'null')
+    } catch {
+      return json(res, 400, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'the body must be JSON' } })
+    }
+    const who = platformUser ? { kind: 'agent', name: platformUser.name, email: platformUser.email, sub: platformUser.sub } : { kind: 'agent', name: 'agent' }
+    const [status, out] = await handleMcpBody(body, {
+      tools: platformUser ? mcpTools : mcpTools.map((tool) => ({ ...tool, run: (args, ctx) => tool.run(args, { ...ctx, who: { kind: 'agent', name: authorOf(args ?? {}) } }) })),
+      ctx: { who },
+      serverInfo: { name: 'boards', version: VERSION },
+      instructions: 'Excalidraw boards: read a board with board_read, draw diagrams with board_create/board_edit through graph (the server lays it out), answer people in threads with board_comment. After an edit read the board again and check the slop section.',
+      describeError: (error) => {
+        if (error instanceof ToolError || error instanceof HttpError || error instanceof EditError || error instanceof LimitError || error instanceof CommentError) return error.message
+        console.error(JSON.stringify({ level: 'error', event: 'mcp_tool_failed', error: String(error?.stack ?? error) }))
+        return 'internal error of the boards service'
+      },
+    })
+    if (status === 202) {
+      res.writeHead(202)
+      return res.end()
+    }
+    return json(res, status, out)
+  }
+
   async function route(req, res) {
     const url = new URL(req.url, 'http://boards.local')
     const path = url.pathname
@@ -687,6 +794,7 @@ export function createApp({
       const ok = await ready().catch(() => false)
       return json(res, ok ? 200 : 503, { ok })
     }
+    if (path === '/mcp' || path === `${PREFIX}/mcp`) return mcp(req, res)
     if (path === '/' || path === PREFIX) {
       res.writeHead(302, { location: homeUrl })
       return res.end()
@@ -727,6 +835,11 @@ export function createApp({
     }
 
     if (rest === 'api' || rest === 'api/') return text(res, 200, API_HELP)
+    // The harnessly app view home. Switched off, the path does not exist.
+    if (rest === 'app' && req.method === 'GET') {
+      if (!config.appView) throw new HttpError(404, 'no such path')
+      return sendBody(res, 200, appViewHeaders({ frameAncestors: config.frameAncestors }), renderAppView({ staticBase, locale: t.locale, title: t.locale === 'ru' ? 'Доски' : 'Boards' }))
+    }
     if (rest === 'auth/login') return auth.login(req, res, url, { renderTokenForm, readForm })
     if (rest === 'auth/callback') return auth.callback(req, res, url)
     if (rest === 'auth/logout') return auth.logout(req, res, url)
@@ -883,6 +996,9 @@ export function createApp({
         const page = renderEmbedPage({ state, text: store.text(state), scene: store.scene(state), boardUrl: `${publicUrl}${PREFIX}/${slug}?k=${encodeURIComponent(state.meta.key)}`, assets: webAssets(join(webDir, '.vite/manifest.json')).embed, staticUrl: `${publicUrl}${staticBase}`, t })
         return sendBody(res, 200, embedHeaders({ publicUrl }), page)
       }
+      // The harnessly app view: the canvas only, harnessly draws the chrome; the theme follows harnessly.
+      const app = Boolean(config.appView) && url.searchParams.get('app') === '1'
+      const theme = ['dark', 'light'].includes(url.searchParams.get('theme')) ? url.searchParams.get('theme') : null
       // `?at=<checkpoint>`: the board as it was — read-only, no live channel.
       const atId = url.searchParams.get('at')
       const at = atId && features.workboard ? ((await store.checkpoints(state)).find((c) => c.id === atId) ?? null) : null
@@ -910,6 +1026,8 @@ export function createApp({
         motion: features.motion !== false,
         at: at ? { id: at.id, title: at.title, by: at.by ?? null, at: at.at } : null,
         snap: features.snap !== false,
+        app,
+        theme: app ? theme : null,
         boardUrl: `${publicUrl}${PREFIX}/${slug}?k=${encodeURIComponent(state.meta.key)}`,
         description: state.meta.description ?? '',
         tags: state.meta.tags ?? [],
@@ -1055,6 +1173,19 @@ export function createApp({
     }
     res.on('finish', () => metrics.request(req, res.statusCode, Number(process.hrtime.bigint() - started) / 1e9))
     try {
+      // A harnessly platform token is checked before routing; a bad one is refused at once, so the machine retries
+      // with a fresh token instead of the caller getting a 404 for a board it may see.
+      if (platform.enabled) {
+        const bearer = bearerOf(req)
+        if (looksLikeJwt(bearer) && !auth.agent(req)) {
+          try {
+            req.platformUser = await platform.verify(bearer)
+          } catch (error) {
+            if (!(error instanceof TokenError)) throw error
+            return unauthorized(res, 'invalid_token', error.message)
+          }
+        }
+      }
       await route(req, res)
     } catch (error) {
       if (res.headersSent) return res.end()
@@ -1114,7 +1245,7 @@ export async function main(env = process.env) {
   const server = createServer(app)
   server.on('upgrade', app.upgrade)
   server.listen(config.port, config.host, () =>
-    log({ event: 'listening', version: VERSION, url: config.publicUrl, port: config.port, storage: config.storage.driver, auth: config.auth.mode, locale: config.locale, plugins: plugins.list().map((p) => `${p.name}@${p.version}`), epoch: store.epoch }),
+    log({ event: 'listening', version: VERSION, url: config.publicUrl, port: config.port, storage: config.storage.driver, auth: config.auth.mode, harnessly: Boolean(config.auth.harnessly), appView: Boolean(config.appView), locale: config.locale, plugins: plugins.list().map((p) => `${p.name}@${p.version}`), epoch: store.epoch }),
   )
   // Slow-read stores: fill the read cache in the background so first opens after a restart are fast. Readiness does
   // not wait for it.

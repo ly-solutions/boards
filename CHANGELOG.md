@@ -9,6 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- harnessly app: `harnessly` in `BOARDS_AUTH` (alone or next to a sign-in mode, e.g. `oidc,harnessly`) accepts
+  harnessly platform tokens — Ed25519 JWTs from the hub (`BOARDS_HARNESSLY_ISSUER`, optional
+  `BOARDS_HARNESSLY_ORGS`), checked against the hub's keys; edits are signed with the person in the token. `POST /mcp`
+  serves MCP tools (`board_read`, `board_create`, `board_edit`, `board_comment`, `board_react`, `board_list`,
+  `board_library`, `board_templates`) to agents with a platform or API token. `BOARDS_APP_VIEW=on` adds the app view:
+  `/b/app` (home with the board library) and the bare canvas `?app=1`. The app package is in `harnessly-app/`. All of
+  it is off by default. See docs/integrations/harnessly.md, section 7.
 - In-memory read cache for the s3 driver (`BOARDS_CACHE_MB`, 128 MiB by default; Helm `storage.s3.cacheMb`) for
   stores that answer HEAD fast but take seconds per GET. Immutable snapshot and checkpoint scenes come from memory;
   other objects are revalidated with a HEAD. `BOARDS_CACHE_WARM` (on by default) fills it in the background after

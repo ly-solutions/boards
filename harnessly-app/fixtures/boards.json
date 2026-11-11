@@ -1,0 +1,16 @@
+{
+  "tools": [
+    {
+      "name": "board_read",
+      "description": "The board as text",
+      "inputSchema": { "type": "object", "properties": { "board": { "type": "string" } } },
+      "result": { "content": [{ "type": "text", "text": "# Order flow\n\n## Shapes\n- \"Web\" [web]\n- \"Orders\" [orders]\n\n## Connections\n- \"Web\" [web] → \"Orders\" [orders] — \"HTTP\"\n" }] }
+    },
+    {
+      "name": "board_edit",
+      "description": "Edit a board",
+      "inputSchema": { "type": "object", "properties": { "board": { "type": "string" } } },
+      "result": { "content": [{ "type": "text", "text": "Done." }] }
+    }
+  ]
+}
