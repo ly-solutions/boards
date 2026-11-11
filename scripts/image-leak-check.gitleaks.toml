@@ -1,0 +1,11 @@
+# gitleaks configuration for scripts/image-leak-check.sh: the default rules, minus what is known not to be a secret.
+[extend]
+useDefault = true
+
+# The @excalidraw/excalidraw package ships the public web configuration of excalidraw.com's own Firebase project; the
+# bundles of the image carry it. It identifies their project to browsers and is not a credential of ours.
+[[allowlists]]
+description = "Excalidraw's public Firebase web configuration, from the @excalidraw/excalidraw package"
+targetRules = ["gcp-api-key"]
+regexTarget = "line"
+regexes = ['''"authDomain":"excalidraw-[a-z0-9-]+\.firebaseapp\.com"''']

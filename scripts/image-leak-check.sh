@@ -5,7 +5,8 @@
 #
 # It copies the application folder out of the image (APP_DIR, default /app) without node_modules (published third-party
 # packages), adds the image's environment and labels, and looks for:
-#   1. Secrets: gitleaks over that tree (GITLEAKS names the binary; required).
+#   1. Secrets: gitleaks over that tree (GITLEAKS names the binary; required). LEAK_CHECK_GITLEAKS_CONFIG names a gitleaks
+#      configuration for what is known not to be a secret.
 #   2. Private network addresses (10/8, 172.16/12, 192.168/16, 100.64/10) other than the example ones of tests and docs.
 #      LEAK_CHECK_IP_ALLOW extends the allowed ones (an extended regex of whole addresses).
 #   3. Forbidden words, when LEAK_CHECK_FORBIDDEN is set: one extended regex, case-insensitive, in file contents and
@@ -23,6 +24,11 @@ image=$1
 app_dir=${APP_DIR:-/app}
 gitleaks=${GITLEAKS:-gitleaks}
 command -v "$gitleaks" >/dev/null || die "gitleaks not found (set GITLEAKS)"
+config=()
+if [ -n "${LEAK_CHECK_GITLEAKS_CONFIG:-}" ]; then
+  [ -f "$LEAK_CHECK_GITLEAKS_CONFIG" ] || die "LEAK_CHECK_GITLEAKS_CONFIG $LEAK_CHECK_GITLEAKS_CONFIG does not exist"
+  config=(--config "$(cd "$(dirname "$LEAK_CHECK_GITLEAKS_CONFIG")" && pwd)/$(basename "$LEAK_CHECK_GITLEAKS_CONFIG")")
+fi
 
 work=$(mktemp -d)
 container=""
@@ -51,7 +57,7 @@ report() {
 }
 
 # 1. Secrets.
-if ! "$gitleaks" dir . --no-banner --redact --verbose >&2; then
+if ! "$gitleaks" dir . "${config[@]}" --no-banner --redact --verbose >&2; then
   report "secrets" "gitleaks found the secrets above"
 fi
 

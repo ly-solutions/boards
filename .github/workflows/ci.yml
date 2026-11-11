@@ -75,6 +75,7 @@ jobs:
       - name: What the image would publish
         env:
           LEAK_CHECK_FORBIDDEN: ${{ secrets.LEAK_CHECK_FORBIDDEN }}
+          LEAK_CHECK_GITLEAKS_CONFIG: scripts/image-leak-check.gitleaks.toml
         run: scripts/image-leak-check.sh boards:ci
       - name: Smoke test
         run: |
