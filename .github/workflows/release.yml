@@ -50,6 +50,22 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # The image is checked before anything is pushed: built for this runner, then the same build for every
+      # platform from the cache.
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
+          load: true
+          tags: boards:check
+          cache-from: type=gha
+      - name: Install gitleaks
+        run: curl -sSfL --retry 5 "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz" | tar -xz -C /usr/local/bin gitleaks
+      - name: What the image would publish
+        env:
+          LEAK_CHECK_FORBIDDEN: ${{ secrets.LEAK_CHECK_FORBIDDEN }}
+          LEAK_CHECK_GITLEAKS_CONFIG: scripts/image-leak-check.gitleaks.toml
+        run: scripts/image-leak-check.sh boards:check
       - id: meta
         uses: docker/metadata-action@v6
         with:
