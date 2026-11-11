@@ -51,7 +51,7 @@ report() {
 }
 
 # 1. Secrets.
-if ! "$gitleaks" dir . --no-banner --redact --log-level warn >&2; then
+if ! "$gitleaks" dir . --no-banner --redact --verbose >&2; then
   report "secrets" "gitleaks found the secrets above"
 fi
 
