@@ -9,8 +9,8 @@
 #      configuration for what is known not to be a secret.
 #   2. Private network addresses (10/8, 172.16/12, 192.168/16, 100.64/10) other than the example ones of tests and docs.
 #      LEAK_CHECK_IP_ALLOW extends the allowed ones (an extended regex of whole addresses).
-#   3. Forbidden words, when LEAK_CHECK_FORBIDDEN is set: one extended regex, case-insensitive, in file contents and
-#      paths. The words belong to whoever publishes, so they come from the environment (a repository secret) and are
+#   3. Forbidden words, when LEAK_CHECK_FORBIDDEN is set: one extended regex, case-insensitive, whole words, in file
+#      contents and paths; reported by file and line only. The words belong to whoever publishes, so they come from the environment (a repository secret) and are
 #      not written here; without it this step is skipped.
 set -euo pipefail
 
@@ -71,11 +71,21 @@ report "private network addresses" "${ips[@]}"
 
 # 3. Forbidden words.
 if [ -n "${LEAK_CHECK_FORBIDDEN:-}" ]; then
-  # Only where, never the words: the log of a public repository is public too.
-  mapfile -t hits < <(grep -rnaiEo -- "$LEAK_CHECK_FORBIDDEN" . | sed -E 's|^\./||; s/^([^:]+:[0-9]+):.*$/\1/' | sort -u || true)
-  report "forbidden words (file:line)" "${hits[@]}"
-  paths=$(find . -type f -print | grep -ciE -- "$LEAK_CHECK_FORBIDDEN" || true)
-  if [ "$paths" -gt 0 ]; then report "forbidden words" "$paths file paths"; fi
+  # Only where, never the words: the log of a public repository is public too. Whole words, case-insensitive: built
+  # bundles are full of English words that contain a short name.
+  re=$LEAK_CHECK_FORBIDDEN
+  hits=()
+  while IFS= read -r -d '' f; do
+    lines=$(grep -naiEw -- "$re" "$f" | cut -d: -f1 | head -20 | paste -sd, - || true)
+    if printf '%s' "$f" | grep -qiEw -- "$re"; then
+      hits+=("<a file whose path has a forbidden word>: lines $lines")
+    else
+      hits+=("${f#./}: lines $lines")
+    fi
+  done < <(grep -rlaiEwZ -- "$re" . || true)
+  report "forbidden words" "${hits[@]}"
+  paths=$(find . -type f -print0 | tr '\0\n' '\n ' | grep -ciEw -- "$re" || true)
+  if [ "$paths" -gt 0 ]; then report "forbidden words in file paths" "$paths files"; fi
 else
   echo "image-leak-check: LEAK_CHECK_FORBIDDEN is not set, forbidden words are not checked" >&2
 fi
