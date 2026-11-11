@@ -93,7 +93,7 @@ test('configuration: harnessly is off by default, needs the hub and the public a
   const base = { BOARDS_STORAGE: 'memory', BOARDS_API_TOKENS: 'x'.repeat(32) }
   assert.equal(loadConfig(base).auth.harnessly, null)
   assert.equal(loadConfig(base).appView, false)
-  assert.throws(() => loadConfig({ ...base, BOARDS_AUTH: 'harnessly' }), /BOARDS_HARNESSLY_ISSUER[\s\S]*BOARDS_HARNESSLY_ORGS[\s\S]*BOARDS_PUBLIC_URL/)
+  assert.throws(() => loadConfig({ ...base, BOARDS_AUTH: 'harnessly' }), /BOARDS_HARNESSLY_ISSUER[\s\S]*BOARDS_PUBLIC_URL[\s\S]*BOARDS_HARNESSLY_ORGS/)
   const only = loadConfig({ BOARDS_STORAGE: 'memory', BOARDS_AUTH: 'harnessly', BOARDS_HARNESSLY_ISSUER: `${HUB}/`, BOARDS_HARNESSLY_ORGS: '*', BOARDS_PUBLIC_URL: 'https://boards.example' })
   assert.equal(only.auth.mode, 'token')
   assert.deepEqual(only.auth.harnessly, { issuer: HUB, orgs: ['*'] })
