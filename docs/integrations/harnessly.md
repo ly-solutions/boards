@@ -247,7 +247,7 @@ keys are not accepted. The tools (`server/mcp-tools.mjs`) wrap the same operatio
 | `board_react` | a reaction on a sticky | `POST /b/<slug>/react` |
 | `board_list` | boards, newest first, search by words | `GET /b/api/boards` |
 | `board_library` | boards as JSON for the app home, with "mine" | — |
-| `board_signin` | for the app view: a one-time address that signs the person of the token in to the site | — |
+| `board_signin` | for the app view: a one-time pass that signs the person of the token in to the site | — |
 | `board_templates` | templates | `GET /b/api/templates` |
 
 The `board` argument is a slug or a link. Through MCP a comment has `authorKind: agent`, so the comment webhook does
@@ -262,7 +262,7 @@ With `BOARDS_APP_VIEW=on`:
   and a board opened in the same frame (`/b/app?board=<slug>`) with a way back. It reads its own data
   (`GET /b/api/app/library`, by the session cookie) and does not wait for harnessly. A person the service does not
   know yet is signed in once through the bridge: the MCP tool `board_signin` (platform token) answers a one-time
-  hand-off address that sets the session cookie. The bridge also gives the theme and the board harnessly asks to open.
+  pass the page posts to `/b/api/app/enter` for the session cookie. The bridge also gives the theme and the board harnessly asks to open.
   Where the hub and the service are on different sites, set `BOARDS_COOKIE_SAMESITE=none` so the cookie works in the frame.
 - `GET /b/<slug>?k=…&app=1[&theme=dark|light]` is the bare canvas: the editor without its menu, brand, sign-in and
   share buttons. The home sends `{ type: 'board-theme', theme }` messages to follow harnessly's theme.

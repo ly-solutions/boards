@@ -11,7 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - harnessly app view (`/b/app`) is a site of its own: it reads the library from `GET /b/api/app/library` by the session
   cookie, opens a board in the same frame (`?board=<slug>`) with a way back, and no longer waits for the harnessly
-  bridge or the machine. The first sign-in goes through the new MCP tool `board_signin` (a one-time hand-off address).
+  bridge or the machine. The first sign-in goes through the new MCP tool `board_signin` (a one-time pass the page posts to `/b/api/app/enter`).
   The "what shall we draw" field and its starters are gone. The app package (0.3.0) has one view, for the app and the
   pane.
 

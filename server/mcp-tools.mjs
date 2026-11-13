@@ -174,12 +174,12 @@ export function boardTools(ops) {
     {
       name: 'board_signin',
       title: 'Sign the app view in',
-      description: 'For the app view only, not for an agent: a one-time address (two minutes) that signs the person of the token in to the boards site inside the view, so the view reads its library and opens boards by itself.',
+      description: 'For the app view only, not for an agent: a one-time pass (a minute) that signs the person of the token in to the boards site inside the view, so the view reads its library and opens boards by itself.',
       inputSchema: { type: 'object', properties: {} },
       annotations: { readOnlyHint: true },
       run: async (_args, ctx) => {
         if (!ctx?.who?.sub) throw new ToolError('sign-in needs a harnessly platform token: it names the person')
-        return JSON.stringify({ url: ops.signin(ctx.who) })
+        return JSON.stringify({ pass: ops.signin(ctx.who) })
       },
     },
     {

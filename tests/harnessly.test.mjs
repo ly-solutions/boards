@@ -242,18 +242,16 @@ test('app view: its own library needs a session; board_signin gives the person o
   // An API token has no person to sign in.
   assert.equal((await call(app.base, TOKEN, 'board_signin', {})).isError, true)
   const token = jwt({ iss: `${hubBase}/with`, aud: PUBLIC_URL, sub: 'u-9', org: 'org-1', name: 'Ada', email: 'ada@example.com', exp: Math.floor(Date.now() / 1000) + 300 })
-  const created = await call(app.base, token, 'board_create', { title: 'Mine to see', graph: { nodes: [{ id: 'a', label: 'A' }] } })
-  const slug = createdSlug(created)
-  const { url } = JSON.parse((await call(app.base, token, 'board_signin', {})).content[0].text)
-  assert.match(url, /^\/b\/auth\/handoff\?t=/)
-  const entered = await fetch(`${app.base}${url}`, { redirect: 'manual' })
+  // The two test apps share the session secret: the pass of the one with harnessly on signs in at the one with the view on.
+  const { pass } = JSON.parse((await call(app.base, token, 'board_signin', {})).content[0].text)
+  const enter = (t, headers = { 'sec-fetch-site': 'same-origin' }) => fetch(`${view.base}/b/api/app/enter`, { method: 'POST', redirect: 'manual', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify({ t }) })
+  assert.equal((await enter(pass, { origin: 'https://evil.example' })).status, 403)
+  const entered = await enter(pass)
   assert.equal(entered.status, 302)
   assert.equal(entered.headers.get('location'), '/b/app')
   const cookie = entered.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ')
-  assert.equal((await fetch(`${app.base}${url}`, { redirect: 'manual' })).status, 400)
-  // The app of this test has the view off: the library is the view's, so it is not there.
-  assert.equal((await fetch(`${app.base}/b/api/app/library`, { headers: { cookie } })).status, 404)
-  assert.ok(slug)
+  assert.equal((await enter(pass)).status, 400)
+  assert.equal((await fetch(`${view.base}/b/api/app/library`, { headers: { cookie } })).status, 200)
 })
 
 test('app view: the library answers the signed-in person with "mine" marked', async () => {
