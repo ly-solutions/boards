@@ -2,6 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { startApp, TOKEN } from './helpers/app.mjs'
+import { withoutBoardKeys } from '../server/index.mjs'
 
 test('embed: own page, inlined scene, absolute assets, no frame-ancestors; the editor keeps its frame-ancestors', async () => {
   const t = await startApp({ config: { frameAncestors: "'self' https://workspace.example" } })
@@ -77,7 +78,7 @@ test('embed, guest view: only for an API token; the page carries no key, neither
   const t = await startApp()
   try {
     const other = (await t.createBoard({ title: 'Roadmap' })).body
-    const { body } = await t.createBoard({ title: 'Shared board', add: [{ type: 'rectangle', id: 'card', x: 0, y: 0, width: 200, height: 80, link: other.url }, { type: 'rectangle', id: 'out', x: 0, y: 200, width: 200, height: 80, link: 'https://example.org/page?k=keep' }] })
+    const { body } = await t.createBoard({ title: 'Shared board', add: [{ type: 'rectangle', id: 'card', x: 0, y: 0, width: 200, height: 80, link: other.url }, { type: 'rectangle', id: 'out', x: 0, y: 200, width: 200, height: 80, link: 'https://example.org/page?k=keep' }, { type: 'text', id: 'note', x: 0, y: 400, text: `see ${other.url.replace('http://boards.test', 'HTTP://Boards.Test')}#top and ${other.url}.` }, { type: 'rectangle', id: 'custom', x: 0, y: 600, width: 200, height: 80, customData: { kind: 'card', url: other.url, nested: { again: other.url } } }] })
     const k = new URL(body.url).searchParams.get('k')
     const otherKey = new URL(other.url).searchParams.get('k')
     const guestUrl = `${t.base}/b/${body.slug}?k=${k}&embed=1&guest=1`
@@ -98,6 +99,9 @@ test('embed, guest view: only for an API token; the page carries no key, neither
     const link = (id) => data.scene.elements.find((e) => e.id === id)?.link
     assert.equal(link('card'), `http://boards.test/b/${other.slug}`)
     assert.equal(link('out'), 'https://example.org/page?k=keep', 'a link elsewhere is left as the author put it')
+    const custom = data.scene.elements.find((e) => e.id === 'custom')?.customData
+    if (custom) assert.deepEqual([custom.url, custom.nested?.again], [`http://boards.test/b/${other.slug}`, `http://boards.test/b/${other.slug}`])
+    assert.ok(!/[?&]k=(?!keep)/.test(html), 'no board address in the page keeps its query')
 
     // The ordinary embed is as it was: the link back with the key.
     const plainRes = await fetch(`${t.base}/b/${body.slug}?k=${k}&embed=1`)
@@ -106,4 +110,15 @@ test('embed, guest view: only for an API token; the page carries no key, neither
   } finally {
     await t.close()
   }
+})
+
+test('guest view: one matcher for board addresses — host without regard to case, query and fragment dropped, others untouched', () => {
+  const clean = (v) => withoutBoardKeys(v, 'https://boards.example.com', '/b')
+  assert.equal(clean('https://boards.example.com/b/plan-abc?k=SECRET'), 'https://boards.example.com/b/plan-abc')
+  assert.equal(clean('see HTTPS://Boards.Example.COM/b/Plan_X?theme=dark&k=SECRET#frag now'), 'see https://boards.example.com/b/Plan_X now')
+  assert.equal(clean('(https://boards.example.com/b/plan-abc?k=SECRET)'), '(https://boards.example.com/b/plan-abc')
+  assert.equal(clean('https://boards.example.com/b/plan-abc#k=SECRET'), 'https://boards.example.com/b/plan-abc')
+  assert.equal(clean('https://boards.example.com.evil.org/b/x?k=1'), 'https://boards.example.com.evil.org/b/x?k=1')
+  assert.equal(clean('https://boards.example.com/other?k=1'), 'https://boards.example.com/other?k=1')
+  assert.equal(clean('https://boards.example.com/b/plan-abc'), 'https://boards.example.com/b/plan-abc')
 })
