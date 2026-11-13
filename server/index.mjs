@@ -6,6 +6,7 @@
  *   GET  /b/                           boards list (signed-in users)
  *   GET  /b/<slug>?k=…                 editor; plain fetch without JS gets the board as text first
  *   GET  /b/<slug>.md?k=…              the board as markdown — the main entry for agents
+ *   GET  /b/<slug>?embed=1&guest=1     the read-only view without any board key, for a platform's guest link (API token)
  *   GET  /b/<slug>.json?k=…            the board as JSON (metadata, links, text)
  *   GET  /b/<slug>/scene.excalidraw    the whole scene; opens in excalidraw.com too
  *   GET  /b/<slug>/preview.svg         thumbnail
@@ -159,6 +160,35 @@ export function normalizeTags(value) {
 export const REACTIONS = ['👍', '👎', '❤️']
 
 const stamp = () => new Date().toISOString().replace(/\.\d+Z$/, 'Z')
+/**
+ * A scene for the guest view: a link to a board of this service (a board card, a link on a shape) loses its key and
+ * anything else in its query. The author shared one board; the keys of the others are not theirs to hand on with it.
+ */
+export function withoutBoardKeys(scene, boardsBase) {
+  const strip = (link) => {
+    if (typeof link !== 'string' || !link.startsWith(boardsBase)) return link
+    try {
+      const u = new URL(link)
+      return `${u.origin}${u.pathname}`
+    } catch {
+      return null
+    }
+  }
+  const elements = (scene?.elements ?? []).map((el) => {
+    const next = { ...el }
+    if ('link' in next) next.link = strip(next.link)
+    if (next.customData && typeof next.customData === 'object' && typeof next.customData.url === 'string') next.customData = { ...next.customData, url: strip(next.customData.url) }
+    return next
+  })
+  return { ...scene, elements }
+}
+
+/** The same for the board's text, which names the links of its cards: `<boards>/b/<slug>?k=…` becomes `<boards>/b/<slug>`. */
+export function textWithoutBoardKeys(text, boardsBase) {
+  const base = boardsBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return String(text ?? '').replace(new RegExp(`(${base}[a-z0-9][a-z0-9-]*)\\?[^\\s)\\]>"']*`, 'g'), '$1')
+}
+
 const authorOf = (body, fallback = 'agent') => (typeof body.author === 'string' && body.author.trim() ? body.author.trim().slice(0, 60) : fallback)
 
 export function createApp({
@@ -1037,7 +1067,16 @@ export function createApp({
       const features = flags.features(config.features ?? {}, userFlags)
       // The read-only embed view is its own page: see renderEmbedPage.
       if (url.searchParams.get('embed') === '1') {
-        const page = renderEmbedPage({ state, text: store.text(state), scene: store.scene(state), boardUrl: `${publicUrl}${PREFIX}/${slug}?k=${encodeURIComponent(state.meta.key)}`, assets: webAssets(join(webDir, '.vite/manifest.json')).embed, staticUrl: `${publicUrl}${staticBase}`, t })
+        // `&guest=1`: the page a platform hands to somebody who holds its own link to the board, not the board's.
+        // The board's key is a secret that cannot be taken back, so the page must not carry it: no link back, and
+        // no keys of other boards in the cards on the canvas. Only a caller with an API token may ask for it — the
+        // platform fetches the page and serves it under its own link, which has a term and can be revoked.
+        const guest = url.searchParams.get('guest') === '1'
+        if (guest && !context(req).agent) throw new HttpError(403, 'the guest view is for an API token: a platform fetches it and serves it under its own link')
+        const boardUrl = guest ? null : `${publicUrl}${PREFIX}/${slug}?k=${encodeURIComponent(state.meta.key)}`
+        const scene = guest ? withoutBoardKeys(store.scene(state), `${publicUrl}${PREFIX}/`) : store.scene(state)
+        const text = guest ? textWithoutBoardKeys(store.text(state), `${publicUrl}${PREFIX}/`) : store.text(state)
+        const page = renderEmbedPage({ state, text, scene, boardUrl, assets: webAssets(join(webDir, '.vite/manifest.json')).embed, staticUrl: `${publicUrl}${staticBase}`, t })
         return sendBody(res, 200, embedHeaders({ publicUrl }), page)
       }
       // The harnessly app view: the canvas only, harnessly draws the chrome; the theme follows harnessly.

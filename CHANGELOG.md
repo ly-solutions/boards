@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Guest view of the read-only embed (`/b/<slug>?embed=1&guest=1`, API token only): the page carries no board key —
+  no link back, and the cards that lead to other boards lose their keys. A platform fetches it and serves it under its
+  own guest link, which has a term and can be revoked, while the board's own key stays a secret (HRN-1337).
+
 ### Changed
 
 - harnessly app view (`/b/app`) is a site of its own: it reads the library from `GET /b/api/app/library` by the session
