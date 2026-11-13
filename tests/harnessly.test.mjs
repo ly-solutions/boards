@@ -143,7 +143,7 @@ test('MCP with a platform token: create, read, edit and comment are signed by th
   assert.equal(note.status, 202)
 
   const list = await rpc(app.base, token, 'tools/list')
-  assert.deepEqual(list.body.result.tools.map((t) => t.name).sort(), ['board_comment', 'board_create', 'board_edit', 'board_library', 'board_list', 'board_react', 'board_read', 'board_templates'])
+  assert.deepEqual(list.body.result.tools.map((t) => t.name).sort(), ['board_comment', 'board_create', 'board_edit', 'board_library', 'board_list', 'board_react', 'board_read', 'board_signin', 'board_templates'])
 
   const created = await call(app.base, token, 'board_create', { title: 'Order flow', graph: { nodes: [{ id: 'web', label: 'Site' }, { id: 'api', label: 'API' }], edges: [{ from: 'web', to: 'api', label: 'HTTP' }] } })
   assert.equal(created.isError, false, created.content[0].text)
@@ -234,6 +234,34 @@ test('app view: off by default; on, the home loads the bridge first and may be f
   assert.ok(shim > 0 && shim < html.indexOf('hl/app-sdk.classic.js') && shim < html.indexOf('app/app.js'))
   assert.match(appViewHeaders()['content-security-policy'], /frame-ancestors 'self'/)
   assert.match(renderAppView({ staticBase: '/b/_static', locale: 'ru' }), /<html lang="ru">/)
+})
+
+test('app view: its own library needs a session; board_signin gives the person of a platform token one, once', async () => {
+  assert.equal((await fetch(`${off.base}/b/api/app/library`)).status, 404)
+  assert.equal((await fetch(`${view.base}/b/api/app/library`)).status, 401)
+  // An API token has no person to sign in.
+  assert.equal((await call(app.base, TOKEN, 'board_signin', {})).isError, true)
+  const token = jwt({ iss: `${hubBase}/with`, aud: PUBLIC_URL, sub: 'u-9', org: 'org-1', name: 'Ada', email: 'ada@example.com', exp: Math.floor(Date.now() / 1000) + 300 })
+  // The two test apps share the session secret: the pass of the one with harnessly on signs in at the one with the view on.
+  const { pass } = JSON.parse((await call(app.base, token, 'board_signin', {})).content[0].text)
+  const enter = (t, headers = { 'sec-fetch-site': 'same-origin' }) => fetch(`${view.base}/b/api/app/enter`, { method: 'POST', redirect: 'manual', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify({ t }) })
+  assert.equal((await enter(pass, { origin: 'https://evil.example' })).status, 403)
+  const entered = await enter(pass)
+  assert.equal(entered.status, 302)
+  assert.equal(entered.headers.get('location'), '/b/app')
+  const cookie = entered.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ')
+  assert.equal((await enter(pass)).status, 400)
+  assert.equal((await fetch(`${view.base}/b/api/app/library`, { headers: { cookie } })).status, 200)
+})
+
+test('app view: the library answers the signed-in person with "mine" marked', async () => {
+  const { body } = await view.createBoard({ title: 'Shelf' })
+  const cookie = view.cookie({ name: 'Ada', email: 'ada@example.com' })
+  const response = await fetch(`${view.base}/b/api/app/library`, { headers: { cookie } })
+  assert.equal(response.status, 200)
+  const lib = await response.json()
+  assert.equal(lib.me.name, 'Ada')
+  assert.ok(lib.boards.some((b) => b.slug === body.slug && typeof b.url === 'string'))
 })
 
 test('app view: ?app=1 marks the editor config only when the view is on', async () => {

@@ -1,9 +1,11 @@
 /**
  * The harnessly app view: boards as an app inside a harnessly page.
  *
- * `/b/app` is the app home: a "what shall we draw" field (it goes to the agent in the conversation next to it) and
- * the library "All · Mine · Shared" with shelves by tag and a search. An open board is the same editor with `?app=1`:
- * the canvas only, without our own chrome (menu, brand, sign-in) — harnessly draws the chrome.
+ * `/b/app` is the app home, built as a site: the library "All · Mine · Shared" with shelves by tag and a search, read
+ * from our own API (`/b/api/app/library`) by the person's session cookie, and a board opened in the same frame
+ * (`/b/app?board=<slug>`) with a way back. An open board is the same editor with `?app=1`: the canvas only, without
+ * our own chrome (menu, brand, sign-in). The harnessly bridge gives the theme and the first sign-in (the MCP tool
+ * `board_signin`); the view waits for neither.
  *
  * Off by default: `BOARDS_APP_VIEW=on`. Who may frame the view is BOARDS_FRAME_ANCESTORS — list the harnessly hub and
  * machine origins there. Board links with a key (`?k=`) keep working as before.

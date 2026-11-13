@@ -751,6 +751,8 @@ export function createApp({
     list: async () => (await store.list()).map((b) => ({ ...b, url: `${publicUrl}${PREFIX}/${b.slug}?k=${encodeURIComponent(b.key)}` })),
     library: async (me) => (await store.list()).map((b) => libraryRow(b, { publicUrl, prefix: PREFIX, me })),
     templates: () => localTemplates().map(({ id, title, description }) => ({ id, title, description })),
+    // The app view's sign-in: the one-time hand-off pass an integration's link carries, for the person of the platform token.
+    signin: (who) => auth.issueHandoff({ user: { id: who.sub, name: who.name, email: who.email ?? null }, next: `${PREFIX}/app`, ttlS: 60 }),
   })
 
   /**
@@ -862,6 +864,25 @@ export function createApp({
     if (rest === 'app' && req.method === 'GET') {
       if (!config.appView) throw new HttpError(404, 'no such path')
       return sendBody(res, 200, appViewHeaders({ frameAncestors: config.frameAncestors }), renderAppView({ staticBase, locale: t.locale, title: t.locale === 'ru' ? 'Доски' : 'Boards' }))
+    }
+    // The app view trades its one-time pass (board_signin) for the session: in the body of a request of our own page,
+    // so the pass is in no address and no log, and another site's page cannot plant a session (guardOrigin above).
+    if (rest === 'api/app/enter' && req.method === 'POST') {
+      if (!config.appView) throw new HttpError(404, 'no such path')
+      if (req.headers.origin !== publicUrl && req.headers['sec-fetch-site'] !== 'same-origin') throw new HttpError(403, 'the app view signs in from its own page')
+      const body = await readJson(req, 4096)
+      const at = new URL(`${PREFIX}/auth/handoff`, publicUrl)
+      at.searchParams.set('t', String(body?.t ?? ''))
+      return auth.handoff(req, res, at)
+    }
+    // The app view's own data: the library for the signed-in person. 401 tells the view to sign in (board_signin).
+    if (rest === 'api/app/library' && req.method === 'GET') {
+      if (!config.appView) throw new HttpError(404, 'no such path')
+      const { user } = context(req)
+      if (!user) throw new HttpError(401, 'not signed in')
+      const me = { name: user.name, email: user.email }
+      const rows = (await store.list()).map((b) => libraryRow(b, { publicUrl, prefix: PREFIX, me }))
+      return json(res, 200, { me, boards: rows })
     }
     if (rest === 'auth/login') return auth.login(req, res, url, { renderTokenForm, readForm })
     if (rest === 'auth/callback') return auth.callback(req, res, url)

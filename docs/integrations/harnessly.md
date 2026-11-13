@@ -247,6 +247,7 @@ keys are not accepted. The tools (`server/mcp-tools.mjs`) wrap the same operatio
 | `board_react` | a reaction on a sticky | `POST /b/<slug>/react` |
 | `board_list` | boards, newest first, search by words | `GET /b/api/boards` |
 | `board_library` | boards as JSON for the app home, with "mine" | — |
+| `board_signin` | for the app view: a one-time pass that signs the person of the token in to the site | — |
 | `board_templates` | templates | `GET /b/api/templates` |
 
 The `board` argument is a slug or a link. Through MCP a comment has `authorKind: agent`, so the comment webhook does
@@ -257,17 +258,19 @@ argument, or "agent".
 
 With `BOARDS_APP_VIEW=on`:
 
-- `GET /b/app` is the app home: a "what shall we draw" field that goes to the agent in the conversation, and the
-  library "All · Mine · Shared" with shelves by tag and a search. It loads harnessly's bridge and SDK
-  (`/b/_static/hl/`) and gets its data through the app's MCP server (`hl.tools.call('boards.board_library')`), so the
-  page itself needs no sign-in.
+- `GET /b/app` is the app home, built as a site: the library "All · Mine · Shared" with shelves by tag and a search,
+  and a board opened in the same frame (`/b/app?board=<slug>`) with a way back. It reads its own data
+  (`GET /b/api/app/library`, by the session cookie) and does not wait for harnessly. A person the service does not
+  know yet is signed in once through the bridge: the MCP tool `board_signin` (platform token) answers a one-time
+  pass the page posts to `/b/api/app/enter` for the session cookie. The bridge also gives the theme and the board harnessly asks to open.
+  Where the hub and the service are on different sites, set `BOARDS_COOKIE_SAMESITE=none` so the cookie works in the frame.
 - `GET /b/<slug>?k=…&app=1[&theme=dark|light]` is the bare canvas: the editor without its menu, brand, sign-in and
   share buttons. The home sends `{ type: 'board-theme', theme }` messages to follow harnessly's theme.
 - Both may be framed by the origins in `BOARDS_FRAME_ANCESTORS` — list the hub and the machines there.
 
 ### The app package
 
-[`harnessly-app/`](../../harnessly-app/README.md) is the app package: the manifest (views `app` and `pane`), `.mcp.json`
+[`harnessly-app/`](../../harnessly-app/README.md) is the app package: the manifest (one view at `/b/app`, shown as the app and in the pane), `.mcp.json`
 with the service address from the installation (`${install:boardsUrl}`), instructions and a skill for the agent. An
 organization admin installs it as an "App" item of the organization's environment: this repository, folder
 `harnessly-app`. Without the boards address in the installation the app is simply not there.

@@ -9,7 +9,7 @@ get a "Boards" entry under Apps — the boards home with the library, and a boar
   `boardsUrl` is the service origin (as in the view `${install:boardsUrl}/b/app`); `/b/mcp` also works where the host
   gives the service only the `/b` prefix.
 - `instructions.md` and `skills/boards/` — how the agent works with boards.
-- `ui/` — a small pane view with recent boards; `evals/` — scenarios for `harnessly app eval`.
+- `evals/` — scenarios for `harnessly app eval`. There is no `ui/`: the one view is the service's own `/b/app`, as the app and in the pane.
 
 ## Install in an organization
 
