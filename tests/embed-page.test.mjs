@@ -1,7 +1,8 @@
 /** The read-only embed page (`?embed=1`) as the server renders it. */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { startApp } from './helpers/app.mjs'
+import { startApp, TOKEN } from './helpers/app.mjs'
+import { withoutBoardKeys } from '../server/index.mjs'
 
 test('embed: own page, inlined scene, absolute assets, no frame-ancestors; the editor keeps its frame-ancestors', async () => {
   const t = await startApp({ config: { frameAncestors: "'self' https://workspace.example" } })
@@ -71,4 +72,53 @@ test('server pages follow the locale: lang attribute and Russian text, English b
   // The inline script gets the message as a JS string that cannot break out of the string or the tag.
   assert.match(home, /alert\(body\.error \|\| '[^'<]*'\)/)
   assert.match(renderHome({ staticBase: '/s', boards: [], templates: [], user: null, t: ru }), /Досок пока нет — создайте первую\./)
+})
+
+test('embed, guest view: only for an API token; the page carries no key, neither of this board nor of a linked one', async () => {
+  const t = await startApp()
+  try {
+    const other = (await t.createBoard({ title: 'Roadmap' })).body
+    const { body } = await t.createBoard({ title: 'Shared board', add: [{ type: 'rectangle', id: 'card', x: 0, y: 0, width: 200, height: 80, link: other.url }, { type: 'rectangle', id: 'out', x: 0, y: 200, width: 200, height: 80, link: 'https://example.org/page?k=keep' }, { type: 'text', id: 'note', x: 0, y: 400, text: `see ${other.url.replace('http://boards.test', 'HTTP://Boards.Test')}#top and ${other.url}.` }, { type: 'rectangle', id: 'custom', x: 0, y: 600, width: 200, height: 80, customData: { kind: 'card', url: other.url, nested: { again: other.url } } }] })
+    const k = new URL(body.url).searchParams.get('k')
+    const otherKey = new URL(other.url).searchParams.get('k')
+    const guestUrl = `${t.base}/b/${body.slug}?k=${k}&embed=1&guest=1`
+
+    // A person with the board's link, signed in or not, does not get the guest view: it is the platform's to fetch.
+    assert.equal((await fetch(guestUrl)).status, 403)
+    assert.equal((await fetch(guestUrl, { headers: { cookie: t.cookie() } })).status, 403)
+
+    const res = await fetch(`${t.base}/b/${body.slug}?embed=1&guest=1`, { headers: { authorization: `Bearer ${TOKEN}` } })
+    assert.equal(res.status, 200)
+    assert.equal(res.headers.get('cache-control'), 'no-store')
+    assert.equal(res.headers.get('x-boards-view'), 'guest', 'the platform serves the page on only with this mark')
+    const html = await res.text()
+    assert.ok(!html.includes(k), 'the key of the board is not in the page')
+    assert.ok(!html.includes(otherKey), 'the key of a board linked from the canvas is not in the page')
+    const data = JSON.parse(/<script type="application\/json" id="embed-data">([\s\S]*?)<\/script>/.exec(html)[1])
+    assert.equal(data.boardUrl, null)
+    const link = (id) => data.scene.elements.find((e) => e.id === id)?.link
+    assert.equal(link('card'), `http://boards.test/b/${other.slug}`)
+    assert.equal(link('out'), 'https://example.org/page?k=keep', 'a link elsewhere is left as the author put it')
+    const custom = data.scene.elements.find((e) => e.id === 'custom')?.customData
+    if (custom) assert.deepEqual([custom.url, custom.nested?.again], [`http://boards.test/b/${other.slug}`, `http://boards.test/b/${other.slug}`])
+    assert.ok(!/[?&]k=(?!keep)/.test(html), 'no board address in the page keeps its query')
+
+    // The ordinary embed is as it was: the link back with the key.
+    const plainRes = await fetch(`${t.base}/b/${body.slug}?k=${k}&embed=1`)
+    assert.equal(plainRes.headers.get('x-boards-view'), null)
+    assert.ok((await plainRes.text()).includes(k))
+  } finally {
+    await t.close()
+  }
+})
+
+test('guest view: one matcher for board addresses — host without regard to case, query and fragment dropped, others untouched', () => {
+  const clean = (v) => withoutBoardKeys(v, 'https://boards.example.com', '/b')
+  assert.equal(clean('https://boards.example.com/b/plan-abc?k=SECRET'), 'https://boards.example.com/b/plan-abc')
+  assert.equal(clean('see HTTPS://Boards.Example.COM/b/Plan_X?theme=dark&k=SECRET#frag now'), 'see https://boards.example.com/b/Plan_X now')
+  assert.equal(clean('(https://boards.example.com/b/plan-abc?k=SECRET)'), '(https://boards.example.com/b/plan-abc')
+  assert.equal(clean('https://boards.example.com/b/plan-abc#k=SECRET'), 'https://boards.example.com/b/plan-abc')
+  assert.equal(clean('https://boards.example.com.evil.org/b/x?k=1'), 'https://boards.example.com.evil.org/b/x?k=1')
+  assert.equal(clean('https://boards.example.com/other?k=1'), 'https://boards.example.com/other?k=1')
+  assert.equal(clean('https://boards.example.com/b/plan-abc'), 'https://boards.example.com/b/plan-abc')
 })

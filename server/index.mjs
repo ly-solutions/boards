@@ -6,6 +6,7 @@
  *   GET  /b/                           boards list (signed-in users)
  *   GET  /b/<slug>?k=…                 editor; plain fetch without JS gets the board as text first
  *   GET  /b/<slug>.md?k=…              the board as markdown — the main entry for agents
+ *   GET  /b/<slug>?embed=1&guest=1     the read-only view without any board key, for a platform's guest link (API token)
  *   GET  /b/<slug>.json?k=…            the board as JSON (metadata, links, text)
  *   GET  /b/<slug>/scene.excalidraw    the whole scene; opens in excalidraw.com too
  *   GET  /b/<slug>/preview.svg         thumbnail
@@ -159,6 +160,47 @@ export function normalizeTags(value) {
 export const REACTIONS = ['👍', '👎', '❤️']
 
 const stamp = () => new Date().toISOString().replace(/\.\d+Z$/, 'Z')
+/**
+ * The guest view carries no board key. Every address of a board of this service — wherever it stands: a card's link,
+ * a link on a shape, text typed on the canvas, the text summary — loses its query and fragment. One matcher does it
+ * for the scene and for the text: it finds the addresses, parses each, and compares the host without regard to case
+ * and the path with the service's prefix, so `HTTPS://Boards.Example.com/b/x?k=…#y` is caught as well.
+ */
+const ADDRESS = /https?:\/\/[^\s<>"'`]+/gi
+
+export function withoutBoardKeys(value, publicUrl, prefix) {
+  let home
+  try {
+    home = new URL(publicUrl)
+  } catch {
+    return value
+  }
+  return String(value ?? '').replace(ADDRESS, (found) => {
+    let u
+    try {
+      u = new URL(found)
+    } catch {
+      return found
+    }
+    if (u.host.toLowerCase() !== home.host.toLowerCase()) return found
+    if (u.pathname !== prefix && !u.pathname.startsWith(`${prefix}/`)) return found
+    if (!u.search && !u.hash) return found
+    // What followed the address in the sentence (a bracket, a full stop) went into its query: it is dropped with it.
+    return `${u.origin}${u.pathname}`
+  })
+}
+
+/** A scene for the guest view: every string of every element goes through withoutBoardKeys. Files (images) are left. */
+export function sceneWithoutBoardKeys(scene, publicUrl, prefix) {
+  const clean = (v) => {
+    if (typeof v === 'string') return withoutBoardKeys(v, publicUrl, prefix)
+    if (Array.isArray(v)) return v.map(clean)
+    if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, clean(x)]))
+    return v
+  }
+  return { ...scene, elements: clean(scene?.elements ?? []) }
+}
+
 const authorOf = (body, fallback = 'agent') => (typeof body.author === 'string' && body.author.trim() ? body.author.trim().slice(0, 60) : fallback)
 
 export function createApp({
@@ -1037,8 +1079,21 @@ export function createApp({
       const features = flags.features(config.features ?? {}, userFlags)
       // The read-only embed view is its own page: see renderEmbedPage.
       if (url.searchParams.get('embed') === '1') {
-        const page = renderEmbedPage({ state, text: store.text(state), scene: store.scene(state), boardUrl: `${publicUrl}${PREFIX}/${slug}?k=${encodeURIComponent(state.meta.key)}`, assets: webAssets(join(webDir, '.vite/manifest.json')).embed, staticUrl: `${publicUrl}${staticBase}`, t })
-        return sendBody(res, 200, embedHeaders({ publicUrl }), page)
+        // `&guest=1`: the page a platform hands to somebody who holds its own link to the board, not the board's.
+        // The board's key is a secret that cannot be taken back, so the page must not carry it: no link back, and
+        // no keys of other boards in the cards on the canvas. Only a caller with an API token may ask for it — the
+        // platform fetches the page and serves it under its own link, which has a term and can be revoked.
+        const guest = url.searchParams.get('guest') === '1'
+        if (guest && !context(req).agent) throw new HttpError(403, 'the guest view is for an API token: a platform fetches it and serves it under its own link')
+        const boardUrl = guest ? null : `${publicUrl}${PREFIX}/${slug}?k=${encodeURIComponent(state.meta.key)}`
+        const scene = guest ? sceneWithoutBoardKeys(store.scene(state), publicUrl, PREFIX) : store.scene(state)
+        const text = guest ? withoutBoardKeys(store.text(state), publicUrl, PREFIX) : store.text(state)
+        let page = renderEmbedPage({ state, text, scene, boardUrl, assets: webAssets(join(webDir, '.vite/manifest.json')).embed, staticUrl: `${publicUrl}${staticBase}`, t })
+        // Whatever else might name it (a key typed without an address): the board's own key is not in a guest's page.
+        if (guest && state.meta.key) page = page.split(state.meta.key).join('')
+        // The platform serves the page on only when it is told it is the guest view: a build without it ignores
+        // `guest=1` and answers with the ordinary embed, key and all.
+        return sendBody(res, 200, guest ? { ...embedHeaders({ publicUrl }), 'x-boards-view': 'guest' } : embedHeaders({ publicUrl }), page)
       }
       // The harnessly app view: the canvas only, harnessly draws the chrome; the theme follows harnessly.
       const app = Boolean(config.appView) && url.searchParams.get('app') === '1'
