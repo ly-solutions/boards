@@ -1,8 +1,8 @@
-// The boards `app` view in harnessly (server/app-view.mjs). Without an object it is the home: a "what shall we draw"
-// field that goes to the agent in the conversation next to it, and below it the library "All · Mine · Shared" with
-// shelves by tag and a search. With an object (`hl.context.data.object`) it is the board canvas: the same editor with
-// `?app=1`, without its own chrome, in the harnessly theme. Data comes through the app's MCP server (`hl.tools.call`);
-// the harnessly machine adds the person's token.
+// The boards app view in harnessly (server/app-view.mjs), built as a site: it reads its own library from this service
+// (`/b/api/app/library`, by the person's session cookie) and opens a board in the same frame, with a way back. Nothing
+// of that waits for harnessly. The harnessly bridge is used for three things only, when it is there: the theme, the
+// object harnessly asks to open (`hl.context.data.object`), and the first sign-in — the app's MCP tool `board_signin`
+// answers a one-time address that sets the session cookie, so the next opening needs no bridge at all.
 ;(function () {
   'use strict'
 
@@ -10,21 +10,17 @@
   var TEXT = {
     en: {
       all: 'All', mine: 'Mine', shared: 'Shared', mineMark: 'mine', recent: 'Recent',
-      starters: ['Draw the service map: who calls whom', 'The user journey from sign-in to payment', 'A retro board: what went well, what got in the way', 'A plan for the week, day by day'],
       down: 'The boards service is not answering right now', downHint: 'Boards and links to them are safe — try again later.',
-      ask: 'What shall we draw?', askHint: 'Describe a diagram, a plan or a board — the agent draws it in the conversation next to this', draw: 'Draw',
-      prompt: 'Draw a board: ', sendFailed: 'Could not send to the conversation',
-      search: 'Search boards', nothing: 'Nothing found.', empty: 'No boards yet — describe the first one in the field above.',
-      outside: 'This view opens inside harnessly.',
+      search: 'Search boards', nothing: 'Nothing found.', empty: 'No boards yet — ask the agent in the conversation to draw the first one.',
+      back: 'All boards', newTab: 'Open in a new tab', gone: 'There is no such board, or it is not yours to open.',
+      signIn: 'Sign in to see the boards', signInGo: 'Sign in', retry: 'Try again',
     },
     ru: {
       all: 'Все', mine: 'Мои', shared: 'Общие', mineMark: 'моя', recent: 'Недавние',
-      starters: ['Нарисуй схему сервиса: кто кого вызывает', 'Путь пользователя от входа до оплаты', 'Доска ретро: что было хорошо, что мешало', 'План недели по дням'],
       down: 'Сервис досок сейчас не отвечает', downHint: 'Доски и ссылки на них на месте — попробуйте позже.',
-      ask: 'Что нарисуем?', askHint: 'Опишите схему, план или доску — агент нарисует её в чате рядом', draw: 'Нарисовать',
-      prompt: 'Нарисуй доску: ', sendFailed: 'Не получилось отправить в чат',
-      search: 'Поиск по доскам', nothing: 'Ничего не нашлось.', empty: 'Досок пока нет — опишите первую в поле выше.',
-      outside: 'Этот вид открывается внутри harnessly.',
+      search: 'Поиск по доскам', nothing: 'Ничего не нашлось.', empty: 'Досок пока нет — попросите агента в чате нарисовать первую.',
+      back: 'Все доски', newTab: 'Открыть в новой вкладке', gone: 'Такой доски нет, или она вам недоступна.',
+      signIn: 'Войдите, чтобы увидеть доски', signInGo: 'Войти', retry: 'Повторить',
     },
   }
   var LANG = document.documentElement.lang === 'ru' ? 'ru' : 'en'
@@ -34,9 +30,10 @@
     { id: 'mine', label: T.mine },
     { id: 'shared', label: T.shared },
   ]
-  var STARTERS = T.starters
   var SHELVES = 6
   var PER_SHELF = 8
+  var BASE = location.pathname.replace(/\/app\/?$/, '')
+  var BRIDGE_WAIT_MS = 6000
 
   function el(tag, cls, text) {
     var node = document.createElement(tag)
@@ -53,13 +50,6 @@
       .join('\n')
   }
 
-  function library(hl, args) {
-    return hl.tools.call('boards.board_library', args || {}).then(function (res) {
-      if (hl.refused(res) || !res || res.isError) throw new Error(textOf(res) || 'refused')
-      return JSON.parse(textOf(res)).boards || []
-    })
-  }
-
   function when(iso) {
     if (!iso) return ''
     var d = new Date(iso)
@@ -67,47 +57,178 @@
     return d.toLocaleDateString(LANG === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'short' })
   }
 
-  function failed(text) {
+  // ---- The theme: harnessly's when the bridge is there, the system's until then ----
+
+  var theme = { mode: window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light' }
+  if (!document.documentElement.dataset.theme) document.documentElement.dataset.theme = theme.mode
+
+  // ---- The bridge: optional, asked once, never awaited by the library ----
+
+  var bridge = null
+  function connect() {
+    if (bridge) return bridge
+    bridge = new Promise(function (resolve, reject) {
+      var timer = setTimeout(function () {
+        reject(new Error('no bridge'))
+      }, BRIDGE_WAIT_MS)
+      if (!window.harnessly || !window.harnessly.connect) return reject(new Error('no bridge'))
+      window.harnessly.connect({ protocol: 2 }).then(function (hl) {
+        clearTimeout(timer)
+        resolve(hl)
+      }, reject)
+    })
+    return bridge
+  }
+
+  // ---- Data: our own API, by the session cookie ----
+
+  function fetchLibrary() {
+    return fetch(BASE + '/api/app/library', { credentials: 'same-origin', headers: { accept: 'application/json' } }).then(function (res) {
+      if (res.status === 401) return null
+      if (!res.ok) throw new Error('HTTP ' + res.status)
+      return res.json().then(function (body) {
+        return body.boards || []
+      })
+    })
+  }
+
+  /** The first sign-in: harnessly's machine calls the app's MCP tool with the person's token; the answer sets our cookie. */
+  function signIn() {
+    return connect()
+      .then(function (hl) {
+        return hl.tools.call('boards.board_signin', {}).then(function (res) {
+          if (hl.refused(res) || !res || res.isError) throw new Error(textOf(res) || 'refused')
+          return JSON.parse(textOf(res)).url
+        })
+      })
+      .then(function (url) {
+        if (typeof url !== 'string' || url.indexOf(BASE + '/auth/handoff?') !== 0) throw new Error('bad sign-in address')
+        return fetch(url, { credentials: 'same-origin' })
+      })
+  }
+
+  var rowsReady = null
+  /** The library, signing in once when the service does not know the person yet. null: the person has to sign in. */
+  function library(again) {
+    if (rowsReady && !again) return rowsReady
+    rowsReady = fetchLibrary().then(function (rows) {
+      if (rows) return rows
+      return signIn().then(fetchLibrary, function () {
+        return null
+      })
+    })
+    return rowsReady
+  }
+
+  function failed(text, retry) {
+    root.className = 'ba'
     root.textContent = ''
     root.removeAttribute('aria-busy')
     var box = el('div', 'ba__fail hl-empty')
     box.appendChild(el('p', 'hl-h', T.down))
     box.appendChild(el('p', 'hl-muted', text || T.downHint))
+    if (retry) {
+      var again = el('button', 'hl-btn', T.retry)
+      again.type = 'button'
+      again.addEventListener('click', retry)
+      box.appendChild(again)
+    }
     root.appendChild(box)
   }
 
-  // ---- An open board: the canvas only ----
+  function needSignIn() {
+    root.className = 'ba'
+    root.textContent = ''
+    root.removeAttribute('aria-busy')
+    var box = el('div', 'ba__fail hl-empty')
+    box.appendChild(el('p', 'hl-h', T.signIn))
+    var go = el('a', 'hl-btn hl-btn--primary', T.signInGo)
+    go.href = BASE + '/auth/login?next=' + encodeURIComponent(BASE + '/app')
+    go.target = '_blank'
+    go.rel = 'noopener'
+    box.appendChild(go)
+    var again = el('button', 'hl-btn hl-btn--ghost', T.retry)
+    again.type = 'button'
+    again.addEventListener('click', function () {
+      route(true)
+    })
+    box.appendChild(again)
+    root.appendChild(box)
+  }
 
-  function openBoard(hl, slug) {
-    root.className = 'ba ba--canvas'
-    library(hl, { board: slug })
+  // ---- Where we are: `?board=<slug>` is an open board, nothing is the library ----
+
+  function current() {
+    var slug = new URLSearchParams(location.search).get('board')
+    return slug && /^[a-z0-9-]+$/.test(slug) ? slug : null
+  }
+
+  function go(slug) {
+    if (current() === slug) return
+    history.pushState(null, '', slug ? '?board=' + encodeURIComponent(slug) : location.pathname)
+    route()
+  }
+
+  var canvas = null
+  function route(again) {
+    var slug = current()
+    if (!slug) canvas = null
+    library(again)
       .then(function (rows) {
-        var row = rows[0]
-        var at = new URL(row.url)
-        at.searchParams.set('app', '1')
-        at.searchParams.set('theme', hl.context.theme.mode)
-        var frame = el('iframe', 'ba__canvas')
-        frame.title = row.title
-        frame.src = at.pathname + at.search
-        root.textContent = ''
-        root.removeAttribute('aria-busy')
-        root.appendChild(frame)
-        // The theme changes in harnessly — the canvas follows without a reload.
-        hl.on('theme', function (theme) {
-          var mode = theme && theme.mode ? theme.mode : hl.context.theme.mode
-          if (frame.contentWindow) frame.contentWindow.postMessage({ type: 'board-theme', theme: mode }, location.origin)
-        })
+        if (rows === null) return needSignIn()
+        if (current() !== slug) return
+        if (slug) openBoard(rows, slug)
+        else home(rows)
       })
       .catch(function (error) {
-        failed(String((error && error.message) || ''))
+        failed(String((error && error.message) || ''), function () {
+          route(true)
+        })
       })
   }
 
-  // ---- Home ----
+  // ---- An open board: a bar with the way back, and the canvas ----
 
-  function card(hl, row) {
-    var item = el('button', 'ba__card')
-    item.type = 'button'
+  function openBoard(rows, slug) {
+    var row = rows.filter(function (r) {
+      return r.slug === slug
+    })[0]
+    root.textContent = ''
+    root.removeAttribute('aria-busy')
+    root.className = 'ba ba--canvas'
+    var bar = el('div', 'ba__top')
+    var back = el('button', 'hl-btn hl-btn--ghost hl-btn--sm ba__back', '← ' + T.back)
+    back.type = 'button'
+    back.addEventListener('click', function () {
+      go(null)
+    })
+    bar.appendChild(back)
+    root.appendChild(bar)
+    if (!row) {
+      root.appendChild(el('p', 'hl-empty', T.gone))
+      return
+    }
+    bar.appendChild(el('span', 'ba__top-title', row.title))
+    var out = el('a', 'hl-btn hl-btn--ghost hl-btn--sm ba__out', T.newTab)
+    out.href = row.url
+    out.target = '_blank'
+    out.rel = 'noopener'
+    bar.appendChild(out)
+    var at = new URL(row.url)
+    at.searchParams.set('app', '1')
+    at.searchParams.set('theme', theme.mode)
+    var frame = el('iframe', 'ba__canvas')
+    frame.title = row.title
+    frame.src = at.pathname + at.search
+    canvas = frame
+    root.appendChild(frame)
+  }
+
+  // ---- The library ----
+
+  function card(row) {
+    var item = el('a', 'ba__card')
+    item.href = '?board=' + encodeURIComponent(row.slug)
     var thumb = el('span', 'ba__thumb')
     if (row.preview) {
       var img = el('img')
@@ -120,16 +241,18 @@
     item.appendChild(el('span', 'ba__name', row.title))
     var meta = [when(row.updatedAt), row.mine ? T.mineMark : row.author || ''].filter(Boolean).join(' · ')
     item.appendChild(el('span', 'ba__meta hl-muted', meta))
-    item.addEventListener('click', function () {
-      hl.pane.open('object:' + row.slug)
+    item.addEventListener('click', function (event) {
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
+      event.preventDefault()
+      go(row.slug)
     })
     return item
   }
 
-  function grid(hl, rows) {
+  function grid(rows) {
     var box = el('div', 'ba__grid')
     rows.forEach(function (row) {
-      box.appendChild(card(hl, row))
+      box.appendChild(card(row))
     })
     return box
   }
@@ -164,57 +287,10 @@
     return out
   }
 
-  function home(hl) {
+  var view = { tab: 'all', query: '' }
+  function home(all) {
     root.className = 'ba ba--home'
-    var state = { tab: 'all', query: '', rows: null }
-
-    var head = el('header', 'ba__head')
-    head.appendChild(el('h1', 'ba__title', T.ask))
-    var form = el('form', 'ba__ask')
-    var field = el('textarea', 'ba__field hl-input')
-    field.rows = 2
-    field.placeholder = T.askHint
-    field.setAttribute('aria-label', T.ask)
-    var go = el('button', 'hl-btn hl-btn--primary ba__go', T.draw)
-    go.type = 'submit'
-    form.appendChild(field)
-    form.appendChild(go)
-    form.addEventListener('submit', function (event) {
-      event.preventDefault()
-      var text = field.value.trim()
-      if (!text) return
-      go.disabled = true
-      hl.chat
-        .send(T.prompt + text)
-        .then(function (answer) {
-          if (hl.refused(answer)) throw new Error(answer.message)
-          field.value = ''
-        })
-        .catch(function () {
-          hl.ui && hl.ui.toast && hl.ui.toast(T.sendFailed, { tone: 'error' })
-        })
-        .then(function () {
-          go.disabled = false
-        })
-    })
-    field.addEventListener('keydown', function (event) {
-      if (event.key === 'Enter' && !event.shiftKey) {
-        event.preventDefault()
-        form.requestSubmit()
-      }
-    })
-    head.appendChild(form)
-    var starters = el('div', 'ba__starters')
-    STARTERS.forEach(function (line) {
-      var chip = el('button', 'hl-btn hl-btn--ghost hl-btn--sm', line)
-      chip.type = 'button'
-      chip.addEventListener('click', function () {
-        field.value = line
-        field.focus()
-      })
-      starters.appendChild(chip)
-    })
-    head.appendChild(starters)
+    var state = view
 
     var bar = el('div', 'ba__bar')
     var seg = el('div', 'hl-seg ba__tabs')
@@ -232,6 +308,7 @@
     })
     var search = el('input', 'hl-input ba__search')
     search.type = 'search'
+    search.value = state.query
     search.placeholder = T.search
     search.setAttribute('aria-label', T.search)
     search.addEventListener('input', function () {
@@ -243,12 +320,11 @@
 
     var body = el('div', 'ba__lib')
     root.textContent = ''
-    root.appendChild(head)
     root.appendChild(bar)
     root.appendChild(body)
 
     function shown() {
-      return (state.rows || []).filter(function (row) {
+      return all.filter(function (row) {
         if (state.tab === 'mine' && !row.mine) return false
         if (state.tab === 'shared' && row.mine) return false
         if (!state.query) return true
@@ -264,56 +340,58 @@
         b.setAttribute('aria-selected', String(b.dataset.tab === state.tab))
       })
       body.textContent = ''
-      if (state.rows === null) {
-        var wait = el('div', 'ba__grid')
-        for (var i = 0; i < 6; i += 1) wait.appendChild(el('div', 'ba__card hl-skeleton'))
-        body.appendChild(wait)
-        return
-      }
       var rows = shown()
       if (!rows.length) {
-        body.appendChild(
-          el(
-            'p',
-            'hl-empty',
-            state.query || state.tab !== 'all' ? T.nothing : T.empty,
-          ),
-        )
+        body.appendChild(el('p', 'hl-empty', state.query || state.tab !== 'all' ? T.nothing : T.empty))
         return
       }
       if (state.query || state.tab !== 'all') {
-        body.appendChild(grid(hl, rows))
+        body.appendChild(grid(rows))
         return
       }
       shelves(rows).forEach(function (shelf) {
         var section = el('section', 'ba__shelf')
         section.appendChild(el('h2', 'ba__shelf-title hl-h', shelf.title))
-        section.appendChild(grid(hl, shelf.rows))
+        section.appendChild(grid(shelf.rows))
         body.appendChild(section)
       })
     }
 
     draw()
     root.removeAttribute('aria-busy')
-    library(hl)
-      .then(function (rows) {
-        state.rows = rows
-        draw()
-      })
-      .catch(function (error) {
-        failed(String((error && error.message) || ''))
-      })
   }
 
-  window.harnessly
-    .connect({ protocol: 2 })
+  // ---- Start: the library at once; harnessly, when it answers, gives the theme and the object to open ----
+
+  function skeleton() {
+    root.className = 'ba ba--home'
+    root.textContent = ''
+    var wait = el('div', 'ba__grid')
+    for (var i = 0; i < 6; i += 1) wait.appendChild(el('div', 'ba__card hl-skeleton'))
+    root.appendChild(wait)
+  }
+
+  window.addEventListener('popstate', function () {
+    route()
+  })
+  skeleton()
+  route()
+
+  connect()
     .then(function (hl) {
+      function follow(mode) {
+        if (mode !== 'dark' && mode !== 'light') return
+        theme.mode = mode
+        if (canvas && canvas.contentWindow) canvas.contentWindow.postMessage({ type: 'board-theme', theme: mode }, location.origin)
+      }
+      follow(hl.context.theme && hl.context.theme.mode)
+      hl.on('theme', function (next) {
+        follow(next && next.mode ? next.mode : hl.context.theme.mode)
+      })
       var data = hl.context.data
-      var object = data && typeof data.object === 'string' ? data.object : null
-      if (object) openBoard(hl, object)
-      else home(hl)
+      if (data && typeof data.object === 'string' && !current()) go(data.object)
     })
     .catch(function () {
-      failed(T.outside)
+      // Opened outside harnessly, or harnessly did not answer: the site works by itself.
     })
 })()

@@ -2,7 +2,7 @@
   "id": "harnessly.boards",
   "name": "Boards",
   "description": "Excalidraw whiteboards: the agent reads a board as text, draws a diagram as a graph, adds to it and answers in comments",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "harnessly": ">=0.16.68",
   "trust": "sandboxed",
   "targets": [
@@ -33,14 +33,7 @@
       "title": "Boards",
       "entry": "${install:boardsUrl}/b/app",
       "targets": [
-        "app"
-      ]
-    },
-    {
-      "id": "home",
-      "title": "Recent boards",
-      "entry": "ui/index.html",
-      "targets": [
+        "app",
         "pane"
       ]
     }
