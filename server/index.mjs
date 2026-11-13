@@ -1077,7 +1077,9 @@ export function createApp({
         const scene = guest ? withoutBoardKeys(store.scene(state), `${publicUrl}${PREFIX}/`) : store.scene(state)
         const text = guest ? textWithoutBoardKeys(store.text(state), `${publicUrl}${PREFIX}/`) : store.text(state)
         const page = renderEmbedPage({ state, text, scene, boardUrl, assets: webAssets(join(webDir, '.vite/manifest.json')).embed, staticUrl: `${publicUrl}${staticBase}`, t })
-        return sendBody(res, 200, embedHeaders({ publicUrl }), page)
+        // The platform serves the page on only when it is told it is the guest view: a build without it ignores
+        // `guest=1` and answers with the ordinary embed, key and all.
+        return sendBody(res, 200, guest ? { ...embedHeaders({ publicUrl }), 'x-boards-view': 'guest' } : embedHeaders({ publicUrl }), page)
       }
       // The harnessly app view: the canvas only, harnessly draws the chrome; the theme follows harnessly.
       const app = Boolean(config.appView) && url.searchParams.get('app') === '1'

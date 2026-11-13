@@ -89,6 +89,7 @@ test('embed, guest view: only for an API token; the page carries no key, neither
     const res = await fetch(`${t.base}/b/${body.slug}?embed=1&guest=1`, { headers: { authorization: `Bearer ${TOKEN}` } })
     assert.equal(res.status, 200)
     assert.equal(res.headers.get('cache-control'), 'no-store')
+    assert.equal(res.headers.get('x-boards-view'), 'guest', 'the platform serves the page on only with this mark')
     const html = await res.text()
     assert.ok(!html.includes(k), 'the key of the board is not in the page')
     assert.ok(!html.includes(otherKey), 'the key of a board linked from the canvas is not in the page')
@@ -99,8 +100,9 @@ test('embed, guest view: only for an API token; the page carries no key, neither
     assert.equal(link('out'), 'https://example.org/page?k=keep', 'a link elsewhere is left as the author put it')
 
     // The ordinary embed is as it was: the link back with the key.
-    const plain = await (await fetch(`${t.base}/b/${body.slug}?k=${k}&embed=1`)).text()
-    assert.ok(plain.includes(k))
+    const plainRes = await fetch(`${t.base}/b/${body.slug}?k=${k}&embed=1`)
+    assert.equal(plainRes.headers.get('x-boards-view'), null)
+    assert.ok((await plainRes.text()).includes(k))
   } finally {
     await t.close()
   }

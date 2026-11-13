@@ -77,7 +77,7 @@ No token needed (the key is in the URL). Every board page also advertises it wit
 | URL | What it is | Who may frame it |
 | --- | --- | --- |
 | `/b/<slug>?k=<key>&embed=1` | read-only view, scene fitted into the frame, "Fullscreen" and "Open board" buttons; works without cookies (the scene is inlined into the page) | anyone (no `frame-ancestors`, so even sandboxed/opaque-origin documents can embed it) |
-| `/b/<slug>?embed=1&guest=1` with `Authorization: Bearer <API token>` | the same read-only view for a guest of the platform: no link back to the board, and links to boards of this service lose their keys, so the page carries no board key at all. harnessly fetches it server to server and serves it under its own guest link (a term, revocable); a person asking for it with the board's link gets 403 | API token only |
+| `/b/<slug>?embed=1&guest=1` with `Authorization: Bearer <API token>` | the same read-only view for a guest of the platform: no link back to the board, and links to boards of this service lose their keys, so the page carries no board key at all; the answer has `X-Boards-View: guest`, and a platform must refuse to serve a page without it (an older build ignores `guest=1`). harnessly fetches it server to server and serves it under its own guest link (a term, revocable); a person asking for it with the board's link gets 403 | API token only |
 | `/b/<slug>?k=<key>` | the full editor: live collaboration, cursors, comments | origins in `BOARDS_FRAME_ANCESTORS` |
 | `/b/<slug>?k=<key>&at=<checkpoint>` | the board as it was at a checkpoint, read-only | as above |
 
