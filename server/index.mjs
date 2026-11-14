@@ -63,6 +63,7 @@ import { handleBody as handleMcpBody, ToolError } from './mcp.mjs'
 import { boardTools, slugOf } from './mcp-tools.mjs'
 import { appViewHeaders, libraryRow, renderAppView } from './app-view.mjs'
 import { sketchSvg } from './sketch.mjs'
+import { mentionsIn, personId } from './people.mjs'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const PREFIX = '/b'
@@ -229,6 +230,8 @@ export function createApp({
   // One translator for pages and plugins: a host built elsewhere brings its own, with its plugins' messages in it.
   if (plugins.t) t = plugins.t
   const publicUrl = config.publicUrl
+  /** The comments webhook secret also keys the people's ids (people.mjs): only its receiver can read them. */
+  const webhookSecret = config.webhook?.secret ?? ''
   /** Template names in the interface language (the editor's templates panel uses the same catalog keys). */
   const localTemplates = () =>
     TEMPLATES.map((tpl) => {
@@ -272,7 +275,7 @@ export function createApp({
   function editor(req, state, body = {}) {
     const { agent, user } = context(req)
     if (agent) return { kind: 'agent', name: authorOf(body) }
-    if (user) return { kind: 'user', name: user.name, email: user.email }
+    if (user) return { kind: 'user', name: user.name, email: user.email, id: personId(user, webhookSecret) }
     if ((state.meta.access ?? 'team') === 'link') {
       const guest = typeof body.guest === 'string' ? body.guest.trim().slice(0, 40) : ''
       return { kind: 'guest', name: guest ? `guest: ${guest}` : 'guest' }
@@ -311,22 +314,10 @@ export function createApp({
       title: state.meta.title,
       url: store.boardUrl(state),
       thread: { id: thread.id, resolved: Boolean(thread.resolved), anchor: { elementId: thread.elementId ?? null, label, x: thread.x, y: thread.y } },
-      ...(msg ? { message: { id: msg.id, text: msg.text, author: msg.author, authorEmail: who.email ?? null, authorKind: msg.authorKind, at: msg.at, mentions: mentionsIn(msg.text, state) } } : {}),
+      // mentions: `[{ name, agent: true }]` for the agent, `[{ name, id }]` for a person of the board (people.mjs); a
+      // receiver tells the people with an id. authorId is the writer's own id, so a receiver never tells them.
+      ...(msg ? { message: { id: msg.id, text: msg.text, author: msg.author, authorEmail: who.email ?? null, authorId: msg.authorId ?? null, authorKind: msg.authorKind, at: msg.at, mentions: mentionsIn(msg.text, state.notes, { authorId: msg.authorId ?? null, authorName: msg.author }) } } : {}),
     }
-  }
-
-  /**
-   * Who a message calls by `@Name` (HRN-1452): the people who wrote on this board's threads and the agent, as the
-   * editor offers them. A receiver of the webhook tells them; the board itself only names them.
-   */
-  function mentionsIn(text, state) {
-    const names = new Set(['harnessly'])
-    for (const th of store.notes(state).comments) for (const m of th.messages) if (m.authorKind !== 'agent' && m.author && !/^guest:/i.test(m.author)) names.add(m.author)
-    const lower = String(text).toLowerCase()
-    return [...names].filter((name) => {
-      const at = lower.indexOf(`@${name.toLowerCase()}`)
-      return at >= 0 && (at === 0 || /\s/.test(lower[at - 1]))
-    })
   }
 
   /** Comment events go to the outgoing webhook and to plugin listeners alike. */
@@ -339,12 +330,12 @@ export function createApp({
   async function handleComment(req, res, state, threadId) {
     const body = await readJson(req, 64 * 1024)
     const who = requireEditor(req, state, body)
-    const actor = { name: who.name, kind: who.kind === 'agent' ? 'agent' : 'person', email: who.email }
+    const actor = { name: who.name, kind: who.kind === 'agent' ? 'agent' : 'person', email: who.email, id: who.kind === 'agent' ? null : who.id ?? null }
     try {
       if (!threadId) {
         const created = store.comment(state, { text: body.text, x: body.x, y: body.y, elementId: body.elementId }, actor)
         emitComment(commentPayload('thread.created', state, created, who, created.messages[0]))
-        return json(res, 201, { ok: true, thread: created, notes: store.notes(state) })
+        return json(res, 201, { ok: true, thread: store.threadView(created), notes: store.notes(state) })
       }
       // Members and agents may delete anything (agents and departed guests leave threads nobody else could
       // clean up); a guest only what they wrote.
@@ -354,7 +345,7 @@ export function createApp({
       if (result.removed) emitComment(commentPayload('thread.removed', state, result.thread, who))
       if (result.replied) emitComment(commentPayload('thread.replied', state, result.thread, who, result.replied))
       if (result.resolvedChanged) emitComment(commentPayload(result.thread.resolved ? 'thread.resolved' : 'thread.reopened', state, result.thread, who))
-      return json(res, 200, { ok: true, thread: result.removed ? { removed: true } : result.thread, notes: store.notes(state) })
+      return json(res, 200, { ok: true, thread: result.removed ? { removed: true } : store.threadView(result.thread), notes: store.notes(state) })
     } catch (error) {
       if (error instanceof CommentError) throw new HttpError(error.status, error.message)
       throw error
@@ -791,13 +782,13 @@ export function createApp({
     comment: (state, who, input) => {
       const created = store.comment(state, { text: input.text, elementId: input.elementId, ...pinPoint(state, input) }, actorOf(who))
       emitComment(commentPayload('thread.created', state, created, who, created.messages[0]))
-      return created
+      return store.threadView(created)
     },
     changeThread: (state, who, id, change) => {
       const result = store.changeComment(state, id, change, actorOf(who), () => true)
       if (result.replied) emitComment(commentPayload('thread.replied', state, result.thread, who, result.replied))
       if (result.resolvedChanged) emitComment(commentPayload(result.thread.resolved ? 'thread.resolved' : 'thread.reopened', state, result.thread, who))
-      return result.thread
+      return store.threadView(result.thread)
     },
     react: (state, who, input) => {
       if (!REACTIONS.includes(input.emoji)) throw new ToolError(`emoji: one of ${REACTIONS.join(' ')}`)
@@ -809,7 +800,7 @@ export function createApp({
     library: async (me) => (await store.list()).map((b) => libraryRow(b, { publicUrl, prefix: PREFIX, me })),
     templates: () => localTemplates().map(({ id, title, description }) => ({ id, title, description })),
     // The app view's sign-in: the one-time hand-off pass an integration's link carries, for the person of the platform token.
-    signin: (who) => auth.issueHandoff({ user: { id: who.sub, name: who.name, email: who.email ?? null }, next: `${PREFIX}/app`, ttlS: 60 }),
+    signin: (who) => auth.issueHandoff({ user: { id: who.sub, name: who.name, email: who.email ?? null }, next: `${PREFIX}/app`, ttlS: 60, via: 'harnessly' }),
   })
 
   /**

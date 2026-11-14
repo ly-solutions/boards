@@ -21,6 +21,7 @@ import { describeScene, summarize } from './summary.mjs'
 import { diff as checkpointDiff, summarize as summarizeDiff, weekCleanup, weekOutcome, OPEN_FILL } from '../shared/checkpoints.mjs'
 import { stickyStroke } from '../shared/palette.mjs'
 import { openThread, changeThread } from './comments.mjs'
+import { peopleNames, rememberPerson } from './people.mjs'
 
 /** Deleted elements are kept for a week: a browser tab open longer than that is rare. */
 const TOMBSTONE_TTL_MS = 7 * 24 * 3600 * 1000
@@ -98,6 +99,8 @@ export function createStore({
       notes: {
         reactions: loaded.notes?.reactions && typeof loaded.notes.reactions === 'object' ? loaded.notes.reactions : {},
         comments: Array.isArray(loaded.notes?.comments) ? loaded.notes.comments : [],
+        // Who was here signed in, by stable id (people.mjs, HRN-1469): kept in storage, never sent to an editor.
+        people: loaded.notes?.people && typeof loaded.notes.people === 'object' && !Array.isArray(loaded.notes.people) ? loaded.notes.people : {},
       },
       notesDirty: false,
     }
@@ -282,7 +285,15 @@ export function createStore({
   // operation (vote, reply) and the server broadcasts the notes whole. They are small, and whole means everyone
   // sees exactly the same thing.
 
-  const notesView = (state) => ({ reactions: state.notes.reactions, comments: state.notes.comments })
+  // What editors and the board text see: the comments without their authors' ids, and the people by name only.
+  const threadView = (th) => (th.messages?.some((m) => m.authorId) ? { ...th, messages: th.messages.map(({ authorId, ...m }) => m) } : th)
+  const notesView = (state) => ({
+    reactions: state.notes.reactions,
+    comments: state.notes.comments.map(threadView),
+    people: peopleNames(state.notes),
+  })
+  // What storage keeps: everything, ids included.
+  const notesFile = (state) => ({ reactions: state.notes.reactions, comments: state.notes.comments, people: state.notes.people ?? {} })
 
   function notesChanged(state) {
     state.notesDirty = true
@@ -308,15 +319,25 @@ export function createStore({
 
   /** Comments: see comments.mjs. The store persists and broadcasts; permissions are the caller's. */
   function comment(state, input, who) {
-    const thread = openThread(state.notes, state.elements, input, { author: who.name, kind: who.kind, now: now() })
+    rememberPerson(state.notes, who.id, who.name, new Date(now()).toISOString())
+    const thread = openThread(state.notes, state.elements, input, { author: who.name, authorId: who.id ?? null, kind: who.kind, now: now() })
     notesChanged(state)
     return thread
   }
 
   function changeComment(state, id, change, who, mayDelete) {
-    const result = changeThread(state.notes, state.elements, id, change, { author: who.name, kind: who.kind, now: now(), mayDelete })
+    rememberPerson(state.notes, who.id, who.name, new Date(now()).toISOString())
+    const result = changeThread(state.notes, state.elements, id, change, { author: who.name, authorId: who.id ?? null, kind: who.kind, now: now(), mayDelete })
     notesChanged(state)
     return result
+  }
+
+  /**
+   * A signed-in person is on the board (opened it, edits it): remember them so a mention can reach them (people.mjs).
+   * Saved and broadcast only when they are new here or their name changed.
+   */
+  function notePerson(state, id, name) {
+    if (rememberPerson(state.notes, id, name, new Date(now()).toISOString())) notesChanged(state)
   }
 
   /** An agent edit: marked so open editors can say "the agent edited". */
@@ -431,7 +452,7 @@ export function createStore({
       'board.md': text(state),
     }
     if (state.previewDirty && state.preview) files['preview.svg'] = state.preview
-    if (state.notesDirty || state.existing.has('notes.json')) files['notes.json'] = `${JSON.stringify(notesView(state), null, 1)}\n`
+    if (state.notesDirty || state.existing.has('notes.json')) files['notes.json'] = `${JSON.stringify(notesFile(state), null, 1)}\n`
     const { version } = await storage.writeBoard(state.slug, files, { existing: state.existing, version: state.version })
     state.version = version
     state.previewDirty = false
@@ -761,8 +782,11 @@ export function createStore({
     applyAgentEdit,
     react,
     comment,
+    notePerson,
     changeComment,
     notes: notesView,
+    /** A thread as an editor or an agent sees it: without the authors' ids. */
+    threadView,
     timerAct,
     now,
     /** Metadata of another board, for link cards. */

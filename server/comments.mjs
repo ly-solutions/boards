@@ -35,16 +35,18 @@ export function placePin(elements, x, y, elementId) {
   }
 }
 
-const message = (author, kind, text, at, replyTo) => ({ id: newId(), author, authorKind: kind === 'agent' ? 'agent' : 'person', text, at, ...(replyTo ? { replyTo } : {}) })
+// `authorId` is the person's stable id (people.mjs) where they were signed in; it is kept in storage and never sent to
+// the editor (store.notesView).
+const message = (author, kind, text, at, replyTo, authorId) => ({ id: newId(), author, ...(authorId ? { authorId } : {}), authorKind: kind === 'agent' ? 'agent' : 'person', text, at, ...(replyTo ? { replyTo } : {}) })
 
 /** Start a thread. Returns the new thread (already appended to `notes.comments`). */
-export function openThread(notes, elements, { text, x, y, elementId = null }, { author, kind = 'person', now = new Date() }) {
+export function openThread(notes, elements, { text, x, y, elementId = null }, { author, authorId = null, kind = 'person', now = new Date() }) {
   const body = cleanText(text)
   if (!body) throw new CommentError(400, 'text: the comment text')
   if (!Number.isFinite(x) || !Number.isFinite(y)) throw new CommentError(400, 'x, y: the canvas point to pin the comment to')
   if (notes.comments.length >= COMMENT_LIMITS.threads) throw new CommentError(400, `a board holds at most ${COMMENT_LIMITS.threads} threads — delete resolved ones`)
   const at = new Date(now).toISOString()
-  const thread = { id: newId(), ...placePin(elements, x, y, elementId), author, createdAt: at, resolved: false, messages: [message(author, kind, body, at)] }
+  const thread = { id: newId(), ...placePin(elements, x, y, elementId), author, createdAt: at, resolved: false, messages: [message(author, kind, body, at, undefined, authorId)] }
   notes.comments.push(thread)
   return thread
 }
@@ -54,7 +56,7 @@ export function openThread(notes, elements, { text, x, y, elementId = null }, { 
  * Returns `{ thread, removed, replied, resolvedChanged }`. Throws 404 for an unknown thread or message.
  * `mayDelete(author)` decides whether the caller may delete content written by `author`.
  */
-export function changeThread(notes, elements, id, change, { author, kind = 'person', now = new Date(), mayDelete = () => true }) {
+export function changeThread(notes, elements, id, change, { author, authorId = null, kind = 'person', now = new Date(), mayDelete = () => true }) {
   const index = notes.comments.findIndex((t) => t.id === id)
   if (index < 0) throw new CommentError(404, 'no such thread')
   const thread = notes.comments[index]
@@ -82,7 +84,7 @@ export function changeThread(notes, elements, id, change, { author, kind = 'pers
   if (reply) {
     if (thread.messages.length >= COMMENT_LIMITS.messages) throw new CommentError(400, `a thread holds at most ${COMMENT_LIMITS.messages} replies`)
     const quoted = typeof change.replyTo === 'string' && thread.messages.some((m) => m.id === change.replyTo) ? change.replyTo : null
-    replied = message(author, kind, reply, new Date(now).toISOString(), quoted)
+    replied = message(author, kind, reply, new Date(now).toISOString(), quoted, authorId)
     thread.messages.push(replied)
   }
   let resolvedChanged = false

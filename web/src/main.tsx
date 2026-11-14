@@ -83,7 +83,8 @@ function tellView(elements: readonly Element[], appState: Record<string, unknown
   told.editing = editing
 }
 
-type Notes = { reactions: Record<string, Record<string, string[]>>; comments: Thread[] }
+/** `people`: who was on the board signed in, by name (HRN-1469) — they can be mentioned even when not here now. */
+type Notes = { reactions: Record<string, Record<string, string[]>>; comments: Thread[]; people?: string[] }
 type Scene = { elements: Element[]; appState: Record<string, unknown>; files?: Record<string, FileData>; rev: number; epoch: string; notes?: Notes }
 type Peer = {
   username: string
@@ -166,6 +167,8 @@ const base = `/b/${config.slug}`
 const q = `?k=${encodeURIComponent(config.key)}`
 const clientId = Math.random().toString(36).slice(2, 12)
 const here = () => `${location.pathname}${location.search}`
+/** A thread id as comments.mjs makes them. */
+const THREAD_ID_RE = /^[a-f0-9]{6,32}$/
 const loginUrl = () => `${config.loginUrl ?? '/b/auth/login'}?next=${encodeURIComponent(here())}`
 const logoutUrl = () => `${config.logoutUrl ?? '/b/auth/logout'}?next=${encodeURIComponent(here())}`
 const homeUrl = config.homeUrl ?? '/b/'
@@ -1105,6 +1108,11 @@ function Board() {
     })
   }, [])
 
+  // A thread to open: `?thread=` in the address (a link from the bell, HRN-1469), later a `board-thread` from the view.
+  const [focusThread, setFocusThread] = useState<{ id: string; n: number } | null>(() => {
+    const id = new URLSearchParams(location.search).get('thread')
+    return id && THREAD_ID_RE.test(id) ? { id, n: 0 } : null
+  })
   const onApi = useCallback(
     (api: unknown) => {
       apiRef.current = api as Api
@@ -1114,7 +1122,12 @@ function Board() {
       if (config.app) {
         window.addEventListener('message', (event) => {
           if (event.origin !== location.origin || event.source !== window.parent) return
-          const data = event.data as { type?: string; theme?: string } | null
+          const data = event.data as { type?: string; theme?: string; id?: string } | null
+          if (data?.type === 'board-thread' && typeof data.id === 'string' && THREAD_ID_RE.test(data.id)) {
+            const id = data.id
+            setFocusThread((was) => ({ id, n: (was?.n ?? 0) + 1 }))
+            return
+          }
           if (data?.type !== 'board-theme' || (data.theme !== 'dark' && data.theme !== 'light')) return
           ;(api as Api).updateScene({ appState: { theme: data.theme } } as never)
         })
@@ -1469,6 +1482,8 @@ function Board() {
   const openProperties = useCallback(() => setProperties(true), [])
   const startComment = useCallback(() => onTool('comment'), [onTool])
   const openComments = useMemo(() => notes.comments.filter((t) => !t.resolved).length, [notes.comments])
+  // Who a comment may call: who is here now and who was here signed in before (HRN-1469).
+  const mentionable = useMemo(() => [...here, ...(notes.people ?? [])], [here, notes.people])
 
   /**
    * The menu and welcome screen are Excalidraw children. The editor is memoized
@@ -1651,7 +1666,8 @@ function Board() {
           setPanelOpen={setCommentsPanel}
           onCreate={createComment}
           onUpdate={updateComment}
-          people={here}
+          people={mentionable}
+          focus={focusThread}
           agent={Boolean(config.app)}
         />
       )}
