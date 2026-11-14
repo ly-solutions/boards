@@ -77,6 +77,7 @@ export function libraryRow(meta, { publicUrl, prefix, me }) {
     author,
     mine,
     url: `${publicUrl}${prefix}/${meta.slug}?k=${key}`,
-    preview: meta.hasPreview ? `${prefix}/${meta.slug}/preview.svg?k=${key}` : null,
+    // A board without a browser's thumbnail gets a sketch of its shapes from the same address (sketch.mjs).
+    preview: `${prefix}/${meta.slug}/preview.svg?k=${key}`,
   }
 }

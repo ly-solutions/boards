@@ -35,6 +35,7 @@ import { PulseLayer, pulse } from './motion-fx'
 import { excalidrawLang, t } from './i18n'
 import { fitsSelection, loadWebPlugins, matchReference, pluginApi, toolbarButtons, usePluginRegistry, webActions, type EditorBridge, type PluginConfig, type SceneElement } from './plugins'
 import { fitScene, shouldFitOnLoad } from './fit'
+import { CALL_EVENT, MENTION, callWords, onScreen, selectionOf, toView, type CallDetail } from './app-call'
 
 type Element = { id: string; version: number; versionNonce: number; isDeleted?: boolean; type: string; x?: number; y?: number; width?: number; height?: number; containerId?: string | null; customData?: Record<string, unknown>; fontSize?: number; fontFamily?: number; text?: string }
 type FileData = { id: string; mimeType: string; dataURL: string; created: number }
@@ -57,6 +58,30 @@ type Remote = {
   notes?: Notes
 }
 /** Reactions and comments — a layer above the scene, always sent whole. */
+/**
+ * The harnessly app view is told what the person selected when the selection changes, and a call once, when the
+ * person has finished writing a text with `@harnessly` in it (only their own editing counts, never a peer's).
+ */
+const told = { selection: '', editing: null as string | null }
+function tellView(elements: readonly Element[], appState: Record<string, unknown>) {
+  const view = appState as never
+  const sel = selectionOf(elements, (appState.selectedElementIds ?? {}) as Record<string, boolean>)
+  const key = `${sel.count}\u0000${sel.text}`
+  if (key !== told.selection) {
+    told.selection = key
+    toView({ type: 'board-selection', text: sel.text, count: sel.count, rect: sel.box ? onScreen(sel.box, view) : null })
+  }
+  const editing = (appState.editingTextElement as { id?: string } | null)?.id ?? null
+  if (told.editing && editing !== told.editing) {
+    const done = elements.find((e) => e.id === told.editing)
+    if (done && !done.isDeleted && done.text && MENTION.test(done.text)) {
+      const box = { x: done.x ?? 0, y: done.y ?? 0, w: done.width ?? 0, h: done.height ?? 0 }
+      toView({ type: 'board-call', text: callWords(done.text), rect: onScreen(box, view) })
+    }
+  }
+  told.editing = editing
+}
+
 type Notes = { reactions: Record<string, Record<string, string[]>>; comments: Thread[] }
 type Scene = { elements: Element[]; appState: Record<string, unknown>; files?: Record<string, FileData>; rev: number; epoch: string; notes?: Notes }
 type Peer = {
@@ -1088,6 +1113,12 @@ function Board() {
           if (data?.type !== 'board-theme' || (data.theme !== 'dark' && data.theme !== 'light')) return
           ;(api as Api).updateScene({ appState: { theme: data.theme } } as never)
         })
+        // A comment with `@harnessly`: its place on screen goes to the view with the words.
+        window.addEventListener(CALL_EVENT, (event) => {
+          const at = (event as CustomEvent<CallDetail>).detail
+          const view = (api as Api).getAppState() as never
+          toView({ type: 'board-call', text: at.text, rect: onScreen({ x: at.x, y: at.y, w: 0, h: 0 }, view) })
+        })
       }
       // In 0.18 follow events only come through the API subscription — the editor
       // never calls the onUserFollow prop.
@@ -1140,6 +1171,7 @@ function Board() {
   const onChange = useCallback(
     (elements: readonly Element[], appState: Record<string, unknown>) => {
       const version = getSceneVersion(elements as never)
+      if (config.app) tellView(elements, appState)
       if (config.live) onSceneChange(version, appState)
       if (config.snap) {
         const on = Boolean(appState.objectsSnapModeEnabled)
@@ -1520,7 +1552,7 @@ function Board() {
         name={title}
         viewModeEnabled={!canEdit}
         isCollaborating
-        onChange={config.live || config.studio || config.snap || config.workboard ? (onChange as never) : undefined}
+        onChange={config.app || config.live || config.studio || config.snap || config.workboard ? (onChange as never) : undefined}
         onPointerUpdate={config.live || config.workboard ? (onPointerUpdate as never) : undefined}
         onPaste={config.workboard && canEdit ? (onPaste as never) : undefined}
         onPointerDown={config.studio ? (onStudioPointerDown as never) : undefined}

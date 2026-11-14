@@ -47,6 +47,7 @@ import {
   type Seen,
   type Thread,
 } from './comments-model'
+import { commentCall } from './app-call'
 import './comments.css'
 import { t, dateLocale } from './i18n'
 
@@ -516,6 +517,7 @@ function ThreadBody({ api, thread, me, isTeam, canComment, memory, onUpdate, onC
     const ok = await onUpdate(thread.id, target ? { reply: value, replyTo: target.id } : { reply: value })
     setBusy(false)
     if (!ok) return
+    commentCall(value, thread)
     setTextRaw('')
     setReplyToRaw(undefined)
     memory.delete(thread.id)
@@ -847,6 +849,8 @@ export function Comments({ api, slug, threads, me, canComment, isTeam, draft, se
       if (!draft) return false
       const thread = await onCreate({ x: draft.x, y: draft.y, elementId: draft.elementId, text })
       if (!thread) return false
+      // `@harnessly` in a new comment calls the agent of the app view to this place.
+      commentCall(text, draft)
       memory.delete(NEW)
       setDraft(null)
       setOpenId(thread.id)
