@@ -35,7 +35,8 @@ import { PulseLayer, pulse } from './motion-fx'
 import { excalidrawLang, t } from './i18n'
 import { fitsSelection, loadWebPlugins, matchReference, pluginApi, toolbarButtons, usePluginRegistry, webActions, type EditorBridge, type PluginConfig, type SceneElement } from './plugins'
 import { fitScene, shouldFitOnLoad } from './fit'
-import { CALL_EVENT, MENTION, callWords, onScreen, selectionOf, toView, type CallDetail } from './app-call'
+import { followPanHint } from './pan-hint'
+import { CALL_EVENT, MENTION, callWords, onScreen, selectionOf, toView, visibleArea, type CallDetail } from './app-call'
 
 type Element = { id: string; version: number; versionNonce: number; isDeleted?: boolean; type: string; x?: number; y?: number; width?: number; height?: number; containerId?: string | null; customData?: Record<string, unknown>; fontSize?: number; fontFamily?: number; text?: string }
 type FileData = { id: string; mimeType: string; dataURL: string; created: number }
@@ -69,14 +70,14 @@ function tellView(elements: readonly Element[], appState: Record<string, unknown
   const key = `${sel.count}\u0000${sel.text}`
   if (key !== told.selection) {
     told.selection = key
-    toView({ type: 'board-selection', text: sel.text, count: sel.count, rect: sel.box ? onScreen(sel.box, view) : null })
+    toView({ type: 'board-selection', text: sel.text, count: sel.count, rect: sel.box ? onScreen(sel.box, view) : null, area: visibleArea(view) })
   }
   const editing = (appState.editingTextElement as { id?: string } | null)?.id ?? null
   if (told.editing && editing !== told.editing) {
     const done = elements.find((e) => e.id === told.editing)
     if (done && !done.isDeleted && done.text && MENTION.test(done.text)) {
       const box = { x: done.x ?? 0, y: done.y ?? 0, w: done.width ?? 0, h: done.height ?? 0 }
-      toView({ type: 'board-call', text: callWords(done.text), rect: onScreen(box, view) })
+      toView({ type: 'board-call', text: callWords(done.text), rect: onScreen(box, view), area: visibleArea(view), thread: null })
     }
   }
   told.editing = editing
@@ -511,6 +512,7 @@ function Board() {
     [paintPeers],
   )
 
+  const [here, setHere] = useState<string[]>([])
   const setPresence = useCallback(
     (viewers: Viewer[]) => {
       const next = new Map<string, Peer>()
@@ -523,6 +525,9 @@ function Board() {
       }
       for (const id of peers.current.keys()) if (!next.has(id)) pointerGlide.current?.drop(id)
       peers.current = next
+      // Who is here can be mentioned in a comment (HRN-1452): signed-in names only, a guest cannot be told.
+      const names = viewers.flatMap((v) => (v.name && !v.name.startsWith('guest: ') ? [v.name] : []))
+      setHere((was) => (was.join('\u0000') === names.join('\u0000') ? was : names))
       // The person we followed left — nobody to follow any more.
       const api = apiRef.current
       const following = api?.getAppState().userToFollow as { socketId: string } | null | undefined
@@ -1117,7 +1122,7 @@ function Board() {
         window.addEventListener(CALL_EVENT, (event) => {
           const at = (event as CustomEvent<CallDetail>).detail
           const view = (api as Api).getAppState() as never
-          toView({ type: 'board-call', text: at.text, rect: onScreen({ x: at.x, y: at.y, w: 0, h: 0 }, view) })
+          toView({ type: 'board-call', text: at.text, rect: onScreen({ x: at.x, y: at.y, w: 0, h: 0 }, view), area: visibleArea(view), thread: at.thread })
         })
       }
       // In 0.18 follow events only come through the API subscription — the editor
@@ -1172,6 +1177,7 @@ function Board() {
     (elements: readonly Element[], appState: Record<string, unknown>) => {
       const version = getSceneVersion(elements as never)
       if (config.app) tellView(elements, appState)
+      followPanHint(appState)
       if (config.live) onSceneChange(version, appState)
       if (config.snap) {
         const on = Boolean(appState.objectsSnapModeEnabled)
@@ -1552,7 +1558,7 @@ function Board() {
         name={title}
         viewModeEnabled={!canEdit}
         isCollaborating
-        onChange={config.app || config.live || config.studio || config.snap || config.workboard ? (onChange as never) : undefined}
+        onChange={onChange as never}
         onPointerUpdate={config.live || config.workboard ? (onPointerUpdate as never) : undefined}
         onPaste={config.workboard && canEdit ? (onPaste as never) : undefined}
         onPointerDown={config.studio ? (onStudioPointerDown as never) : undefined}
@@ -1645,6 +1651,8 @@ function Board() {
           setPanelOpen={setCommentsPanel}
           onCreate={createComment}
           onUpdate={updateComment}
+          people={here}
+          agent={Boolean(config.app)}
         />
       )}
       {studioApi && canEdit && (

@@ -1,0 +1,26 @@
+{
+  "prompt": "как дела?\n\n<annotation n=\"1\" kind=\"space\">\nopen: board «Order flow» https://boards.example.com/b/order-flow\nslug: order-flow\nthread: t_42\nrule: человек работает в этом месте — доска «Order flow» открыт(а) у него на экране. Всё, о чём он просит, делай здесь, не спрашивая, куда положить; другое место — только если он сам его назвал. Ответь в этом треде (board_comment с thread), не в чате и не надписью.\n</annotation>",
+  "mocks": {
+    "mcp": {
+      "boards": "fixtures/boards-full.json"
+    }
+  },
+  "expect": {
+    "tool_used": [
+      "boards.board_comment"
+    ],
+    "tool_not_used": [
+      "boards.board_edit",
+      "boards.board_create",
+      "boards.board_list"
+    ],
+    "max_tool_calls": 5
+  },
+  "graders": [
+    {
+      "llm": "The agent answered with board_comment in thread t_42 on the board order-flow."
+    }
+  ],
+  "runs": 3,
+  "baseline": true
+}

@@ -1,0 +1,113 @@
+{
+ "tools": [
+  {
+   "name": "board_read",
+   "description": "The board as text",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "board": {
+      "type": "string"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "# Order flow\n\n## Shapes\n- \"Web\" [web]\n- \"Orders\" [orders]\n\n## Connections\n- \"Web\" [web] → \"Orders\" [orders] — \"HTTP\"\n"
+     }
+    ]
+   }
+  },
+  {
+   "name": "board_edit",
+   "description": "Edit a board",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "board": {
+      "type": "string"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Done."
+     }
+    ]
+   }
+  },
+  {
+   "name": "board_list",
+   "description": "Find boards by words of their titles",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "query": {
+      "type": "string"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "- кристи — https://boards.example.com/b/kristi\n- Order flow — https://boards.example.com/b/order-flow"
+     }
+    ]
+   }
+  },
+  {
+   "name": "board_create",
+   "description": "Create a new board from a graph",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "title": {
+      "type": "string"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Created https://boards.example.com/b/new"
+     }
+    ]
+   }
+  },
+  {
+   "name": "board_comment",
+   "description": "A new thread or a reply to an existing one (thread and reply)",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "board": {
+      "type": "string"
+     },
+     "thread": {
+      "type": "string"
+     },
+     "reply": {
+      "type": "string"
+     },
+     "text": {
+      "type": "string"
+     }
+    }
+   },
+   "result": {
+    "content": [
+     {
+      "type": "text",
+      "text": "Thread t_42: open, 2 message(s)."
+     }
+    ]
+   }
+  }
+ ]
+}

@@ -172,6 +172,9 @@
     route()
   }
 
+  var OUT_ICON =
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>'
+
   var canvas = null
   var opened = null
   // ---- What harnessly's chat knows: the board open, what is selected on it and where, a call written on it ----
@@ -196,10 +199,13 @@
   window.addEventListener('message', function (event) {
     if (!canvas || event.source !== canvas.contentWindow || event.origin !== location.origin || !opened) return
     var m = event.data || {}
+    var area = typeof m.area === 'string' ? m.area : ''
     if (m.type === 'board-selection') {
-      tell({ kind: 'board', title: opened.title, url: opened.url, selection: String(m.text || ''), rect: onPage(m.rect) })
+      tell({ kind: 'board', title: opened.title, url: opened.url, object: opened.slug, selection: String(m.text || ''), rect: onPage(m.rect), area: area })
     } else if (m.type === 'board-call') {
-      tell({ kind: 'board', title: opened.title, url: opened.url, selection: '', rect: onPage(m.rect), call: String(m.text || '') || '@harnessly' })
+      // A call in a comment carries its thread: harnessly sends it to the agent at once, the answer comes back there.
+      var thread = typeof m.thread === 'string' ? m.thread : null
+      tell({ kind: 'board', title: opened.title, url: opened.url, object: opened.slug, selection: '', rect: onPage(m.rect), area: area, call: String(m.text || '') || '@harnessly', thread: thread })
     }
   })
 
@@ -207,7 +213,9 @@
     var slug = current()
     if (!slug) {
       canvas = null
-      if (opened) tell(null)
+      // The list has nothing open: harnessly drops the chip of a board shown before, even one of a frame before this
+      // one (it starts anew when the chat is made, HRN-1452), so the agent never gets a board nobody looks at.
+      tell(null)
       opened = null
     }
     library(again)
@@ -246,7 +254,11 @@
       return
     }
     bar.appendChild(el('span', 'ba__top-title', row.title))
-    var out = el('a', 'hl-btn hl-btn--ghost hl-btn--sm ba__out', T.newTab)
+    // An icon with its words as the tip: the bar never cuts it, however narrow the pane (HRN-1452).
+    var out = el('a', 'hl-btn hl-btn--ghost hl-btn--sm ba__out')
+    out.setAttribute('aria-label', T.newTab)
+    out.title = T.newTab
+    out.innerHTML = OUT_ICON
     out.href = row.url
     out.target = '_blank'
     out.rel = 'noopener'
@@ -258,9 +270,9 @@
     frame.title = row.title
     frame.src = at.pathname + at.search
     canvas = frame
-    opened = { title: row.title, url: row.url }
+    opened = { title: row.title, url: row.url, slug: row.slug }
     root.appendChild(frame)
-    tell({ kind: 'board', title: row.title, url: row.url, selection: '', rect: null })
+    tell({ kind: 'board', title: row.title, url: row.url, object: row.slug, selection: '', rect: null })
   }
 
   // ---- The library ----
@@ -414,7 +426,18 @@
     route()
   })
   skeleton()
-  route()
+  // Inside harnessly the object to open comes with the bridge: wait a moment for it, so a frame started anew (the chat
+  // was just made) goes straight back to its board, not through the list (HRN-1452). Never longer than FIRST_WAIT_MS.
+  var FIRST_WAIT_MS = 800
+  var started = false
+  function start(object) {
+    if (started) return
+    started = true
+    if (object && !current()) history.replaceState(null, '', '?board=' + encodeURIComponent(object))
+    route()
+  }
+  if (current() || !window.harnessly) start(null)
+  else setTimeout(function () { start(null) }, FIRST_WAIT_MS)
 
   connect()
     .then(function (hl) {
@@ -428,9 +451,12 @@
         follow(next && next.mode ? next.mode : hl.context.theme.mode)
       })
       var data = hl.context.data
-      if (data && typeof data.object === 'string' && !current()) go(data.object)
+      var object = data && typeof data.object === 'string' && /^[a-z0-9-]+$/.test(data.object) ? data.object : null
+      if (!started) start(object)
+      else if (object && !current()) go(object)
     })
     .catch(function () {
       // Opened outside harnessly, or harnessly did not answer: the site works by itself.
+      start(null)
     })
 })()
