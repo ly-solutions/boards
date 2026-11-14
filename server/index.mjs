@@ -62,6 +62,7 @@ import { KeysUnavailableError, TokenError, bearerOf, createPlatformAuth, looksLi
 import { handleBody as handleMcpBody, ToolError } from './mcp.mjs'
 import { boardTools, slugOf } from './mcp-tools.mjs'
 import { appViewHeaders, libraryRow, renderAppView } from './app-view.mjs'
+import { sketchSvg } from './sketch.mjs'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const PREFIX = '/b'
@@ -1158,8 +1159,8 @@ export function createApp({
     }
 
     if (action === 'preview.svg' && req.method === 'GET') {
-      const svg = await store.previewSvg(state)
-      if (!svg) throw new HttpError(404, 'no preview yet — open the board in a browser')
+      // No browser has sent a thumbnail yet (a board an agent drew): a sketch of its shapes stands in.
+      const svg = (await store.previewSvg(state)) ?? sketchSvg(store.elements(state))
       return sendBody(
         res,
         200,

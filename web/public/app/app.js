@@ -173,9 +173,43 @@
   }
 
   var canvas = null
+  var opened = null
+  // ---- What harnessly's chat knows: the board open, what is selected on it and where, a call written on it ----
+
+  /** To harnessly, when it is there: the chat's context chip and the place its window opens beside. */
+  function tell(space) {
+    connect().then(
+      function (hl) {
+        if (hl.publish) return hl.publish({ space: space })
+      },
+      function () {}
+    ).catch(function () {})
+  }
+
+  /** The editor's rectangle moved by the canvas frame's place in this page. */
+  function onPage(rect) {
+    if (!rect || !canvas) return null
+    var at = canvas.getBoundingClientRect()
+    return { x: rect.x + at.left, y: rect.y + at.top, w: rect.w, h: rect.h }
+  }
+
+  window.addEventListener('message', function (event) {
+    if (!canvas || event.source !== canvas.contentWindow || event.origin !== location.origin || !opened) return
+    var m = event.data || {}
+    if (m.type === 'board-selection') {
+      tell({ kind: 'board', title: opened.title, url: opened.url, selection: String(m.text || ''), rect: onPage(m.rect) })
+    } else if (m.type === 'board-call') {
+      tell({ kind: 'board', title: opened.title, url: opened.url, selection: '', rect: onPage(m.rect), call: String(m.text || '') || '@harnessly' })
+    }
+  })
+
   function route(again) {
     var slug = current()
-    if (!slug) canvas = null
+    if (!slug) {
+      canvas = null
+      if (opened) tell(null)
+      opened = null
+    }
     library(again)
       .then(function (rows) {
         if (rows === null) return needSignIn()
@@ -224,7 +258,9 @@
     frame.title = row.title
     frame.src = at.pathname + at.search
     canvas = frame
+    opened = { title: row.title, url: row.url }
     root.appendChild(frame)
+    tell({ kind: 'board', title: row.title, url: row.url, selection: '', rect: null })
   }
 
   // ---- The library ----
