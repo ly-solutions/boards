@@ -311,8 +311,22 @@ export function createApp({
       title: state.meta.title,
       url: store.boardUrl(state),
       thread: { id: thread.id, resolved: Boolean(thread.resolved), anchor: { elementId: thread.elementId ?? null, label, x: thread.x, y: thread.y } },
-      ...(msg ? { message: { id: msg.id, text: msg.text, author: msg.author, authorEmail: who.email ?? null, authorKind: msg.authorKind, at: msg.at } } : {}),
+      ...(msg ? { message: { id: msg.id, text: msg.text, author: msg.author, authorEmail: who.email ?? null, authorKind: msg.authorKind, at: msg.at, mentions: mentionsIn(msg.text, state) } } : {}),
     }
+  }
+
+  /**
+   * Who a message calls by `@Name` (HRN-1452): the people who wrote on this board's threads and the agent, as the
+   * editor offers them. A receiver of the webhook tells them; the board itself only names them.
+   */
+  function mentionsIn(text, state) {
+    const names = new Set(['harnessly'])
+    for (const th of store.notes(state).comments) for (const m of th.messages) if (m.authorKind !== 'agent' && m.author && !/^guest:/i.test(m.author)) names.add(m.author)
+    const lower = String(text).toLowerCase()
+    return [...names].filter((name) => {
+      const at = lower.indexOf(`@${name.toLowerCase()}`)
+      return at >= 0 && (at === 0 || /\s/.test(lower[at - 1]))
+    })
   }
 
   /** Comment events go to the outgoing webhook and to plugin listeners alike. */

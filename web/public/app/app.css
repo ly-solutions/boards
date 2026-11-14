@@ -58,6 +58,17 @@ body {
   text-overflow: ellipsis;
   font-weight: 600;
 }
+.ba__back,
+.ba__out {
+  flex: none;
+}
+.ba__out {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  padding: 0;
+}
 .ba__canvas {
   display: block;
   flex: 1;

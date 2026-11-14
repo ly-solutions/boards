@@ -22,6 +22,8 @@ export default {
   title: 'Комментарии',
   buttonOpen: 'Комментарии — открыто: {count}',
   badgeAgent: 'агент',
+  mention: 'Упомянуть',
+  mentionAgent: 'агент ответит в треде',
   badgeGuest: 'гость',
   send: 'Отправить',
   sendHint: 'Отправить (Enter)',

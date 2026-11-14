@@ -23,6 +23,8 @@ export default {
   title: 'Comments',
   buttonOpen: 'Comments — {count} open',
   badgeAgent: 'agent',
+  mention: 'Mention',
+  mentionAgent: 'answers in the thread',
   badgeGuest: 'guest',
   send: 'Send',
   sendHint: 'Send (Enter)',

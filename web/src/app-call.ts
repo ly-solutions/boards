@@ -17,9 +17,17 @@ export const callWords = (text: string): string =>
 /** A rectangle in the editor's own pixels. */
 export type Rect = { x: number; y: number; w: number; h: number }
 
+/** The scene on screen, as the agent reads it: `x,y,w,h` in the board's own coordinates (HRN-1452). */
+export function visibleArea(view: View & { width?: number; height?: number }): string {
+  const z = view.zoom.value || 1
+  const w = Math.round((view.width ?? 0) / z)
+  const h = Math.round((view.height ?? 0) / z)
+  return `${Math.round(-view.scrollX)},${Math.round(-view.scrollY)},${w},${h}`
+}
+
 export type ViewMessage =
-  | { type: 'board-selection'; text: string; count: number; rect: Rect | null }
-  | { type: 'board-call'; text: string; rect: Rect | null }
+  | { type: 'board-selection'; text: string; count: number; rect: Rect | null; area: string }
+  | { type: 'board-call'; text: string; rect: Rect | null; area: string; thread: string | null }
 
 /** To the app view; nothing when the editor is not inside it. */
 export function toView(message: ViewMessage): void {
@@ -29,11 +37,12 @@ export function toView(message: ViewMessage): void {
 
 /** A comment written with a call: the comments panel says so, the editor (which knows the view) passes it on. */
 export const CALL_EVENT = 'board-call'
-export type CallDetail = { text: string; x: number; y: number }
+export type CallDetail = { text: string; x: number; y: number; thread: string }
 
-export function commentCall(text: string, at: { x: number; y: number }): void {
+/** A comment with `@harnessly`: the agent answers in this thread (HRN-1452). */
+export function commentCall(text: string, at: { x: number; y: number; thread: string }): void {
   if (!MENTION.test(text)) return
-  window.dispatchEvent(new CustomEvent<CallDetail>(CALL_EVENT, { detail: { text: callWords(text), x: at.x, y: at.y } }))
+  window.dispatchEvent(new CustomEvent<CallDetail>(CALL_EVENT, { detail: { text: callWords(text) || text.trim(), x: at.x, y: at.y, thread: at.thread } }))
 }
 
 type View = { scrollX: number; scrollY: number; zoom: { value: number }; offsetLeft?: number; offsetTop?: number }

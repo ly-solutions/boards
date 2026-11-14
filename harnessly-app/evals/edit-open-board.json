@@ -1,0 +1,30 @@
+{
+  "prompt": "добавь стикер «Созвон с Ромой в пятницу»\n\n<annotation n=\"1\" kind=\"space\">\nopen: board «Order flow» https://boards.example.com/b/order-flow\nslug: order-flow\nvisible: 0,0,1600,900\nrule: человек работает в этом месте — доска «Order flow» открыт(а) у него на экране. Всё, о чём он просит, делай здесь, не спрашивая, куда положить; другое место — только если он сам его назвал.\n</annotation>",
+  "mocks": {
+    "mcp": {
+      "boards": "fixtures/boards-full.json"
+    }
+  },
+  "expect": {
+    "tool_used": [
+      "boards.board_edit"
+    ],
+    "tool_not_used": [
+      "boards.board_list",
+      "boards.board_create"
+    ],
+    "final_text_not": [
+      "(?i)куда (положить|добавить|поставить)",
+      "(?i)на какую доску",
+      "(?i)which board"
+    ],
+    "max_tool_calls": 6
+  },
+  "graders": [
+    {
+      "llm": "The agent edited the board order-flow (the one open), not another board and not a new one, and did not ask the person where to put the sticky."
+    }
+  ],
+  "runs": 3,
+  "baseline": true
+}

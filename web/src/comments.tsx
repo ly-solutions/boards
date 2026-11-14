@@ -14,7 +14,7 @@
  * All rules that do not need the DOM (hit testing, pin position, ordering,
  * "new" state, card placement) are in comments-model.ts and unit-tested.
  */
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { convertToExcalidrawElements } from '@excalidraw/excalidraw'
 import { CameraLayer, getView, inWindow, toScreen, useSceneVersion, useSceneWindow, useView } from './camera'
@@ -48,6 +48,7 @@ import {
   type Thread,
 } from './comments-model'
 import { commentCall } from './app-call'
+import { candidates, insertMention, mentionQuery, splitMentions, suggest, type Candidate } from './mentions'
 import './comments.css'
 import { t, dateLocale } from './i18n'
 
@@ -73,13 +74,20 @@ type CommentsProps = {
   setPanelOpen(v: boolean): void
   onCreate(c: { x: number; y: number; elementId: string | null; text: string }): Promise<Thread | null>
   onUpdate(id: string, change: Change): Promise<boolean>
+  /** People of the board beyond the threads' authors (who is here now), for `@` (HRN-1452). */
+  people?: readonly string[]
+  /** The agent can be called here (the harnessly app view): `@harnessly` is offered first. */
+  agent?: boolean
 }
+
+/** Who `@` offers, for the inputs and the chips of the sent messages. */
+const Mentionable = createContext<readonly Candidate[]>([])
 
 const MAX_TEXT = 2000
 /** Memory slot for the text of a thread that does not exist yet. */
 const NEW = '\u0000new'
 /** Pin + card width, used to frame both when jumping to a thread from the panel. */
-const CARD_SPAN = 368
+const CARD_SPAN = 340
 const PANEL_SPAN = 352
 
 const sceneOf = (api: StudioApi) => api.getSceneElements() as unknown as SceneEl[]
@@ -225,8 +233,49 @@ function TextBox({ value, onChange, onSend, onEscape, placeholder, autoFocus, bu
     const text = value.trim()
     if (text && !busy) onSend(text)
   }
+  // `@`: the list of who can be called, under the caret's word; arrows move, Enter or Tab picks, Escape closes.
+  const known = useContext(Mentionable)
+  const [caret, setCaret] = useState(0)
+  const [active, setActive] = useState(0)
+  const [dismissed, setDismissed] = useState<number | null>(null)
+  const query = mentionQuery(value, caret)
+  const offered = query && dismissed !== query.start ? suggest(query.query, known) : []
+  const listOpen = offered.length > 0
+  const at = Math.min(active, Math.max(offered.length - 1, 0))
+  const pickMention = (c: Candidate) => {
+    if (!query) return
+    const next = insertMention(value, query.start, caret, c.name)
+    onChange(next.text)
+    setCaret(next.caret)
+    setActive(0)
+    requestAnimationFrame(() => {
+      ref.current?.focus()
+      ref.current?.setSelectionRange(next.caret, next.caret)
+    })
+  }
+  const track = (el: HTMLTextAreaElement) => setCaret(el.selectionStart ?? el.value.length)
   return (
     <div className="note-input">
+      {listOpen && (
+        <div className="note-mentions" role="listbox" aria-label={t('comments.mention')}>
+          {offered.map((c, i) => (
+            <button
+              key={c.name}
+              type="button"
+              role="option"
+              aria-selected={i === at}
+              className={`note-mentions__item${i === at ? ' is-on' : ''}`}
+              onPointerDown={(e) => e.preventDefault()}
+              onClick={() => pickMention(c)}
+              onPointerEnter={() => setActive(i)}
+            >
+              {c.agent ? <span className="note-avatar note-avatar--small note-avatar--agent" aria-hidden>h</span> : <Avatar name={c.name} small />}
+              <span className="note-mentions__name">{c.agent ? `@${c.name}` : c.name}</span>
+              {c.agent && <span className="note-mentions__hint">{t('comments.mentionAgent')}</span>}
+            </button>
+          ))}
+        </div>
+      )}
       <textarea
         ref={ref}
         rows={1}
@@ -234,8 +283,31 @@ function TextBox({ value, onChange, onSend, onEscape, placeholder, autoFocus, bu
         maxLength={MAX_TEXT}
         placeholder={placeholder}
         aria-label={label}
-        onChange={(e) => onChange(e.target.value)}
+        aria-expanded={listOpen}
+        onChange={(e) => {
+          onChange(e.target.value)
+          track(e.target)
+          setDismissed(null)
+        }}
+        onSelect={(e) => track(e.currentTarget)}
         onKeyDown={(e) => {
+          if (listOpen && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+            e.preventDefault()
+            const step = e.key === 'ArrowDown' ? 1 : -1
+            setActive((at + step + offered.length) % offered.length)
+            return
+          }
+          if (listOpen && (e.key === 'Enter' || e.key === 'Tab') && !e.shiftKey && !e.nativeEvent.isComposing) {
+            e.preventDefault()
+            pickMention(offered[at])
+            return
+          }
+          if (listOpen && e.key === 'Escape') {
+            e.preventDefault()
+            e.stopPropagation()
+            setDismissed(query?.start ?? null)
+            return
+          }
           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault()
             send()
@@ -339,7 +411,7 @@ const Pin = memo(function Pin({ id, x, y, author, text, replies, unseen, active,
 function CardSpot({ at, children }: { at: Point; children: ReactNode }) {
   const view = useView()
   const ref = useRef<HTMLDivElement>(null)
-  const [size, setSize] = useState({ width: 320, height: 260 })
+  const [size, setSize] = useState({ width: 296, height: 220 })
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
@@ -362,7 +434,7 @@ function CardSpot({ at, children }: { at: Point; children: ReactNode }) {
       el.removeEventListener('wheel', onWheel)
     }
   }, [])
-  const { dx, dy } = cardOffset(toScreen(at.x, at.y, view), size, view)
+  const { dx, dy } = cardOffset(toScreen(at.x, at.y, view), size, view, { pinSize: 26 })
   return (
     <div className="camera-fixed" style={{ left: at.x, top: at.y }}>
       <div ref={ref} className="note-card" style={{ left: dx, top: dy }} role="dialog" aria-label={t('comments.thread')}>
@@ -517,7 +589,7 @@ function ThreadBody({ api, thread, me, isTeam, canComment, memory, onUpdate, onC
     const ok = await onUpdate(thread.id, target ? { reply: value, replyTo: target.id } : { reply: value })
     setBusy(false)
     if (!ok) return
-    commentCall(value, thread)
+    commentCall(value, { x: thread.x, y: thread.y, thread: thread.id })
     setTextRaw('')
     setReplyToRaw(undefined)
     memory.delete(thread.id)
@@ -584,7 +656,9 @@ function ThreadBody({ api, thread, me, isTeam, canComment, memory, onUpdate, onC
                   ) : (
                     <span className="note-quote note-quote--gone">{t('comments.replyToDeleted')}</span>
                   ))}
-                <div className="note-msg__text">{m.text}</div>
+                <div className="note-msg__text">
+                  <MessageText text={m.text} />
+                </div>
               </div>
             </div>
           )
@@ -605,6 +679,24 @@ function ThreadBody({ api, thread, me, isTeam, canComment, memory, onUpdate, onC
           )}
           <TextBox value={text} onChange={setText} onSend={send} onEscape={onClose} placeholder={t('comments.reply')} label={t('comments.reply')} busy={busy} autoFocus={Boolean(target)} />
         </div>
+      )}
+    </>
+  )
+}
+
+/** A message with its mentions as chips; the rest as typed. */
+function MessageText({ text }: { text: string }) {
+  const known = useContext(Mentionable)
+  return (
+    <>
+      {splitMentions(text, known).map((part, i) =>
+        part.mention ? (
+          <span key={i} className={`note-mention${part.mention.agent ? ' note-mention--agent' : ''}`}>
+            {part.text}
+          </span>
+        ) : (
+          <span key={i}>{part.text}</span>
+        ),
       )}
     </>
   )
@@ -772,8 +864,13 @@ function Panel({ threads, openId, seen, me, canComment, hidden, setHidden, onPic
 
 // ── Root ────────────────────────────────────────────────────────────────────
 
-export function Comments({ api, slug, threads, me, canComment, isTeam, draft, setDraft, onStartComment, hidden, setHidden, panelOpen, setPanelOpen, onCreate, onUpdate }: CommentsProps) {
+export function Comments({ api, slug, threads, me, canComment, isTeam, draft, setDraft, onStartComment, hidden, setHidden, panelOpen, setPanelOpen, onCreate, onUpdate, people = [], agent = false }: CommentsProps) {
   const phone = usePhone()
+  // The people of the board: who wrote in its threads and who is here now; the agent first where it answers.
+  const mentionable = useMemo(
+    () => candidates([...threads.flatMap((th) => th.messages.filter((msg) => msg.authorKind !== 'agent' && !isGuest(msg.author)).map((msg) => msg.author)), ...people], me, agent),
+    [threads, people, me, agent],
+  )
   const [openId, setOpenId] = useState<string | null>(null)
   const [seen, setSeen] = useState<Seen>(() => readSeen(slug))
   // Pins dropped but not yet confirmed by the server: shown at the drop point, not snapped back.
@@ -850,7 +947,7 @@ export function Comments({ api, slug, threads, me, canComment, isTeam, draft, se
       const thread = await onCreate({ x: draft.x, y: draft.y, elementId: draft.elementId, text })
       if (!thread) return false
       // `@harnessly` in a new comment calls the agent of the app view to this place.
-      commentCall(text, draft)
+      commentCall(text, { x: draft.x, y: draft.y, thread: thread.id })
       memory.delete(NEW)
       setDraft(null)
       setOpenId(thread.id)
@@ -864,7 +961,7 @@ export function Comments({ api, slug, threads, me, canComment, isTeam, draft, se
   const card = open ? <ThreadBody key={open.id} api={api} thread={open} me={me} isTeam={isTeam} canComment={canComment} memory={memory} onUpdate={onUpdate} onClose={closeCard} /> : null
 
   return (
-    <>
+    <Mentionable.Provider value={mentionable}>
       <NoteLayer
         api={api}
         threads={threads}
@@ -900,6 +997,6 @@ export function Comments({ api, slug, threads, me, canComment, isTeam, draft, se
           onClose={() => setPanelOpen(false)}
         />
       )}
-    </>
+    </Mentionable.Provider>
   )
 }

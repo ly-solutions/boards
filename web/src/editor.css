@@ -889,3 +889,7 @@ body[data-bar='dock'] .excalidraw .layer-ui__wrapper__top-right .bar-sep--tools 
 /* The harnessly app view (?app=1): the canvas and its tools only — menu, sign-in and sharing belong to harnessly. */
 .board-app .main-menu-trigger,
 .board-app .dropdown-menu-button { display: none !important; }
+
+/* The panning hint is read once (pan-hint.ts, HRN-1452): it fades out and stays away; other hints stay. */
+html.pan-hint-on .excalidraw .HintViewer { transition: opacity 0.3s ease-out; }
+html.pan-hint-seen.pan-hint-on .excalidraw .HintViewer { opacity: 0; pointer-events: none; }
