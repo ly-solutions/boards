@@ -6,6 +6,7 @@
  * title, the board menu and edit/view. Top right: who is here, share, comments, chat. Bottom: the tools with tooltips
  * and popovers of variants. Bottom left: undo, redo and zoom. Over the selection: the context bar (ctxbar.tsx).
  */
+import { HOST_ICON, runHostAction, useHostActions } from '../host-actions'
 import { darkKind, installDarkPaint, type DarkEl } from './dark-paint'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { STICKY_COLORS } from '../../../shared/palette.mjs'
@@ -132,6 +133,8 @@ function TopLeft({ api, app, title, onRename, homeUrl, textUrl, fileUrl, canEdit
   const [draft, setDraft] = useState(title)
   const pop = useOpenKey<'menu'>()
   const close = pop.close
+  // harnessly's own actions (share, the right pane, its menu): it draws no bar above the app (HRN-1498).
+  const hostActions = useHostActions(app && pop.open === 'menu')
   const theme = (api.getAppState().theme as string) ?? 'light'
   const back = () => {
     if (app && window.parent !== window) window.parent.postMessage({ type: 'board-back' }, location.origin)
@@ -173,6 +176,14 @@ function TopLeft({ api, app, title, onRename, homeUrl, textUrl, fileUrl, canEdit
       <div className="isl-tw">
         <Btn icon="dots" tip={t('islands.boardMenu')} on={pop.open === 'menu'} onClick={() => pop.toggle('menu')} />
         <Pop open={pop.open === 'menu'} onClose={close} place="down" align="start" className="isl-menu">
+          {hostActions.map((a) => (
+            <button type="button" key={a.id} className={`isl-mi${a.danger ? ' dg' : ''}`} onClick={run(() => runHostAction(a.id))}>
+              <Icon name={HOST_ICON[a.icon] ?? 'dots'} />
+              {a.label}
+              {a.pressed !== undefined && <span className={`isl-tgl${a.pressed ? ' on' : ''}`} />}
+            </button>
+          ))}
+          {hostActions.length > 0 && <div className="isl-msep" />}
           {menu.properties && (
             <button type="button" className="isl-mi" onClick={run(menu.properties)}>
               <Icon name="settings" />

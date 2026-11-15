@@ -189,6 +189,32 @@ html[data-theme='dark'] .bl {
 .bl-btn--pri:active:not(:disabled) {
   background: var(--bl-primary-active);
 }
+/* harnessly's actions in the head (HRN-1498): a quiet icon button, its menu under it. */
+.bl-host {
+  position: relative;
+}
+.bl-btn--icon {
+  width: 36px;
+  padding: 0;
+  justify-content: center;
+  background: var(--bl-field);
+  color: var(--bl-fg);
+}
+.bl-btn--icon:hover {
+  background: var(--bl-active);
+}
+.bl-btn--icon svg {
+  width: 18px;
+  height: 18px;
+}
+.bl-host .bl-menu {
+  top: 42px;
+  right: 0;
+}
+.bl-mi-on {
+  margin-left: auto;
+  display: inline-flex;
+}
 .bl-btn:disabled {
   opacity: 0.55;
   cursor: default;

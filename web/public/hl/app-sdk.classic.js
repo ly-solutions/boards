@@ -642,6 +642,11 @@ async function connect(options = {}) {
     put: (name, value, { shared = false } = {}) => request('harnessly/secrets.put', { name, value, shared }),
   };
   hl.pane = { open: (target) => request('harnessly/pane.open', { target }) };
+  // A view that draws its own bar (chrome none) shows the host's actions there: share, the right pane, the host's menu.
+  hl.host = {
+    actions: () => request('harnessly/host.actions', {}),
+    run: (id) => request('harnessly/host.run', { id }),
+  };
   hl.tools = { call: (name, args = {}) => request('tools/call', { name, arguments: args }) };
   // Tools of the page (right tools.page): the agent of the chat lists them with page_tools and calls one with page_call;
   // the view runs it here, in the person's page, and the answer goes back. The host is told the whole list each time.
