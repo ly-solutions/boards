@@ -1140,15 +1140,31 @@ function Board() {
     } catch {
       framed = true
     }
-    if (!shouldFitOnLoad({ framed, width: window.innerWidth, param: new URLSearchParams(location.search).get('fit') })) return
-    requestAnimationFrame(() => {
+    const param = new URLSearchParams(location.search).get('fit')
+    if (param === '0' || param === 'false') return
+    // A narrow pane is fitted (never above 100 %); a wide window opens at 100 % around the content, a large board from
+    // its top-left — both between the islands, which cover the top (title, people) and the bottom (tools) (HRN-1480).
+    const fitAll = shouldFitOnLoad({ framed, width: window.innerWidth, param })
+    const apply = () => {
       const state = api.getAppState() as { width?: number; height?: number }
       const viewport = { width: state.width || window.innerWidth, height: state.height || window.innerHeight }
-      // The islands cover the top (title, people) and the bottom (tools, zoom): fit between them (HRN-1480).
-      const fit = fitScene(api.getSceneElements() as never, viewport, { maxZoom: 1, insets: ISLANDS ? { top: 64, bottom: 72, left: 8, right: 8 } : undefined })
+      const fit = fitScene(api.getSceneElements() as never, viewport, { maxZoom: 1, minZoom: fitAll ? undefined : 1, anchorStart: true, insets: ISLANDS ? { top: 64, bottom: 72, left: 8, right: 8 } : undefined })
       api.updateScene({ appState: { zoom: { value: fit.zoom }, scrollX: fit.scrollX, scrollY: fit.scrollY }, captureUpdate: CaptureUpdateAction.NEVER })
       if (config.studio) setView(api.getAppState())
-    })
+    }
+    // The editor finishes its own start (fonts, the first layout) a moment later and may move the view; apply again
+    // until the person touches the board.
+    let touched = false
+    const touch = () => {
+      touched = true
+    }
+    window.addEventListener('pointerdown', touch, { once: true, capture: true })
+    window.addEventListener('wheel', touch, { once: true, capture: true, passive: true })
+    window.addEventListener('keydown', touch, { once: true, capture: true })
+    requestAnimationFrame(apply)
+    // A link to a thread brings its own view; do not take it away.
+    if (new URLSearchParams(location.search).has('thread')) return
+    for (const ms of [400, 1200]) setTimeout(() => !touched && apply(), ms)
   }, [])
 
   // A thread to open: `?thread=` in the address (a link from the bell, HRN-1469), later a `board-thread` from the view.
@@ -1688,7 +1704,9 @@ function Board() {
   )
   const initialData = useMemo(() => {
     if (!initial) return null
-    return { ...initial, scrollToContent: true } as never
+    // Our own fit places the view (fitOnLoad); the editor's centring would only race with it.
+    const fit = new URLSearchParams(location.search).get('fit')
+    return { ...initial, scrollToContent: fit === '0' || fit === 'false' } as never
   }, [initial])
 
   if (status === 'offline' && !initial) {
