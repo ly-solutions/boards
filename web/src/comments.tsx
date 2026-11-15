@@ -48,6 +48,7 @@ import {
   type Thread,
 } from './comments-model'
 import { commentCall } from './app-call'
+import { glow } from './islands/overlays'
 import { candidates, insertMention, mentionQuery, splitMentions, suggest, type Candidate } from './mentions'
 import './comments.css'
 import { t, dateLocale } from './i18n'
@@ -56,7 +57,7 @@ export type { Draft, Message, Thread } from './comments-model'
 export { pinColor } from './comments-model'
 
 /** One action on a thread; the server applies exactly one kind per request. */
-export type Change = { reply?: string; replyTo?: string; resolved?: boolean; remove?: boolean; removeMessage?: string; x?: number; y?: number; elementId?: string | null }
+export type Change = { reply?: string; replyTo?: string; react?: { emoji: string; on: boolean }; resolved?: boolean; remove?: boolean; removeMessage?: string; x?: number; y?: number; elementId?: string | null }
 
 type CommentsProps = {
   /** Tabs of the right island (comments · chat) in place of the panel title, and the chat itself when its tab is on. */
@@ -166,6 +167,8 @@ const ICON = {
   eye: 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
   eyeOff: 'M3 3l18 18 M10.6 5.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4 M6.6 6.6A17 17 0 0 0 2 12s3.6 7 10 7a9.6 9.6 0 0 0 5.4-1.6 M9.9 9.9a3 3 0 0 0 4.2 4.2',
   chevron: 'M9 6l6 6-6 6',
+  check: 'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z M8.5 12.5l2.5 2.5 5-5.5',
+  locate: 'M12 19a7 7 0 1 0 0-14 7 7 0 0 0 0 14z M12 2v3 M12 19v3 M2 12h3 M19 12h3',
 }
 
 // ── Button in the right island ──────────────────────────────────────────────
@@ -615,6 +618,20 @@ function ThreadBody({ api, thread, me, isTeam, canComment, memory, onUpdate, onC
       <div className="note-card__head">
         <span className="note-card__place">{placeName(sceneOf(api), thread.elementId, t)}</span>
         {thread.resolved && <span className="note-badge note-badge--done">{t('comments.resolvedBadge')}</span>}
+        {canComment && (
+          <button
+            type="button"
+            className={`icon-button note-card__resolve${thread.resolved ? ' is-on' : ''}`}
+            onClick={() => {
+              void onUpdate(thread.id, { resolved: !thread.resolved })
+              if (!thread.resolved) onClose()
+            }}
+            aria-label={thread.resolved ? t('comments.reopen') : t('comments.resolve')}
+            title={thread.resolved ? t('comments.reopenHint') : t('comments.resolveHint')}
+          >
+            <Glyph d={ICON.check} />
+          </button>
+        )}
         <button type="button" className="icon-button" onClick={onClose} aria-label={t('comments.close')} title={t('comments.close')}>
           <Glyph d={ICON.close} />
         </button>
@@ -663,8 +680,43 @@ function ThreadBody({ api, thread, me, isTeam, canComment, memory, onUpdate, onC
                 <div className="note-msg__text">
                   <MessageText text={m.text} />
                 </div>
+                {m.ids && m.ids.length > 0 && (
+                  <button type="button" className="note-show" onClick={() => showOnBoard(api, m.ids!)}>
+                    <Glyph d={ICON.locate} size={14} />
+                    {t('comments.showOnBoard')}
+                  </button>
+                )}
               </div>
             </div>
+          )
+        })}
+        {agentTyping(thread, now) && (
+          <div className="note-typing" role="status">
+            <span className="note-typing__orb" aria-hidden="true" />
+            {t('comments.agentTyping')}
+            <span className="note-typing__dots" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </span>
+          </div>
+        )}
+      </div>
+      <div className="note-rx">
+        {reactionsOf(thread).map(([emoji, who]) => {
+          const mine = Boolean(me && who.includes(me))
+          return (
+            <button
+              key={emoji}
+              type="button"
+              className={`note-rx__pill${mine ? ' is-on' : ''}`}
+              disabled={!canComment}
+              onClick={() => void onUpdate(thread.id, { react: { emoji, on: !mine } })}
+              title={who.length ? who.map(displayName).join(', ') : t('comments.react')}
+            >
+              <span aria-hidden="true">{emoji}</span>
+              {who.length > 0 && <span>{who.length}</span>}
+            </button>
           )
         })}
       </div>
@@ -686,6 +738,29 @@ function ThreadBody({ api, thread, me, isTeam, canComment, memory, onUpdate, onC
       )}
     </>
   )
+}
+
+/** The thread's reactions to show: those it has, and 👍 to start with. */
+function reactionsOf(thread: Thread): [string, string[]][] {
+  const list = Object.entries(thread.reactions ?? {}).filter(([, who]) => who.length > 0)
+  return list.some(([e]) => e === '👍') ? list : [['👍', []], ...list]
+}
+
+/** The agent was called in the last message a moment ago and has not answered yet. */
+const CALL = /(^|\s)@(harnessly|агент|agent)\b/i
+function agentTyping(thread: Thread, now: number) {
+  const last = thread.messages[thread.messages.length - 1]
+  if (!last || last.authorKind === 'agent' || !CALL.test(last.text)) return false
+  return now - Date.parse(last.at) < 120_000
+}
+
+/** Brings the view to the objects a reply is about and outlines them. */
+function showOnBoard(api: StudioApi, ids: string[]) {
+  const want = new Set(ids)
+  const els = sceneOf(api).filter((el) => want.has(el.id))
+  if (!els.length) return
+  api.scrollToContent(els as never, { fitToContent: els.length > 1, animate: true })
+  glow(els as never)
 }
 
 /** A message with its mentions as chips; the rest as typed. */

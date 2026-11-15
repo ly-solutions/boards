@@ -7,7 +7,7 @@
  * (tests/comments-model.test.mjs).
  */
 
-export type Message = { id: string; author: string; authorKind?: 'person' | 'agent'; text: string; at: string; replyTo?: string }
+export type Message = { id: string; author: string; authorKind?: 'person' | 'agent'; text: string; at: string; replyTo?: string; ids?: string[] }
 export type Thread = {
   id: string
   x: number
@@ -20,6 +20,8 @@ export type Thread = {
   resolved: boolean
   resolvedBy?: string | null
   messages: Message[]
+  /** Reactions on the thread: emoji → who. */
+  reactions?: Record<string, string[]>
 }
 /** Where a new thread will go: a scene point, attached to a shape when one is under it. */
 export type Draft = { x: number; y: number; elementId: string | null }

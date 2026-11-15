@@ -28,6 +28,9 @@ const TOMBSTONE_TTL_MS = 7 * 24 * 3600 * 1000
 const MAX_ELEMENTS = 20_000
 const MAX_FILES_BYTES = 25 * 1024 * 1024
 const PRESENCE_MS = 12_000
+/** How long an agent counts as at work: after it looked at the board, and after its edit. */
+const AGENT_LOOK_MS = 90_000
+const AGENT_AFTER_EDIT_MS = 20_000
 /** Checkpoints per board: a weekly ritual makes ~50 a year; the cap only guards against runaway loops. */
 const MAX_CHECKPOINTS = 500
 const MAX_CHECKPOINT_TITLE = 80
@@ -182,7 +185,7 @@ export function createStore({
    * changed, so clients receive only what they lack. Accepted elements go to subscribers at once, except to
    * `origin`, which already has them.
    */
-  function apply(state, elements, files = [], { acceptedIds = null, by = null, origin = null } = {}) {
+  function apply(state, elements, files = [], { acceptedIds = null, by = null, origin = null, agent = false } = {}) {
     let accepted = 0
     const acceptedElements = []
     const acceptedFiles = []
@@ -233,7 +236,7 @@ export function createStore({
         state.meta.editedBy = by
         state.meta.editedAt = state.meta.updatedAt
       }
-      emit({ type: 'elements', slug: state.slug, rev: state.rev, origin, elements: acceptedElements.sort(byIndex), files: acceptedFiles })
+      emit({ type: 'elements', slug: state.slug, rev: state.rev, origin, elements: acceptedElements.sort(byIndex), files: acceptedFiles, ...(agent ? { agent: by } : {}) })
     }
     return accepted
   }
@@ -347,14 +350,32 @@ export function createStore({
 
   /** An agent edit: marked so open editors can say "the agent edited". */
   function applyAgentEdit(state, elements, { by = 'agent', note } = {}) {
-    const accepted = apply(state, elements, [], { by })
+    const accepted = apply(state, elements, [], { by, agent: true })
     if (accepted > 0) {
       const edit = { rev: state.rev, by, count: accepted, note: note ?? null, at: now() }
       state.edits.push(edit)
       if (state.edits.length > 50) state.edits.splice(0, state.edits.length - 50)
       emit({ type: 'edit', slug: state.slug, edit, ids: elements.map((el) => el.id) })
+      // Right after an edit the agent is still at work for a while: it looks at what it drew and answers.
+      agentAt(state, by, AGENT_AFTER_EDIT_MS)
     }
     return accepted
+  }
+
+  /**
+   * An agent at work on the board (HRN-1480): a presence row of kind "agent" in the state "drawing", so the editors
+   * show «Агент рисует…» and its cursor. It ends by itself after `ms` without news, or with `ms` = 0.
+   */
+  function agentAt(state, by, ms = AGENT_LOOK_MS) {
+    const id = `agent:${by}`
+    if (ms <= 0) {
+      if (state.viewers.delete(id)) emit({ type: 'presence', slug: state.slug, viewers: presence(state) })
+      return
+    }
+    const was = state.viewers.get(id)
+    // Presence ends PRESENCE_MS after `at`; an agent's row lives `ms` from now.
+    state.viewers.set(id, { at: now() + ms - PRESENCE_MS, name: by, kind: 'agent', live: false, state: 'drawing' })
+    if (!was) emit({ type: 'presence', slug: state.slug, viewers: presence(state) })
   }
 
   /**
@@ -799,6 +820,7 @@ export function createStore({
     sweep,
     apply,
     applyAgentEdit,
+    agentAt,
     setTrashed,
     react,
     comment,

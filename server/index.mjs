@@ -10,6 +10,7 @@
  *   GET  /b/<slug>.json?k=…            the board as JSON (metadata, links, text)
  *   GET  /b/<slug>/scene.excalidraw    the whole scene; opens in excalidraw.com too
  *   GET  /b/<slug>/preview.svg         thumbnail
+ *   GET  /b/<slug>/picture.png         the board as a picture (?ids=a,b — those objects and what is around them)
  *   POST /b/<slug>/edit                agent edit: graph, skeleton, update, delete
  *   POST /b/<slug>/sync                polling exchange with browsers
  *   GET  /b/<slug>/live?k=…            WebSocket: edits, cursors, selection (live.mjs)
@@ -58,6 +59,7 @@ import { CATALOGS } from '../shared/locales/index.mjs'
 import { createPluginHost, PluginHttpError, PluginReply, PLUGIN_API_VERSION } from './plugins.mjs'
 import { createFlags, staticFlags } from './flags.mjs'
 import { linkPreviewResolver } from './link-preview.mjs'
+import { renderPicture } from './picture.mjs'
 import { KeysUnavailableError, TokenError, bearerOf, createPlatformAuth, looksLikeJwt } from './platform-auth.mjs'
 import { handleBody as handleMcpBody, ToolError } from './mcp.mjs'
 import { boardTools, slugOf } from './mcp-tools.mjs'
@@ -341,7 +343,7 @@ export function createApp({
       // Members and agents may delete anything (agents and departed guests leave threads nobody else could
       // clean up); a guest only what they wrote.
       const mayDelete = (author) => who.kind !== 'guest' || author === who.name
-      const change = { reply: body.reply, replyTo: body.replyTo, resolved: body.resolved, remove: body.remove === true, removeMessage: body.removeMessage, x: body.x, y: body.y, elementId: body.elementId }
+      const change = { reply: body.reply, replyTo: body.replyTo, ids: body.ids, react: body.react, resolved: body.resolved, remove: body.remove === true, removeMessage: body.removeMessage, x: body.x, y: body.y, elementId: body.elementId }
       const result = store.changeComment(state, threadId, change, actor, mayDelete)
       if (result.removed) emitComment(commentPayload('thread.removed', state, result.thread, who))
       if (result.replied) emitComment(commentPayload('thread.replied', state, result.thread, who, result.replied))
@@ -767,6 +769,18 @@ export function createApp({
 
   // Through MCP an agent writes on behalf of a person: comments are signed by the person and marked as the agent's,
   // so the webhook does not hand the agent its own message back as a person's question.
+  /** The board's picture, cached per revision: an agent looks before and after its edit, often twice in a row. */
+  const pictures = new Map()
+  async function picture(state, ids = []) {
+    const key = `${state.slug}:${state.rev}:${ids.join(',')}`
+    if (pictures.has(key)) return pictures.get(key)
+    const scene = store.scene(state)
+    const png = await renderPicture(scene.elements ?? [], scene.files ?? {}, { ids })
+    pictures.set(key, png)
+    if (pictures.size > 24) pictures.delete(pictures.keys().next().value)
+    return png
+  }
+
   const actorOf = (who) => ({ name: who.name, kind: 'agent', email: who.email ?? null })
   const mcpTools = boardTools({
     reactions: REACTIONS,
@@ -778,6 +792,8 @@ export function createApp({
       return state
     },
     text: (state) => store.text(state),
+    picture,
+    agentAt: (state, by) => store.agentAt(state, by),
     describe,
     create: (body, who) => createBoard(body, who),
     edit: applyEdit,
@@ -1191,6 +1207,14 @@ export function createApp({
       )
     }
 
+    if (action === 'picture.png' && req.method === 'GET') {
+      // The board as a picture for an agent's eyes (HRN-1480): whole, or ?ids=a,b with what is around them.
+      const ids = (url.searchParams.get('ids') ?? '').split(',').map((x) => x.trim()).filter(Boolean).slice(0, 200)
+      const png = await picture(state, ids)
+      if (!png) throw new HttpError(404, 'none of these ids is on the board')
+      return sendBody(res, 200, { 'content-type': 'image/png', 'cache-control': 'no-store', 'x-robots-tag': 'noindex', 'x-board-rev': String(state.rev) }, png)
+    }
+
     if (action === 'preview.svg' && req.method === 'GET') {
       // No browser has sent a thumbnail yet (a board an agent drew): a sketch of its shapes stands in.
       const svg = (await store.previewSvg(state)) ?? sketchSvg(store.elements(state))
@@ -1229,6 +1253,15 @@ export function createApp({
       const who = requireEditor(req, state, body)
       const result = await applyEdit(state, { ...body, author: who.name })
       return json(res, 200, { ...describe(state), rev: state.rev, ...result, summary: store.text(state) })
+    }
+
+    if (action === 'agent' && req.method === 'POST') {
+      // An agent says it is at work on the board, or done (HRN-1480): editors show «Агент рисует…» meanwhile.
+      const body = await readJson(req, 4 * 1024)
+      const who = requireEditor(req, state, body)
+      const by = typeof body.author === 'string' && body.author.trim() ? body.author.trim().slice(0, 60) : who.name
+      store.agentAt(state, by, body.status === 'done' ? 0 : undefined)
+      return json(res, 200, { ok: true })
     }
 
     if (action === 'meta' && req.method === 'POST') {

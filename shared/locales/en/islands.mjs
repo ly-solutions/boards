@@ -163,4 +163,12 @@ export default {
   chatHint: 'The answer comes in the harnessly chat',
   chatSent: 'Sent to the harnessly chat',
   send: 'Send',
+  agentCursor: 'Agent',
+  agentWorking: 'Agent is drawing',
+  agentChanged: { one: 'The agent changed {count} object', other: 'The agent changed {count} objects' },
+  agentShow: 'Show',
+  agentUndo: 'Undo',
+  agentUndone: "The agent's edits are undone",
+  chatHintHere: 'The agent answers here and edits the board',
+  chatSignIn: 'Sign in to ask the agent',
 }
