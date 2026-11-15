@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Dark theme keeps colours (HRN-1480): the canvas is no longer inverted as a whole. Colour fills (stickies, shapes,
+  column headers) keep their light-theme colour with dark text; black and grey lines, free text and near-white tints
+  are inverted as before; a white, grey or empty sticky becomes a raised dark card with a shadow; the stage is the
+  dark harnessly background with a dot grid that follows the camera. Text typed into a coloured sticky stays dark.
+  Board data does not change; browsers without canvas filters keep the old inversion.
 - Boards 2.0 (HRN-1480): the editor's own islands replace Excalidraw's menus — a bottom toolbar with tooltips (name and
   key) and popovers (sticky colours, shapes, arrows, pen, text, frame, comment, reactions, «+» for a site, an image
   and, in harnessly, the machine's terminal); a context bar over the selection per kind (sticky, shape, arrow, text,

@@ -6,6 +6,7 @@
  * title, the board menu and edit/view. Top right: who is here, share, comments, chat. Bottom: the tools with tooltips
  * and popovers of variants. Bottom left: undo, redo and zoom. Over the selection: the context bar (ctxbar.tsx).
  */
+import { darkKind, installDarkPaint, type DarkEl } from './dark-paint'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { STICKY_COLORS } from '../../../shared/palette.mjs'
 import type { StudioApi } from '../studio'
@@ -586,6 +587,41 @@ export function Islands(props: IslandsProps) {
     document.documentElement.classList.add('islands-on')
     return () => document.documentElement.classList.remove('islands-on')
   }, [])
+  // Dark theme: colours stay themselves (dark-paint.ts); the stage's dots follow the camera.
+  useEffect(() => {
+    if (!installDarkPaint()) return
+    const root = document.documentElement.style
+    const follow = (sx: number, sy: number, zoom: { value: number }) => {
+      let g = 24 * zoom.value
+      while (g < 12) g *= 2
+      const at = (v: number) => `${(((v * zoom.value) % g) + g) % g}px`
+      root.setProperty('--isl-grid', `${g}px`)
+      root.setProperty('--isl-gx', at(sx))
+      root.setProperty('--isl-gy', at(sy))
+    }
+    const st = api.getAppState() as { scrollX: number; scrollY: number; zoom: { value: number } }
+    follow(st.scrollX, st.scrollY, st.zoom)
+    const offScroll = (api as unknown as { onScrollChange?: (cb: typeof follow) => () => void }).onScrollChange?.(follow)
+    // Text typed into a coloured sticky stays dark on its colour, as it will be drawn; free text is inverted.
+    let typingId: string | null = null
+    const offChange = api.onChange?.((elements, appState) => {
+      const el = appState.editingTextElement as { id: string; containerId?: string | null } | null
+      if ((el?.id ?? null) === typingId) return
+      typingId = el?.id ?? null
+      let keep = false
+      if (el) {
+        const all = elements as readonly DarkEl[]
+        const container = el.containerId ? (all.find((x) => x.id === el.containerId) ?? null) : null
+        keep = darkKind(el as DarkEl, container) === 'keep'
+      }
+      document.documentElement.classList.toggle('isl-edit-keep', keep)
+    })
+    return () => {
+      offScroll?.()
+      offChange?.()
+      document.documentElement.classList.remove('isl-edit-keep')
+    }
+  }, [api])
   // Side island open: the bars keep clear of it.
   useEffect(() => {
     document.documentElement.classList.toggle('isl-side-open', Boolean(props.side))

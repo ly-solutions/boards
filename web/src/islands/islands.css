@@ -425,3 +425,16 @@ html.islands-on .board-banner { transition: left 0.2s var(--isl-ease), max-width
   .note-panel.note-panel--island, .isl-chat { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; height: min(70vh, 520px); }
   .isl-status { display: none; }
 }
+
+/* Dark theme, colours kept (dark-paint.ts): the static canvas is not inverted, the stage draws its dot grid. */
+html.isl-dark-paint .excalidraw.theme--dark canvas.excalidraw__canvas:not(.interactive) { filter: none; }
+html.isl-dark-paint .excalidraw.theme--dark canvas.excalidraw__canvas.static {
+  background-color: oklch(0.155 0 0);
+  background-image: radial-gradient(circle, oklch(1 0 0 / 0.14) 1px, transparent 1.4px);
+  background-size: var(--isl-grid, 24px) var(--isl-grid, 24px);
+  background-position: var(--isl-gx, 0) var(--isl-gy, 0);
+}
+/* Typing into a coloured sticky: the text stays dark on its colour, as the canvas will draw it. */
+html.isl-dark-paint.isl-edit-keep .excalidraw.theme--dark .excalidraw-wysiwyg {
+  filter: brightness(0.94) !important;
+}
