@@ -9,6 +9,8 @@ customData.editedBy and the board text shows "· edited by <who>".
 ## Read
 GET /b/<slug>.md?k=…                → the board as text: shapes with labels, connections, text, element ids
 GET /b/<slug>/scene.excalidraw?k=…  → the whole scene (.excalidraw format)
+GET /b/<slug>/picture.png?k=…       → the board as a picture, as people see it; ?ids=a,b — those objects and what is
+                                      around them. Look before an edit and after it: the text does not show overlaps.
 GET /b/api/boards                   → list (token or signed-in user); ?q=<search>&tag=<tag>
 GET /b/api/boards/<slug>            → one board as JSON: metadata, links and the text (token or signed-in user)
 
@@ -23,6 +25,8 @@ Templates: GET /b/api/templates — architecture, flow, weekly, retro, brainstor
 POST /b/<slug>/edit?k=…
 { "graph": {…}, "add": […], "update": […], "delete": ["id", …], "author": "…", "note": "what I did" }
 Everything is applied as one revision; editors that are open show the change immediately.
+POST /b/<slug>/agent?k=…  { "status": "working" | "done", "author": "…" } — open editors show «the agent is drawing»
+while you work (it ends by itself 90 s after the last sign or 20 s after the last edit).
 
 ### graph — the main way: the server does the layout
 { "direction": "LR" | "TB" | "RL" | "BT",

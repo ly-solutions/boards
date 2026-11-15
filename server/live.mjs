@@ -60,7 +60,7 @@ export function createLive({ store, resolveBoard, editorFor, allowedOrigin, log 
   store.onChange((event) => {
     if (!rooms.has(event.slug)) return
     if (event.type === 'elements') {
-      broadcast(event.slug, { t: 'elements', rev: event.rev, elements: event.elements, files: event.files }, { except: event.origin })
+      broadcast(event.slug, { t: 'elements', rev: event.rev, elements: event.elements, files: event.files, ...(event.agent ? { agent: event.agent } : {}) }, { except: event.origin })
     } else if (event.type === 'edit') {
       broadcast(event.slug, { t: 'edit', edit: event.edit, ids: event.ids })
     } else if (event.type === 'presence') {

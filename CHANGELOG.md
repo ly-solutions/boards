@@ -35,6 +35,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Agent edits you can watch (HRN-1480): an agent sees the board as a picture — `GET /b/<slug>/picture.png[?ids=a,b]`
+  (the package's SVG export rendered by resvg-wasm with the editor's fonts), MCP `board_look`, `boards look` in the
+  skill — and is told to look before and after an edit. `POST /b/<slug>/agent {status}` and every look show
+  «Агент рисует…» to editors; an agent's edit plays in one by one with a short glow and a cursor named after the agent,
+  and the camera follows when it draws off-screen; the whole turn is one bar «Агент изменил N объектов · Показать ·
+  Отменить». `/edit` answers with `changed` ids and a `show` link (`?show=a,b` opens the board on them and outlines
+  them); a comment reply may carry `ids` («Показать на доске» under it). Board thumbnails come from the server
+  picture while no browser has sent one.
+- Comments panel as in the prototype: «Комментарии | Чат» tabs on the standalone board too (the chat lists threads
+  that call the agent and asks it with `@harnessly` at the selection), «Решено» in the thread card head, 👍 and other
+  reactions on a thread (`react: { emoji }` on `POST /comments/<id>`), «агент печатает…» while a call waits for its
+  answer; right-island tooltips go to the left while the panel is open so they no longer cover its header.
+- Board list as in the prototype: search, filters, templates row and a card menu, without native selects.
+
 - A mention reaches the person (HRN-1469): the board keeps a stable id for each person who was on it signed in
   (`hub:<id>` from the harnessly app view, else HMAC-SHA256 of the e-mail keyed with the webhook secret), in storage only;
   the webhook's `message.mentions` is `[{ name, id }]` (`{ name, agent: true }` for `@harnessly`) and `message.authorId`

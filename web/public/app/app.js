@@ -9,17 +9,13 @@
   var root = document.getElementById('app')
   var TEXT = {
     en: {
-      all: 'All', mine: 'Mine', shared: 'Shared', mineMark: 'mine', recent: 'Recent',
       down: 'The boards service is not answering right now', downHint: 'Boards and links to them are safe — try again later.',
-      search: 'Search boards', nothing: 'Nothing found.', empty: 'No boards yet — ask the agent in the conversation to draw the first one.',
       back: 'All boards', newTab: 'Open in a new tab', gone: 'There is no such board, or it is not yours to open.',
       signIn: 'Sign in to see the boards', signInGo: 'Sign in', retry: 'Try again',
       askBoard: 'Board',
     },
     ru: {
-      all: 'Все', mine: 'Мои', shared: 'Общие', mineMark: 'моя', recent: 'Недавние',
       down: 'Сервис досок сейчас не отвечает', downHint: 'Доски и ссылки на них на месте — попробуйте позже.',
-      search: 'Поиск по доскам', nothing: 'Ничего не нашлось.', empty: 'Досок пока нет — попросите агента в чате нарисовать первую.',
       back: 'Все доски', newTab: 'Открыть в новой вкладке', gone: 'Такой доски нет, или она вам недоступна.',
       signIn: 'Войдите, чтобы увидеть доски', signInGo: 'Войти', retry: 'Повторить',
       askBoard: 'Доска',
@@ -27,13 +23,6 @@
   }
   var LANG = document.documentElement.lang === 'ru' ? 'ru' : 'en'
   var T = TEXT[LANG]
-  var TABS = [
-    { id: 'all', label: T.all },
-    { id: 'mine', label: T.mine },
-    { id: 'shared', label: T.shared },
-  ]
-  var SHELVES = 6
-  var PER_SHELF = 8
   var BASE = location.pathname.replace(/\/app\/?$/, '')
   var BRIDGE_WAIT_MS = 6000
 
@@ -50,13 +39,6 @@
         return c.text || ''
       })
       .join('\n')
-  }
-
-  function when(iso) {
-    if (!iso) return ''
-    var d = new Date(iso)
-    if (isNaN(d.getTime())) return ''
-    return d.toLocaleDateString(LANG === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'short' })
   }
 
   // ---- The theme: harnessly's when the bridge is there, the system's until then ----
@@ -84,11 +66,13 @@
 
   // ---- Data: our own API, by the session cookie ----
 
+  var libMe = null
   function fetchLibrary() {
     return fetch(BASE + '/api/app/library', { credentials: 'same-origin', headers: { accept: 'application/json' } }).then(function (res) {
       if (res.status === 401) return null
       if (!res.ok) throw new Error('HTTP ' + res.status)
       return res.json().then(function (body) {
+        libMe = body.me || null
         return body.boards || []
       })
     })
@@ -294,8 +278,9 @@
       tell(null)
       opened = null
     }
-    library(again)
-      .then(function (rows) {
+    Promise.all([library(again), templatesReady])
+      .then(function (both) {
+        var rows = both[0]
         if (rows === null) return needSignIn()
         if (current() !== slug) return
         if (slug) openBoard(rows, slug)
@@ -353,150 +338,50 @@
     tell({ kind: 'board', title: row.title, url: row.url, object: row.slug, selection: '', rect: null })
   }
 
-  // ---- The library ----
+  // ---- The library: the shared list (list.js, list.css) ----
 
-  function card(row) {
-    var item = el('a', 'ba__card')
-    item.href = '?board=' + encodeURIComponent(row.slug)
-    var thumb = el('span', 'ba__thumb')
-    if (row.preview) {
-      var img = el('img')
-      img.src = row.preview
-      img.alt = ''
-      img.loading = 'lazy'
-      thumb.appendChild(img)
-    }
-    item.appendChild(thumb)
-    item.appendChild(el('span', 'ba__name', row.title))
-    var meta = [when(row.updatedAt), row.mine ? T.mineMark : row.author || ''].filter(Boolean).join(' · ')
-    item.appendChild(el('span', 'ba__meta hl-muted', meta))
-    item.addEventListener('click', function (event) {
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
-      event.preventDefault()
-      go(row.slug)
-    })
-    return item
-  }
-
-  function grid(rows) {
-    var box = el('div', 'ba__grid')
-    rows.forEach(function (row) {
-      box.appendChild(card(row))
-    })
-    return box
-  }
-
-  /** Shelves: the newest, then the most frequent tags. */
-  function shelves(rows) {
-    var out = [{ title: T.recent, rows: rows.slice(0, PER_SHELF) }]
-    var count = {}
-    rows.forEach(function (row) {
-      row.tags.forEach(function (tag) {
-        count[tag] = (count[tag] || 0) + 1
-      })
-    })
-    Object.keys(count)
-      .filter(function (tag) {
-        return count[tag] > 1
-      })
-      .sort(function (a, b) {
-        return count[b] - count[a] || a.localeCompare(b)
-      })
-      .slice(0, SHELVES)
-      .forEach(function (tag) {
-        out.push({
-          title: tag,
-          rows: rows
-            .filter(function (row) {
-              return row.tags.indexOf(tag) >= 0
-            })
-            .slice(0, PER_SHELF),
-        })
-      })
-    return out
-  }
-
-  var view = { tab: 'all', query: '' }
+  var listUi = null
   function home(all) {
     root.className = 'ba ba--home'
-    var state = view
-
-    var bar = el('div', 'ba__bar')
-    var seg = el('div', 'hl-seg ba__tabs')
-    seg.setAttribute('role', 'tablist')
-    TABS.forEach(function (tab) {
-      var b = el('button', 'ba__tab', tab.label)
-      b.type = 'button'
-      b.setAttribute('role', 'tab')
-      b.dataset.tab = tab.id
-      b.addEventListener('click', function () {
-        state.tab = tab.id
-        draw()
-      })
-      seg.appendChild(b)
-    })
-    var search = el('input', 'hl-input ba__search')
-    search.type = 'search'
-    search.value = state.query
-    search.placeholder = T.search
-    search.setAttribute('aria-label', T.search)
-    search.addEventListener('input', function () {
-      state.query = search.value.trim().toLowerCase()
-      draw()
-    })
-    bar.appendChild(seg)
-    bar.appendChild(search)
-
-    var body = el('div', 'ba__lib')
-    root.textContent = ''
-    root.appendChild(bar)
-    root.appendChild(body)
-
-    function shown() {
-      return all.filter(function (row) {
-        if (state.tab === 'mine' && !row.mine) return false
-        if (state.tab === 'shared' && row.mine) return false
-        if (!state.query) return true
-        var hay = [row.title, row.description].concat(row.tags).join(' ').toLowerCase()
-        return state.query.split(/\s+/).every(function (w) {
-          return hay.indexOf(w) >= 0
-        })
-      })
-    }
-
-    function draw() {
-      Array.prototype.forEach.call(seg.children, function (b) {
-        b.setAttribute('aria-selected', String(b.dataset.tab === state.tab))
-      })
-      body.textContent = ''
-      var rows = shown()
-      if (!rows.length) {
-        body.appendChild(el('p', 'hl-empty', state.query || state.tab !== 'all' ? T.nothing : T.empty))
-        return
-      }
-      if (state.query || state.tab !== 'all') {
-        body.appendChild(grid(rows))
-        return
-      }
-      shelves(rows).forEach(function (shelf) {
-        var section = el('section', 'ba__shelf')
-        section.appendChild(el('h2', 'ba__shelf-title hl-h', shelf.title))
-        section.appendChild(grid(shelf.rows))
-        body.appendChild(section)
-      })
-    }
-
-    draw()
     root.removeAttribute('aria-busy')
+    listUi = window.BoardsList.mount(root, {
+      lang: LANG,
+      base: BASE,
+      rows: all,
+      me: libMe,
+      templates: TEMPLATES,
+      href: function (row) {
+        return '?board=' + encodeURIComponent(row.slug)
+      },
+      onOpen: function (row) {
+        go(row.slug)
+      },
+      onCreated: function (made) {
+        // The new board is not in the cached library yet.
+        rowsReady = null
+        go(made.slug)
+      },
+    })
   }
+
+  /** Templates for the shelf: ids and names from the service, once. */
+  var TEMPLATES = []
+  var templatesReady = fetch(BASE + '/api/templates', { credentials: 'same-origin' })
+    .then(function (res) {
+      return res.ok ? res.json() : { templates: [] }
+    })
+    .then(function (body) {
+      TEMPLATES = body.templates || []
+    })
+    .catch(function () {})
 
   // ---- Start: the library at once; harnessly, when it answers, gives the theme and the object to open ----
 
   function skeleton() {
     root.className = 'ba ba--home'
     root.textContent = ''
-    var wait = el('div', 'ba__grid')
-    for (var i = 0; i < 6; i += 1) wait.appendChild(el('div', 'ba__card hl-skeleton'))
+    var wait = el('div', 'bl bl-grid')
+    for (var i = 0; i < 8; i += 1) wait.appendChild(el('div', 'bl-skel'))
     root.appendChild(wait)
   }
 

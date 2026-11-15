@@ -37,6 +37,8 @@ export type IslandsProps = {
   textUrl: string
   fileUrl: string
   crowd: Person[]
+  /** An agent is at work on the board: «Агент рисует…» in the right island. */
+  agentWorking?: boolean
   status: { kind: string; text: string }
   onShare: (() => void) | null
   openComments: number
@@ -263,12 +265,23 @@ function TopLeft({ api, app, title, onRename, homeUrl, textUrl, fileUrl, canEdit
 
 // ── Top right: people, share, comments, chat ─────────────────────────────────
 
-function TopRight({ api, crowd, status, onShare, openComments, side, setSide, app, extras }: Pick<IslandsProps, 'api' | 'crowd' | 'status' | 'onShare' | 'openComments' | 'side' | 'setSide' | 'app' | 'extras'>) {
+function TopRight({ api, crowd, agentWorking, status, onShare, openComments, side, setSide, app, extras }: Pick<IslandsProps, 'api' | 'crowd' | 'agentWorking' | 'status' | 'onShare' | 'openComments' | 'side' | 'setSide' | 'app' | 'extras'>) {
   const following = (api.getAppState().userToFollow as { socketId?: string } | null)?.socketId ?? null
   const shown = crowd.slice(0, 4)
   const more = crowd.length - shown.length
   return (
     <div className="isl isl-tr isl-tips-down">
+      {agentWorking && (
+        <span className="isl-agent" role="status">
+          <span className="isl-agent__orb" aria-hidden="true" />
+          {t('islands.agentWorking')}
+          <span className="isl-agent__dots" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+        </span>
+      )}
       {shown.length > 0 && (
         <div className="isl-av">
           {shown.map((p) => (
@@ -298,7 +311,7 @@ function TopRight({ api, crowd, status, onShare, openComments, side, setSide, ap
       <Btn icon="commentPlain" tip={t('islands.comments')} on={side === 'comments'} onClick={() => setSide(side === 'comments' ? null : 'comments')}>
         {openComments > 0 && <span className="isl-cnt">{openComments}</span>}
       </Btn>
-      {app && <Btn icon="sparkles" tip={t('islands.chat')} on={side === 'chat'} onClick={() => setSide(side === 'chat' ? null : 'chat')} />}
+      <Btn icon="sparkles" tip={t('islands.chat')} on={side === 'chat'} onClick={() => setSide(side === 'chat' ? null : 'chat')} />
     </div>
   )
 }
@@ -668,7 +681,7 @@ export function Islands(props: IslandsProps) {
   return (
     <div className="islands">
       <TopLeft api={api} app={props.app} title={props.title} onRename={props.onRename} homeUrl={props.homeUrl} textUrl={props.textUrl} fileUrl={props.fileUrl} canEdit={canEdit} menu={props.menu} viewOnly={viewOnly} setViewOnly={setViewOnly} />
-      <TopRight api={api} crowd={props.crowd} status={props.status} onShare={props.onShare} openComments={props.openComments} side={props.side} setSide={props.setSide} app={props.app} extras={props.extras} />
+      <TopRight api={api} crowd={props.crowd} agentWorking={props.agentWorking} status={props.status} onShare={props.onShare} openComments={props.openComments} side={props.side} setSide={props.setSide} app={props.app} extras={props.extras} />
       {editing ? (
         <Toolbar api={api} tool={tool} stickyColor={props.stickyColor} setStickyColor={props.setStickyColor} onStudioTool={onStudioTool} reactions={props.reactions} onPanel={props.onPanel} insert={props.insert} prefs={prefs} setPrefs={setPrefs} />
       ) : (

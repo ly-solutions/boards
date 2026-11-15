@@ -10,6 +10,7 @@
  *   GET  /b/<slug>.json?k=…            the board as JSON (metadata, links, text)
  *   GET  /b/<slug>/scene.excalidraw    the whole scene; opens in excalidraw.com too
  *   GET  /b/<slug>/preview.svg         thumbnail
+ *   GET  /b/<slug>/picture.png         the board as a picture (?ids=a,b — those objects and what is around them)
  *   POST /b/<slug>/edit                agent edit: graph, skeleton, update, delete
  *   POST /b/<slug>/sync                polling exchange with browsers
  *   GET  /b/<slug>/live?k=…            WebSocket: edits, cursors, selection (live.mjs)
@@ -38,7 +39,7 @@ import { createLinks } from './links.mjs'
 import { refsOf } from '../shared/links.mjs'
 import { isValidSlug, makeKey, makeSlug, secretMatches } from './access.mjs'
 import { EditError, applyDeletes, applyUpdates, layoutGraph, loadEngine, materialize } from './engine.mjs'
-import { editorHeaders, embedHeaders, pageHeaders, renderBoardPage, renderEmbedPage, renderHome, renderNotFound, renderTokenLogin, webAssets } from './html.mjs'
+import { editorHeaders, embedHeaders, homeFieldValues, pageHeaders, renderBoardPage, renderEmbedPage, renderHome, renderNotFound, renderTokenLogin, webAssets } from './html.mjs'
 import { API_HELP } from './help.mjs'
 import { createAuth } from './auth.mjs'
 import { createLive } from './live.mjs'
@@ -58,6 +59,7 @@ import { CATALOGS } from '../shared/locales/index.mjs'
 import { createPluginHost, PluginHttpError, PluginReply, PLUGIN_API_VERSION } from './plugins.mjs'
 import { createFlags, staticFlags } from './flags.mjs'
 import { linkPreviewResolver } from './link-preview.mjs'
+import { renderPicture } from './picture.mjs'
 import { KeysUnavailableError, TokenError, bearerOf, createPlatformAuth, looksLikeJwt } from './platform-auth.mjs'
 import { handleBody as handleMcpBody, ToolError } from './mcp.mjs'
 import { boardTools, slugOf } from './mcp-tools.mjs'
@@ -341,7 +343,7 @@ export function createApp({
       // Members and agents may delete anything (agents and departed guests leave threads nobody else could
       // clean up); a guest only what they wrote.
       const mayDelete = (author) => who.kind !== 'guest' || author === who.name
-      const change = { reply: body.reply, replyTo: body.replyTo, resolved: body.resolved, remove: body.remove === true, removeMessage: body.removeMessage, x: body.x, y: body.y, elementId: body.elementId }
+      const change = { reply: body.reply, replyTo: body.replyTo, ids: body.ids, react: body.react, resolved: body.resolved, remove: body.remove === true, removeMessage: body.removeMessage, x: body.x, y: body.y, elementId: body.elementId }
       const result = store.changeComment(state, threadId, change, actor, mayDelete)
       if (result.removed) emitComment(commentPayload('thread.removed', state, result.thread, who))
       if (result.replied) emitComment(commentPayload('thread.replied', state, result.thread, who, result.replied))
@@ -393,7 +395,10 @@ export function createApp({
     if (Array.isArray(body.delete) && body.delete.length) touched.push(...merged()(applyDeletes(body.delete, current, { now })))
     if (!touched.length) throw new EditError('empty edit: send graph, add, update or delete')
     const accepted = store.applyAgentEdit(state, touched, { by: authorOf(body), note: typeof body.note === 'string' ? body.note.slice(0, 200) : null })
-    return { accepted, created: touched.filter((el) => el.version === 1).map((el) => el.id) }
+    // What to show on the board for this edit (HRN-1480): the changed objects, labels counted with their shapes.
+    const live = new Set(store.elements(state).filter((el) => !el.isDeleted).map((el) => el.id))
+    const changed = [...new Set(touched.map((el) => el.containerId ?? el.id))].filter((id) => live.has(id)).slice(0, 40)
+    return { accepted, created: touched.filter((el) => el.version === 1).map((el) => el.id), changed }
   }
 
   async function createBoard(body, who) {
@@ -767,6 +772,19 @@ export function createApp({
 
   // Through MCP an agent writes on behalf of a person: comments are signed by the person and marked as the agent's,
   // so the webhook does not hand the agent its own message back as a person's question.
+  /** The board's picture, cached per revision: an agent looks before and after its edit, often twice in a row. */
+  const pictures = new Map()
+  const PICTURES_KEPT = 64
+  async function picture(state, ids = [], { thumb = false } = {}) {
+    const key = `${state.slug}:${state.rev}:${thumb ? 'thumb' : ids.join(',')}`
+    if (pictures.has(key)) return pictures.get(key)
+    const scene = store.scene(state)
+    const png = await renderPicture(scene.elements ?? [], scene.files ?? {}, { ids, maxSide: thumb ? 720 : undefined })
+    pictures.set(key, png)
+    if (pictures.size > PICTURES_KEPT) pictures.delete(pictures.keys().next().value)
+    return png
+  }
+
   const actorOf = (who) => ({ name: who.name, kind: 'agent', email: who.email ?? null })
   const mcpTools = boardTools({
     reactions: REACTIONS,
@@ -778,6 +796,8 @@ export function createApp({
       return state
     },
     text: (state) => store.text(state),
+    picture,
+    agentAt: (state, by) => store.agentAt(state, by),
     describe,
     create: (body, who) => createBoard(body, who),
     edit: applyEdit,
@@ -842,7 +862,7 @@ export function createApp({
       tools: platformUser ? mcpTools : mcpTools.map((tool) => ({ ...tool, run: (args, ctx) => tool.run(args, { ...ctx, who: { kind: 'agent', name: authorOf(args ?? {}) } }) })),
       ctx: { who },
       serverInfo: { name: 'boards', version: VERSION },
-      instructions: 'Excalidraw boards: read a board with board_read, draw diagrams with board_create/board_edit through graph (the server lays it out), answer people in threads with board_comment. After an edit read the board again and check the slop section.',
+      instructions: 'Excalidraw boards: read a board with board_read and look at it with board_look, draw diagrams with board_create/board_edit through graph (the server lays it out), answer people in threads with board_comment (pass ids of what you changed). After an edit look at the picture and fix what looks wrong; answer in one or two lines with the «Show on the board» link, no lists.',
       describeError: (error) => {
         if (error instanceof ToolError || error instanceof HttpError || error instanceof EditError || error instanceof LimitError || error instanceof CommentError) return error.message
         if (error instanceof StorageUnavailableError) {
@@ -904,9 +924,11 @@ export function createApp({
         if (auth.enabled) return loginRedirect(res, homeUrl)
         throw new HttpError(401, 'not signed in')
       }
-      const boards = await listBoards(url)
+      const me = { name: user.name, email: user.email }
+      const fields = plugins.homeFields()
+      const rows = (await store.list()).map((b) => ({ ...libraryRow(b, { publicUrl, prefix: PREFIX, me }), fields: homeFieldValues(b, fields, t) }))
       res.writeHead(200, pageHeaders({ frameAncestors: config.frameAncestors }))
-      return res.end(renderHome({ staticBase, boards, templates: localTemplates(), user, canSignOut: auth.mode !== 'none', q: url.searchParams.get('q') ?? '', t, fields: plugins.homeFields() }))
+      return res.end(renderHome({ staticBase, rows, templates: localTemplates(), user, canSignOut: auth.mode !== 'none', q: url.searchParams.get('q') ?? '', t }))
     }
 
     if (rest === 'api' || rest === 'api/') return text(res, 200, API_HELP)
@@ -940,7 +962,7 @@ export function createApp({
     if (rest === 'auth/handoff') return auth.handoff(req, res, url)
 
     // Templates, library and palette are not secret; the editor needs them without a token.
-    if (rest === 'api/templates' && req.method === 'GET') return json(res, 200, { templates: TEMPLATES.map(({ id, title, description }) => ({ id, title, description })) })
+    if (rest === 'api/templates' && req.method === 'GET') return json(res, 200, { templates: localTemplates().map(({ id, title, description }) => ({ id, title, description })) })
     const tpl = /^api\/templates\/([a-z-]+)$/.exec(rest)
     if (tpl && req.method === 'GET') {
       if (!templateById(tpl[1])) throw new HttpError(404, 'no such template')
@@ -1191,9 +1213,26 @@ export function createApp({
       )
     }
 
+    if (action === 'picture.png' && req.method === 'GET') {
+      // The board as a picture for an agent's eyes (HRN-1480): whole, or ?ids=a,b with what is around them.
+      const ids = (url.searchParams.get('ids') ?? '').split(',').map((x) => x.trim()).filter(Boolean).slice(0, 200)
+      const png = await picture(state, ids)
+      if (!png) throw new HttpError(404, 'none of these ids is on the board')
+      return sendBody(res, 200, { 'content-type': 'image/png', 'cache-control': 'no-store', 'x-robots-tag': 'noindex', 'x-board-rev': String(state.rev) }, png)
+    }
+
     if (action === 'preview.svg' && req.method === 'GET') {
-      // No browser has sent a thumbnail yet (a board an agent drew): a sketch of its shapes stands in.
-      const svg = (await store.previewSvg(state)) ?? sketchSvg(store.elements(state))
+      // No browser has sent a thumbnail yet, or an agent changed the board since: the server's own picture of it
+      // (HRN-1480); an empty board or a failed render gets the sketch of its shapes.
+      const stored = await store.previewSvg(state)
+      if ((!stored || state.previewStale) && store.elements(state).length) {
+        const png = await picture(state, [], { thumb: true }).catch((error) => {
+          console.log(JSON.stringify({ at: new Date().toISOString(), level: 'warn', event: 'thumbnail_failed', slug: state.slug, error: String(error?.message ?? error).slice(0, 200) }))
+          return null
+        })
+        if (png) return sendBody(res, 200, { 'content-type': 'image/png', 'cache-control': 'private, max-age=30', 'x-content-type-options': 'nosniff', 'x-robots-tag': 'noindex' }, png)
+      }
+      const svg = stored ?? sketchSvg(store.elements(state))
       return sendBody(
         res,
         200,
@@ -1228,7 +1267,18 @@ export function createApp({
       const body = await readJson(req, 4 * 1024 * 1024)
       const who = requireEditor(req, state, body)
       const result = await applyEdit(state, { ...body, author: who.name })
-      return json(res, 200, { ...describe(state), rev: state.rev, ...result, summary: store.text(state) })
+      const links = describe(state)
+      const show = result.changed?.length ? `${links.url}${links.url.includes('?') ? '&' : '?'}show=${result.changed.join(',')}` : links.url
+      return json(res, 200, { ...links, rev: state.rev, ...result, show, summary: store.text(state) })
+    }
+
+    if (action === 'agent' && req.method === 'POST') {
+      // An agent says it is at work on the board, or done (HRN-1480): editors show «Агент рисует…» meanwhile.
+      const body = await readJson(req, 4 * 1024)
+      const who = requireEditor(req, state, body)
+      const by = typeof body.author === 'string' && body.author.trim() ? body.author.trim().slice(0, 60) : who.name
+      store.agentAt(state, by, body.status === 'done' ? 0 : undefined)
+      return json(res, 200, { ok: true })
     }
 
     if (action === 'meta' && req.method === 'POST') {

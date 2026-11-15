@@ -219,3 +219,23 @@ body:has(.studio-dock) .note-composer { bottom: 76px; }
   .note-panel { top: auto; left: 8px; right: 8px; bottom: 72px; width: auto; max-width: none; max-height: 60vh; }
   .note-composer { bottom: 76px; width: auto; left: 8px; right: 8px; max-width: none; transform: none; }
 }
+
+/* ── The thread as in Boards 2.0 (HRN-1480): resolve in the head, «Показать на доске», agent typing, reactions ── */
+.note-card__resolve.is-on { color: var(--studio-accent); }
+.note-show { display: inline-flex; align-items: center; gap: 5px; margin-top: 6px; padding: 3px 8px 3px 6px; border-radius: 8px; background: var(--studio-accent-bg); color: var(--studio-accent); font: 600 12px/18px var(--ui-font, system-ui, sans-serif); }
+.note-show:hover { filter: brightness(1.08); }
+.note-typing { display: flex; align-items: center; gap: 6px; padding: 6px 12px 8px 46px; color: var(--studio-accent); font: 600 12px/1 var(--ui-font, system-ui, sans-serif); }
+.note-typing__orb { width: 8px; height: 8px; border-radius: 50%; background: var(--studio-accent); animation: agent-orb 1.4s ease-in-out infinite; }
+.note-typing__dots { display: inline-flex; gap: 2px; }
+.note-typing__dots i { width: 3px; height: 3px; border-radius: 50%; background: currentColor; animation: agent-dot 1.2s ease-in-out infinite; }
+.note-typing__dots i:nth-child(2) { animation-delay: 0.15s; }
+.note-typing__dots i:nth-child(3) { animation-delay: 0.3s; }
+.note-rx { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 12px 6px; }
+.note-rx__pill { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border-radius: 999px; border: 1px solid var(--studio-border, rgba(127, 127, 127, 0.25)); color: var(--studio-fg); font: 600 12px/1 var(--ui-font, system-ui, sans-serif); }
+.note-rx__pill span:first-child { font-size: 14px; }
+.note-rx__pill.is-on { border-color: var(--studio-accent); background: var(--studio-accent-bg); color: var(--studio-accent); }
+.note-rx__pill:disabled { cursor: default; }
+.note-rx__pill:not(:disabled):hover { background: var(--studio-accent-bg); }
+@media (prefers-reduced-motion: reduce) { .note-typing__orb, .note-typing__dots i { animation: none; } }
+.note-show, .note-rx__pill { border-style: solid; cursor: pointer; }
+.note-show { border: 0; }

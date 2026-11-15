@@ -56,6 +56,9 @@ export function openThread(notes, elements, { text, x, y, elementId = null }, { 
  * Returns `{ thread, removed, replied, resolvedChanged }`. Throws 404 for an unknown thread or message.
  * `mayDelete(author)` decides whether the caller may delete content written by `author`.
  */
+/** Reactions a thread takes (the same as on objects). */
+export const THREAD_REACTIONS = ['👍', '❤️', '🎉', '✅', '❓', '👎']
+
 export function changeThread(notes, elements, id, change, { author, authorId = null, kind = 'person', now = new Date(), mayDelete = () => true }) {
   const index = notes.comments.findIndex((t) => t.id === id)
   if (index < 0) throw new CommentError(404, 'no such thread')
@@ -85,7 +88,21 @@ export function changeThread(notes, elements, id, change, { author, authorId = n
     if (thread.messages.length >= COMMENT_LIMITS.messages) throw new CommentError(400, `a thread holds at most ${COMMENT_LIMITS.messages} replies`)
     const quoted = typeof change.replyTo === 'string' && thread.messages.some((m) => m.id === change.replyTo) ? change.replyTo : null
     replied = message(author, kind, reply, new Date(now).toISOString(), quoted, authorId)
+    // What the reply is about on the board («Показать на доске»): ids of objects, as an agent names what it changed.
+    const ids = Array.isArray(change.ids) ? [...new Set(change.ids.filter((x) => typeof x === 'string' && x.length <= 64 && elements.has?.(x)))].slice(0, 50) : []
+    if (ids.length) replied.ids = ids
     thread.messages.push(replied)
+  }
+  // A reaction on the thread itself (👍 under it): one per person and emoji, the same call again takes it back.
+  if (change.react && typeof change.react.emoji === 'string' && THREAD_REACTIONS.includes(change.react.emoji)) {
+    const { emoji } = change.react
+    const who = author
+    const list = new Set(thread.reactions?.[emoji] ?? [])
+    const on = typeof change.react.on === 'boolean' ? change.react.on : !list.has(who)
+    if (on) list.add(who)
+    else list.delete(who)
+    thread.reactions = { ...(thread.reactions ?? {}), [emoji]: [...list] }
+    if (!list.size) delete thread.reactions[emoji]
   }
   let resolvedChanged = false
   if (typeof change.resolved === 'boolean') {

@@ -134,7 +134,8 @@ test('end to end: cards, the checklist action, the stats route and the deadline'
   const meta = await fetch(b('/meta'), { method: 'POST', headers: { 'content-type': 'application/json', cookie: t.cookie() }, body: JSON.stringify({ fields: { deadline: '2026-11-30' } }) })
   assert.deepEqual((await meta.json()).fields, { deadline: '2026-11-30' })
   const home = await (await fetch(`${t.base}/b/`, { headers: { cookie: t.cookie() } })).text()
-  assert.match(home, /data-field="deadline">Deadline: <b>30 Nov 2026<\/b>/)
+  const rows = JSON.parse(/<script type="application\/json" id="boards-data">([\s\S]*?)<\/script>/.exec(home)[1]).rows
+  assert.ok(rows.some((r) => r.fields.some((f) => f.id === 'deadline' && f.label === 'Deadline' && f.value === '30 Nov 2026')))
 })
 
 test('the GitHub webhook refreshes cards; unsigned calls are refused', async () => {

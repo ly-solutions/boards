@@ -41,8 +41,10 @@ export async function handleMessage(message, { tools, ctx, serverInfo, instructi
     if (!tool) return rpcError(id, -32602, `no such tool: ${params?.name}`)
     const args = params.arguments && typeof params.arguments === 'object' ? params.arguments : {}
     try {
-      const text = await tool.run(args, ctx)
-      return rpcResult(id, { content: [{ type: 'text', text }], isError: false })
+      const out = await tool.run(args, ctx)
+      // A tool answers text, or MCP content as is (a picture: board_look).
+      if (out && typeof out === 'object' && Array.isArray(out.content)) return rpcResult(id, { content: out.content, isError: false })
+      return rpcResult(id, { content: [{ type: 'text', text: out }], isError: false })
     } catch (error) {
       return rpcResult(id, { content: [{ type: 'text', text: describeError(error) }], isError: true })
     }

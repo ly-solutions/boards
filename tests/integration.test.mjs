@@ -231,13 +231,18 @@ test('the boards list page: anonymous visitors go to sign-in, members see their 
   const page = await fetch(`${base}/b/`, { headers: { cookie: t.cookie() } })
   assert.equal(page.status, 200)
   assert.match(page.headers.get('content-type'), /text\/html/)
-  const html = await page.text()
-  assert.ok(html.includes('Listed on home'))
-  assert.ok(html.includes(`/b/${body.slug}?k=${body.key}`))
-  assert.ok(html.includes('Ada Lovelace'))
-  const filtered = await (await fetch(`${base}/b/?q=nothing-matches-this`, { headers: { cookie: t.cookie() } })).text()
-  assert.ok(!filtered.includes('Listed on home'))
-  assert.match(filtered, /No boards match/)
+  const dataOf = (html) => JSON.parse(/<script type="application\/json" id="boards-data">([\s\S]*?)<\/script>/.exec(html)[1])
+  const { rows, me } = dataOf(await page.text())
+  const row = rows.find((r) => r.slug === body.slug)
+  assert.equal(row.title, 'Listed on home')
+  assert.ok(row.url.endsWith(`/b/${body.slug}?k=${body.key}`))
+  // Every board has a preview address (the browser's thumbnail or the server's sketch), and the library says whose it is.
+  assert.equal(row.preview, `/b/${body.slug}/preview.svg?k=${body.key}`)
+  assert.equal(row.mine, false, 'made by an agent token, not by Ada')
+  assert.equal(me.name, 'Ada Lovelace')
+  // The search runs in the page: the server only hands over the first query.
+  const filtered = dataOf(await (await fetch(`${base}/b/?q=nothing-matches-this`, { headers: { cookie: t.cookie() } })).text())
+  assert.equal(filtered.query, 'nothing-matches-this')
 })
 
 test('token-mode sign-in: the right token and a name give a session; a wrong token is 401', async () => {

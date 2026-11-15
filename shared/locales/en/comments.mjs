@@ -71,4 +71,7 @@ export default {
   filterMine: 'Mine',
   noResolved: 'No resolved comments yet.',
   noMine: 'Nothing you wrote or were mentioned in.',
+  showOnBoard: 'Show on the board',
+  agentTyping: 'The agent is typing',
+  react: 'React',
 }

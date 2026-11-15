@@ -47,6 +47,22 @@ export function boardTools(ops) {
       run: async (args) => ops.text(await ops.board(args.board)),
     },
     {
+      name: 'board_look',
+      title: 'Look at a board',
+      description: 'The board as a picture (PNG), as people see it: the whole board, or ids — those objects and what is around them. Look before an edit and after it, and fix what looks wrong (overlaps, text that does not fit, a column that ran off) before you answer.',
+      inputSchema: { type: 'object', properties: { board: boardArg, ids: { type: 'array', items: { type: 'string' }, description: 'Object ids to look at; without them, the whole board' } }, required: ['board'] },
+      annotations: { readOnlyHint: true },
+      run: async (args, ctx) => {
+        const state = await ops.board(args.board)
+        // Looking is the start of the agent's work: editors show «Агент рисует…» until its edit lands.
+        if (ctx?.who?.name) ops.agentAt?.(state, ctx.who.name)
+        const ids = Array.isArray(args.ids) ? args.ids.map(String).slice(0, 200) : []
+        const png = await ops.picture(state, ids)
+        if (!png) throw new ToolError('none of these ids is on the board')
+        return { content: [{ type: 'image', data: png.toString('base64'), mimeType: 'image/png' }] }
+      },
+    },
+    {
       name: 'board_create',
       title: 'Create a board',
       description: `A new board: empty, from a template (board_templates) or with a diagram right away. Answers with the link and the board text.\n${GRAPH_HELP}`,
@@ -91,7 +107,9 @@ export function boardTools(ops) {
         const state = await ops.board(args.board)
         const result = await ops.edit(state, { graph: args.graph, add: args.add, update: args.update, delete: args.delete, at: args.at, note: str(args.note), author: who.name })
         const created = result.created.length ? `, new ids: ${result.created.join(', ')}` : ''
-        return `Edit accepted (revision ${state.rev}${created}).\n\n${ops.text(state)}`
+        const d = ops.describe(state)
+        const show = result.changed?.length ? `${d.url}&show=${result.changed.join(',')}` : d.url
+        return `Edit accepted (revision ${state.rev}${created}).\nShow on the board: ${show}\nLook at it now (board_look with ids: ${(result.changed ?? []).slice(0, 12).join(', ') || '—'}) and fix what looks wrong. Answer the person in one or two lines with this link, no lists.\n\n${ops.text(state)}`
       },
     },
     {
@@ -109,6 +127,7 @@ export function boardTools(ops) {
           thread: { type: 'string', description: 'Thread id to reply to or resolve' },
           reply: { type: 'string' },
           replyTo: { type: 'string' },
+          ids: { type: 'array', items: { type: 'string' }, description: 'With a reply: ids of the objects it is about (what you changed) — people get «Показать на доске»' },
           resolved: { type: 'boolean' },
         },
         required: ['board'],
@@ -116,7 +135,7 @@ export function boardTools(ops) {
       run: async (args, { who }) => {
         const state = await ops.board(args.board)
         if (args.thread) {
-          const thread = ops.changeThread(state, who, String(args.thread), { reply: str(args.reply), replyTo: str(args.replyTo), resolved: typeof args.resolved === 'boolean' ? args.resolved : undefined })
+          const thread = ops.changeThread(state, who, String(args.thread), { reply: str(args.reply), replyTo: str(args.replyTo), ids: Array.isArray(args.ids) ? args.ids.map(String) : undefined, resolved: typeof args.resolved === 'boolean' ? args.resolved : undefined })
           return `Thread ${thread.id}: ${thread.resolved ? 'resolved' : 'open'}, ${thread.messages.length} message(s).`
         }
         const thread = ops.comment(state, who, { text: args.text, elementId: str(args.elementId), x: args.x, y: args.y })

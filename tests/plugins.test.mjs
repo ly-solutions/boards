@@ -260,9 +260,12 @@ test('board properties from plugins: validated, stored, sent to the editor and s
   assert.match(page, /<html lang="ru">/)
 
   const home = await (await fetch(url('/b/'), { headers: { cookie: t.cookie() } })).text()
-  assert.match(home, /data-field="deadline">Дедлайн: <b>15 янв\. 2020 г\.<\/b>/)
-  assert.match(home, /class="field overdue" data-field="deadline"/, 'a date in the past is marked overdue')
-  assert.doesNotMatch(home, /data-field="level"/, 'only fields marked home are listed')
+  const fields = JSON.parse(/<script type="application\/json" id="boards-data">([\s\S]*?)<\/script>/.exec(home)[1]).rows.flatMap((r) => r.fields)
+  const deadline = fields.find((f) => f.id === 'deadline')
+  assert.equal(deadline.label, 'Дедлайн')
+  assert.match(deadline.value, /15 янв\. 2020 г\./)
+  assert.equal(deadline.late, true, 'a date in the past is marked late')
+  assert.ok(!fields.some((f) => f.id === 'level'), 'only fields marked home are listed')
 
   // Stored with the board: a fresh read from storage keeps them.
   await t.store.flushAll()

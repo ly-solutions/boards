@@ -31,7 +31,7 @@ import { classify as classifyUrl, singleUrl } from '../../shared/links.mjs'
 import { createPortal } from 'react-dom'
 import { bumpScene, setView } from './camera'
 import { PointerGlide, installMotion, motion, motionChosen, motionOn, setMotionChosen } from './motion'
-import { PulseLayer, pulse } from './motion-fx'
+import { PulseLayer } from './motion-fx'
 import { excalidrawLang, t } from './i18n'
 import { fitsSelection, loadWebPlugins, matchReference, pluginApi, toolbarButtons, usePluginRegistry, webActions, type EditorBridge, type PluginConfig, type SceneElement } from './plugins'
 import { fitScene, shouldFitOnLoad } from './fit'
@@ -40,6 +40,7 @@ import { CALL_EVENT, MENTION, callWords, onScreen, selectionOf, toView, visibleA
 import { Islands, type Person } from './islands/islands'
 import { SideChat, SideTabs } from './islands/side'
 import { GlowLayer, ReactionLayer, TerminalLayer, glow } from './islands/overlays'
+import { AgentBar, AgentCursor, AgentLive, useAgentWorking } from './agent-live'
 import { isTerminal } from './islands/scene'
 
 type Element = { id: string; version: number; versionNonce: number; isDeleted?: boolean; type: string; x?: number; y?: number; width?: number; height?: number; containerId?: string | null; customData?: Record<string, unknown>; fontSize?: number; fontFamily?: number; text?: string }
@@ -58,6 +59,8 @@ type Remote = {
   now?: number
   viewers?: Viewer[]
   edits?: Edit[]
+  /** The live channel's elements of an agent's edit carry who made it. */
+  agent?: string
   title?: string
   access?: 'team' | 'link'
   notes?: Notes
@@ -421,6 +424,9 @@ function Board() {
   const apiRef = useRef<Api | null>(null)
   /** The same API, but in state: studio panels must appear as soon as the editor is ready. */
   const [studioApi, setStudioApi] = useState<StudioApi | null>(null)
+  /** An agent's edits played out in front of everyone, with one undo per turn (agent-live.tsx). */
+  const agentLive = useRef(new AgentLive()).current
+  const agentWorking = useAgentWorking(agentLive)
   const sync = useRef({ rev: 0, epoch: '', sent: new Map<string, number>(), sentFiles: new Set<string>(), inFlight: false, previewDue: false, previewBusy: false, editedAt: 0 })
   const live = useRef({ canEdit, guest })
   live.current = { canEdit, guest }
@@ -531,6 +537,9 @@ function Board() {
   const setPresence = useCallback(
     (viewers: Viewer[]) => {
       const next = new Map<string, Peer>()
+      // An agent at work is a presence row of its own kind: it has no pointer, it gets «Агент рисует…» and its cursor.
+      agentLive.setAgents(viewers.filter((v) => v.kind === 'agent').map((v) => v.name ?? ''))
+      viewers = viewers.filter((v) => v.kind !== 'agent')
       for (const v of viewers) {
         // No name — someone viewing without signing in. A guest is "guest: Kate"
         // in edit captions, but on the cursor and avatar the name goes first:
@@ -551,22 +560,11 @@ function Board() {
       if (api && following && !next.has(following.socketId)) api.updateScene({ appState: { userToFollow: null }, captureUpdate: CaptureUpdateAction.NEVER })
       renderPeers()
     },
-    [renderPeers],
+    [renderPeers, agentLive],
   )
 
-  const showEdit = useCallback((edit: Edit, fresh: Element[]) => {
-    const api = apiRef.current
-    if (!api) return
-    api.setToast({ message: `${edit.by}: ${edit.note ?? t('editor.editedElements', { count: edit.count })}`, closable: true, duration: 6000 })
-    if (fresh.length) api.scrollToContent(fresh, { fitToContent: false, animate: true })
-    // Show where exactly something was added — a ring around new blocks; labels are ringed with their shape.
-    pulse(fresh.filter((el) => !el.containerId && el.type !== 'arrow' && el.type !== 'line').map((el) => ({ x: el.x ?? 0, y: el.y ?? 0, width: el.width ?? 0, height: el.height ?? 0 })))
-  }, [])
-  /** What an edit by someone else changed, outlined for a moment: the agent edits in front of everyone (HRN-1480). */
-  const glowChanged = useCallback((changed: Element[]) => {
-    if (!config.studio) return
-    glow(changed as never)
-  }, [])
+  /** An edit through the API (an agent) is played out by agentLive; the note goes to nobody's toast any more. */
+  const showEdit = useCallback((_edit: Edit, _fresh: Element[]) => {}, [])
 
   /** Remote edits — from the poll response, the hello reply and live channel broadcasts. */
   const applyRemote = useCallback(
@@ -594,12 +592,20 @@ function Board() {
         for (const f of data.files) s.sentFiles.add(f.id)
       }
       const incoming = data.elements ?? []
-      if (incoming.length) {
+      // An agent's batch (an API edit) is played out object by object; anything else first finishes that play.
+      const agentBy = data.agent ?? data.edits?.[data.edits.length - 1]?.by
+      let now = incoming
+      if (incoming.length && agentBy && ISLANDS) {
+        now = agentLive.incoming(api as never, agentBy, incoming as never, (shown) => {
+          for (const el of shown) s.sent.set(el.id, el.version)
+        }) as unknown as Element[]
+      } else if (incoming.length) agentLive.flush()
+      if (now.length) {
         const current = api.getSceneElementsIncludingDeleted()
-        const merged = reconcileElements(current as never, incoming as never, api.getAppState() as never) as unknown as Element[]
+        const merged = reconcileElements(current as never, now as never, api.getAppState() as never) as unknown as Element[]
         const byId = new Map(merged.map((el) => [el.id, el]))
         // No need to send back what came from the server.
-        for (const remote of incoming) {
+        for (const remote of now) {
           if (byId.get(remote.id)?.version === remote.version) s.sent.set(remote.id, remote.version)
         }
         api.updateScene({ elements: merged, captureUpdate: CaptureUpdateAction.NEVER })
@@ -607,10 +613,8 @@ function Board() {
         // A remote edit changes the list preview too: redraw it.
         if (live.current.canEdit) schedulePreview()
       }
-      for (const edit of data.edits ?? []) showEdit(edit, incoming.filter((el) => !el.isDeleted && el.version <= 2))
-      if (data.edits?.length) glowChanged(incoming.filter((el) => !el.isDeleted))
     },
-    [schedulePreview, setPresence, showEdit, glowChanged],
+    [schedulePreview, setPresence, agentLive],
   )
 
   const channel = useRef<LiveChannel | null>(null)
@@ -1112,6 +1116,24 @@ function Board() {
   const fitOnLoad = useCallback((api: Api) => {
     if (fitted.current) return
     fitted.current = true
+    // `?show=a,b`: a link from an agent's answer («Показать на доске», HRN-1480) opens the board on what it changed.
+    const show = (new URLSearchParams(location.search).get('show') ?? '').split(',').filter((id) => /^[\w-]{1,64}$/.test(id))
+    if (show.length) {
+      requestAnimationFrame(() => {
+        const want = new Set(show)
+        const els = (api.getSceneElements() as unknown as { id: string }[]).filter((el) => want.has(el.id))
+        if (!els.length) return
+        // Fit with a margin, never above 100 %: a single sticky should not fill the screen.
+        ;(api as unknown as StudioApi).scrollToContent(els as never, { fitToViewport: true, viewportZoomFactor: 0.8, animate: false } as never)
+        const z = (api.getAppState() as { zoom: { value: number } }).zoom.value
+        if (z > 1) {
+          api.updateScene({ appState: { zoom: { value: 1 } }, captureUpdate: CaptureUpdateAction.NEVER } as never)
+          ;(api as unknown as StudioApi).scrollToContent(els as never, { fitToContent: false } as never)
+        }
+        setTimeout(() => glow(els as never), 300)
+      })
+      return
+    }
     let framed = false
     try {
       framed = window.self !== window.top
@@ -1481,6 +1503,25 @@ function Board() {
   )
 
   /**
+   * The chat outside harnessly: the question becomes a comment thread calling the agent, pinned to the selection (or
+   * the middle of the view). The agent that drew the board gets its comments and answers in the thread (HRN-1480).
+   */
+  const askHere = useCallback(
+    (words: string, ids: string[]) => {
+      const api = apiRef.current
+      if (!api || !words) return
+      const want = new Set(ids)
+      const els = api.getSceneElements().filter((el) => want.has(el.id)) as unknown as Element[]
+      const st = api.getAppState() as unknown as { scrollX: number; scrollY: number; width: number; height: number; zoom: { value: number } }
+      let at = { x: -st.scrollX + st.width / 2 / st.zoom.value, y: -st.scrollY + st.height / 2 / st.zoom.value }
+      if (els.length) at = { x: Math.max(...els.map((el) => (el.x ?? 0) + (el.width ?? 0))), y: Math.min(...els.map((el) => el.y ?? 0)) }
+      agentLive.asked()
+      void createComment({ x: at.x, y: at.y, elementId: els[0]?.id ?? null, text: `@harnessly ${words}` })
+    },
+    [createComment, agentLive],
+  )
+
+  /**
    * «Спросить»: the selection goes to harnessly's chat. Without words it opens the chat tab with the selection as a
    * chip; with words (the chat tab, «Отдать агенту») they go to the agent at once, the selection as their context.
    */
@@ -1495,6 +1536,7 @@ function Board() {
       const appState = api.getAppState() as never
       const picked = Object.fromEntries(ids.map((id) => [id, true]))
       const sel = selectionOf(api.getSceneElements() as never, picked)
+      agentLive.asked()
       toView({ type: 'board-ask', text: words, selection: sel.text, count: sel.count, ids, rect: sel.box ? onScreen(sel.box, appState) : null, area: visibleArea(appState) } as never)
     },
     [setSide],
@@ -1745,6 +1787,7 @@ function Board() {
           textUrl={`${base}.md${q}`}
           fileUrl={`${base}/scene.excalidraw${q}&download=1`}
           crowd={crowd}
+          agentWorking={agentWorking}
           status={{ kind: shownStatus, text: statusText }}
           onShare={config.app ? null : openShare}
           openComments={openComments}
@@ -1788,13 +1831,16 @@ function Board() {
       {studioApi && ISLANDS && <ReactionLayer api={studioApi} me={me} votes={notes.reactions} canReact={canEdit} onReact={react} />}
       {studioApi && ISLANDS && <TerminalLayer api={studioApi} text={terminal.text} live={terminal.live} />}
       {studioApi && ISLANDS && <GlowLayer />}
+      {studioApi && ISLANDS && <AgentCursor live={agentLive} />}
+      {studioApi && ISLANDS && <AgentBar live={agentLive} canEdit={canEdit} />}
       {studioApi && ISLANDS && chatOpen && config.app && <SideChat api={studioApi as never} setSide={setSide} onAsk={ask} />}
+      {studioApi && ISLANDS && chatOpen && !config.app && <SideChat api={studioApi as never} setSide={setSide} onAsk={askHere} threads={notes.comments} me={me} canAsk={canEdit} />}
 
       {studioApi && config.motion && <PulseLayer />}
       {studioApi && <StickyOverlay api={studioApi} me={me} reactions={REACTIONS} votes={notes.reactions} canReact={canEdit} onReact={react} />}
       {studioApi && (
         <Comments
-          tabs={ISLANDS && config.app ? <SideTabs side={side} setSide={setSide} app /> : undefined}
+          tabs={ISLANDS ? <SideTabs side={side} setSide={setSide} /> : undefined}
           api={studioApi}
           slug={config.slug}
           threads={notes.comments}

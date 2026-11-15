@@ -163,4 +163,12 @@ export default {
   chatHint: 'Ответ — в чате harnessly',
   chatSent: 'Отправлено в чат harnessly',
   send: 'Отправить',
+  agentCursor: 'Агент',
+  agentWorking: 'Агент рисует',
+  agentChanged: { one: 'Агент изменил {count} объект', few: 'Агент изменил {count} объекта', many: 'Агент изменил {count} объектов', other: 'Агент изменил {count} объекта' },
+  agentShow: 'Показать',
+  agentUndo: 'Отменить',
+  agentUndone: 'Правки агента отменены',
+  chatHintHere: 'Агент ответит здесь и поправит доску',
+  chatSignIn: 'Войдите, чтобы попросить агента',
 }

@@ -26,6 +26,20 @@ The text lists frames, shapes with labels and ids in `[brackets]`, connections (
 free text, stickies with votes, open comment threads, and ends with a **Slop check** score. Opening the plain
 board link with a web fetch also returns this text first. Never guess from a screenshot when you have the link.
 
+## Look at it (before and after every edit)
+
+The text tells you what is on the board, not how it looks. Look at the picture too:
+
+```sh
+scripts/boards look '<board link>'            # prints a PNG path — open it and look
+scripts/boards look '<board link>' a,b        # just shapes [a] and [b] with what is around them
+```
+
+Look before you edit (where is free space, what style the board uses) and after (overlaps, text that does not fit,
+arrows that cross, a column that ran off). Fix what you see before you answer. While you work, people who have the
+board open see «Агент рисует…»; your shapes appear one by one and they can undo your whole turn in one click.
+`scripts/boards done '<link>'` clears the badge at once when you finish.
+
 ## Create a board
 
 ```sh
@@ -63,9 +77,12 @@ echo '{ "graph": { "nodes": [ { "id": "queue", "label": "Queue" } ], "edges": [ 
 Threads are listed in the board text with their ids. Answer where you were asked:
 
 ```sh
-scripts/boards reply '<board link>' <thread-id> 'Done — moved the queue behind the gateway.'
+scripts/boards reply '<board link>' <thread-id> 'Moved the queue behind the gateway.' queue,api   # ids → «Показать на доске»
 scripts/boards comment '<board link>' 'Is this call synchronous?' api    # pin a question to shape [api]
 ```
+
+**Answer short.** One or two sentences about what changed, then the link (or pass the changed ids to `reply`, so the
+person gets «Показать на доске»). No lists of shapes, no coordinates, no recap of the board: they see it.
 
 ## Make it look good (the Slop check)
 
