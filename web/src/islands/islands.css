@@ -485,3 +485,5 @@ html.isl-side-open .isl-tr [data-tip]:last-child:hover::after { transform: trans
 .agent-bar .agent-bar__btn:hover { background: var(--isl-accent-soft); }
 .agent-bar .agent-bar__x:hover { background: var(--isl-hover); }
 .isl-chat__show { border: 0; cursor: pointer; font-family: inherit; }
+/* The way in for a guest of a team board, in the view bar (HRN-1480). */
+a.isl-viewbar__in { color: var(--isl-fg); text-decoration: none; font-size: 13px; }

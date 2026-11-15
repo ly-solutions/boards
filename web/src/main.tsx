@@ -31,7 +31,7 @@ import { classify as classifyUrl, singleUrl } from '../../shared/links.mjs'
 import { createPortal } from 'react-dom'
 import { bumpScene, setView } from './camera'
 import { PointerGlide, installMotion, motion, motionChosen, motionOn, setMotionChosen } from './motion'
-import { PulseLayer } from './motion-fx'
+import { PulseLayer, pulse } from './motion-fx'
 import { excalidrawLang, t } from './i18n'
 import { fitsSelection, loadWebPlugins, matchReference, pluginApi, toolbarButtons, usePluginRegistry, webActions, type EditorBridge, type PluginConfig, type SceneElement } from './plugins'
 import { fitScene, shouldFitOnLoad } from './fit'
@@ -1144,7 +1144,8 @@ function Board() {
     requestAnimationFrame(() => {
       const state = api.getAppState() as { width?: number; height?: number }
       const viewport = { width: state.width || window.innerWidth, height: state.height || window.innerHeight }
-      const fit = fitScene(api.getSceneElements() as never, viewport, { maxZoom: 1 })
+      // The islands cover the top (title, people) and the bottom (tools, zoom): fit between them (HRN-1480).
+      const fit = fitScene(api.getSceneElements() as never, viewport, { maxZoom: 1, insets: ISLANDS ? { top: 64, bottom: 72, left: 8, right: 8 } : undefined })
       api.updateScene({ appState: { zoom: { value: fit.zoom }, scrollX: fit.scrollX, scrollY: fit.scrollY }, captureUpdate: CaptureUpdateAction.NEVER })
       if (config.studio) setView(api.getAppState())
     })
@@ -1907,7 +1908,7 @@ function Board() {
       {studioApi && config.at && <CheckpointView api={studioApi} base={base} q={q} guest={guest} at={config.at} canCopy={Boolean(config.canCopy)} boardUrl={config.boardUrl ?? `${base}${q}`} />}
       {properties && <PropertiesDialog meta={{ ...meta, title }} canEdit={Boolean(config.user)} onSave={saveProperties} onClose={() => setProperties(false)} fields={config.plugins?.fields ?? []} />}
 
-      {!canEdit && config.authEnabled && (
+      {!canEdit && config.authEnabled && !ISLANDS && (
         <div className="board-banner" role="status">
           <span>{t('editor.viewOnlyBanner')}</span>
           <a className="board-button" href={loginUrl()}>

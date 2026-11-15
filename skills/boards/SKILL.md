@@ -81,6 +81,10 @@ scripts/boards reply '<board link>' <thread-id> 'Moved the queue behind the gate
 scripts/boards comment '<board link>' 'Is this call synchronous?' api    # pin a question to shape [api]
 ```
 
+**"Make it dark" means the board's theme, not the objects' colours.** The editor has a dark theme that keeps colour
+fills and turns black lines and white stickies dark by itself. Do not repaint fills darker — on the light canvas that
+gives muddy stickies. Tell the person where to switch the theme; repaint only when they ask for specific colours.
+
 **Answer short.** One or two sentences about what changed, then the link (or pass the changed ids to `reply`, so the
 person gets «Показать на доске»). No lists of shapes, no coordinates, no recap of the board: they see it.
 
