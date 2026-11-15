@@ -276,11 +276,12 @@ export function createAuth(auth = { mode: 'none', tokens: [] }, { publicUrl = 'h
    * there) mints a short-lived, single-purpose link that signs that user in here and lands on a board.
    */
   const usedHandoffs = new Map()
-  function issueHandoff({ user: who, next, ttlS = auth.handoffTtlS ?? 120 }) {
+  function issueHandoff({ user: who, next, ttlS = auth.handoffTtlS ?? 120, via = 'handoff' }) {
     const name = String(who?.name ?? '').trim().slice(0, 80)
     if (!name) throw new Error('user.name is required')
     const id = b64url(randomBytes(12))
-    return sign({ t: 'handoff', id, sub: String(who.id ?? who.email ?? name), name, email: who.email ?? null, next: safeNext(next), exp: Math.floor(now() / 1000) + Math.min(Math.max(ttlS, 10), 3600) }, sessionSecret)
+    // `via: 'harnessly'` only from board_signin, where `sub` is the person's id in the harnessly hub (people.mjs).
+    return sign({ t: 'handoff', id, sub: String(who.id ?? who.email ?? name), name, email: who.email ?? null, via: via === 'harnessly' ? 'harnessly' : 'handoff', next: safeNext(next), exp: Math.floor(now() / 1000) + Math.min(Math.max(ttlS, 10), 3600) }, sessionSecret)
   }
 
   function handoff(req, res, url) {
@@ -289,7 +290,7 @@ export function createAuth(auth = { mode: 'none', tokens: [] }, { publicUrl = 'h
     if (usedHandoffs.has(payload.id)) return plain(res, 400, 'This sign-in link was already used.')
     usedHandoffs.set(payload.id, payload.exp)
     for (const [id, exp] of usedHandoffs) if (exp * 1000 < now()) usedHandoffs.delete(id)
-    redirect(res, payload.next, [sessionCookie({ sub: payload.sub, name: payload.name, email: payload.email, via: 'handoff' })])
+    redirect(res, payload.next, [sessionCookie({ sub: payload.sub, name: payload.name, email: payload.email, via: payload.via === 'harnessly' ? 'harnessly' : 'handoff' })])
   }
 
   return {

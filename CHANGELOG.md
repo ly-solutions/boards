@@ -9,6 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- A mention reaches the person (HRN-1469): the board keeps a stable id for each person who was on it signed in
+  (`hub:<id>` from the harnessly app view, else HMAC-SHA256 of the e-mail keyed with the webhook secret), in storage only;
+  the webhook's `message.mentions` is `[{ name, id }]` (`{ name, agent: true }` for `@harnessly`) and `message.authorId`
+  names the writer. Editors get the people by name (`notes.people`), so `@` offers everyone who was here, not only who
+  is here now; `@Bobby` no longer calls `Bob`. `?thread=` (or a `board-thread` message from the app view) opens a
+  thread's card; the app view follows a new board or thread harnessly asks for without starting again.
+
 - Guest view of the read-only embed (`/b/<slug>?embed=1&guest=1`, API token only): the page carries no board key —
   no link back, and the cards that lead to other boards lose their keys. A platform fetches it and serves it under its
   own guest link, which has a term and can be revoked, while the board's own key stays a secret (HRN-1337).

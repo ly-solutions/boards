@@ -166,9 +166,26 @@
     return slug && /^[a-z0-9-]+$/.test(slug) ? slug : null
   }
 
-  function go(slug) {
-    if (current() === slug) return
-    history.pushState(null, '', slug ? '?board=' + encodeURIComponent(slug) : location.pathname)
+  /** A thread to open on the board (`&thread=`: a mention in harnessly's bell, HRN-1469). */
+  function wantedThread() {
+    var id = new URLSearchParams(location.search).get('thread')
+    return id && /^[a-f0-9]{6,32}$/.test(id) ? id : null
+  }
+
+  function address(slug, thread) {
+    return slug ? '?board=' + encodeURIComponent(slug) + (thread ? '&thread=' + encodeURIComponent(thread) : '') : location.pathname
+  }
+
+  function go(slug, thread) {
+    if (current() === slug) {
+      // The same board: the canvas stays, only the thread opens.
+      if (thread && canvas && canvas.contentWindow) {
+        history.replaceState(null, '', address(slug, thread))
+        canvas.contentWindow.postMessage({ type: 'board-thread', id: thread }, location.origin)
+      }
+      return
+    }
+    history.pushState(null, '', address(slug, thread))
     route()
   }
 
@@ -266,6 +283,8 @@
     var at = new URL(row.url)
     at.searchParams.set('app', '1')
     at.searchParams.set('theme', theme.mode)
+    var thread = wantedThread()
+    if (thread) at.searchParams.set('thread', thread)
     var frame = el('iframe', 'ba__canvas')
     frame.title = row.title
     frame.src = at.pathname + at.search
@@ -430,10 +449,10 @@
   // was just made) goes straight back to its board, not through the list (HRN-1452). Never longer than FIRST_WAIT_MS.
   var FIRST_WAIT_MS = 800
   var started = false
-  function start(object) {
+  function start(object, thread) {
     if (started) return
     started = true
-    if (object && !current()) history.replaceState(null, '', '?board=' + encodeURIComponent(object))
+    if (object && !current()) history.replaceState(null, '', address(object, thread))
     route()
   }
   if (current() || !window.harnessly) start(null)
@@ -450,10 +469,25 @@
       hl.on('theme', function (next) {
         follow(next && next.mode ? next.mode : hl.context.theme.mode)
       })
-      var data = hl.context.data
-      var object = data && typeof data.object === 'string' && /^[a-z0-9-]+$/.test(data.object) ? data.object : null
-      if (!started) start(object)
-      else if (object && !current()) go(object)
+      // What harnessly asks to open: a board, and a thread on it. The view stays the same document when harnessly asks
+      // for another board later (its spaces keep one window, HRN-1469): the `context` event carries the new ask.
+      // Only a new ask moves the view: the same context again (the theme changed) leaves the board the person opened.
+      var asked = null
+      function ask(data) {
+        var object = data && typeof data.object === 'string' && /^[a-z0-9-]+$/.test(data.object) ? data.object : null
+        var thread = data && typeof data.thread === 'string' && /^[a-f0-9]{6,32}$/.test(data.thread) ? data.thread : null
+        var key = (object || '') + '#' + (thread || '')
+        if (key === asked) return
+        var first = asked === null
+        asked = key
+        if (!started) return start(object, thread)
+        if (object) go(object, thread)
+        else if (!first && current()) go(null)
+      }
+      ask(hl.context.data)
+      hl.on('context', function (next) {
+        ask(next && next.data)
+      })
     })
     .catch(function () {
       // Opened outside harnessly, or harnessly did not answer: the site works by itself.

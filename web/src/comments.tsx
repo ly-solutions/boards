@@ -78,6 +78,8 @@ type CommentsProps = {
   people?: readonly string[]
   /** The agent can be called here (the harnessly app view): `@harnessly` is offered first. */
   agent?: boolean
+  /** A thread to open (HRN-1469): from the address (`?thread=`) or the app view; `n` opens it again when asked again. */
+  focus?: { id: string; n: number } | null
 }
 
 /** Who `@` offers, for the inputs and the chips of the sent messages. */
@@ -864,7 +866,7 @@ function Panel({ threads, openId, seen, me, canComment, hidden, setHidden, onPic
 
 // ── Root ────────────────────────────────────────────────────────────────────
 
-export function Comments({ api, slug, threads, me, canComment, isTeam, draft, setDraft, onStartComment, hidden, setHidden, panelOpen, setPanelOpen, onCreate, onUpdate, people = [], agent = false }: CommentsProps) {
+export function Comments({ api, slug, threads, me, canComment, isTeam, draft, setDraft, onStartComment, hidden, setHidden, panelOpen, setPanelOpen, onCreate, onUpdate, people = [], agent = false, focus = null }: CommentsProps) {
   const phone = usePhone()
   // The people of the board: who wrote in its threads and who is here now; the agent first where it answers.
   const mentionable = useMemo(
@@ -957,6 +959,16 @@ export function Comments({ api, slug, threads, me, canComment, isTeam, draft, se
   )
 
   const closeCard = useCallback(() => setOpenId(null), [])
+
+  // A thread asked for from outside (a mention in the bell, HRN-1469) opens once it is on the board.
+  const focused = useRef<number | null>(null)
+  useEffect(() => {
+    if (!focus || !api || focused.current === focus.n) return
+    const th = threads.find((t) => t.id === focus.id)
+    if (!th) return
+    focused.current = focus.n
+    pick(th)
+  }, [focus, api, threads, pick])
 
   const card = open ? <ThreadBody key={open.id} api={api} thread={open} me={me} isTeam={isTeam} canComment={canComment} memory={memory} onUpdate={onUpdate} onClose={closeCard} /> : null
 

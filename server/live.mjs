@@ -225,6 +225,8 @@ export function createLive({ store, resolveBoard, editorFor, allowedOrigin, log 
     // team-only board is still a colleague, not an anonymous viewer.
     const name = who?.name ?? null
     store.join(state, id, { name, kind: who?.kind ?? 'viewer', live: true })
+    // A signed-in person on the board can be mentioned from now on (people.mjs).
+    if (who?.id && name) store.notePerson(state, who.id, name)
     send(peer, { t: 'welcome', id, epoch: store.epoch, canEdit: Boolean(who) })
 
     ws.on('pong', () => {
