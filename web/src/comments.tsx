@@ -59,6 +59,8 @@ export { pinColor } from './comments-model'
 export type Change = { reply?: string; replyTo?: string; resolved?: boolean; remove?: boolean; removeMessage?: string; x?: number; y?: number; elementId?: string | null }
 
 type CommentsProps = {
+  /** Tabs of the right island (comments · chat) in place of the panel title, and the chat itself when its tab is on. */
+  tabs?: ReactNode
   api: StudioApi
   slug: string
   threads: Thread[]
@@ -756,6 +758,7 @@ function Composer({ api, draft, memory, onSend, onCancel }: { api: StudioApi; dr
 // ── Panel ───────────────────────────────────────────────────────────────────
 
 type PanelProps = {
+  tabs?: ReactNode
   threads: Thread[]
   openId: string | null
   seen: Seen
@@ -815,16 +818,31 @@ function Row({ thread, active, unseen, now, canComment, onPick, onUpdate }: { th
   )
 }
 
-function Panel({ threads, openId, seen, me, canComment, hidden, setHidden, onPick, onUpdate, onStartComment, onClose }: PanelProps) {
+type Filter = 'open' | 'resolved' | 'mine'
+
+/** Threads where I wrote or where I am called by name. */
+function mine(thread: Thread, me: string | null) {
+  if (!me) return false
+  const name = displayName(me).toLowerCase()
+  return thread.messages.some((m) => m.author === me || m.text.toLowerCase().includes(`@${name}`))
+}
+
+function Panel({ tabs, threads, openId, seen, me, canComment, hidden, setHidden, onPick, onUpdate, onStartComment, onClose }: PanelProps) {
   const now = useNow()
-  const [showResolved, setShowResolved] = useState(false)
+  const [filter, setFilter] = useState<Filter>('open')
   const { open, resolved } = useMemo(() => sortThreads(threads), [threads])
+  const shown = filter === 'open' ? open : filter === 'resolved' ? resolved : [...open, ...resolved].filter((th) => mine(th, me))
   const row = (t: Thread) => <Row key={t.id} thread={t} active={t.id === openId} unseen={isUnseen(t, seen, me)} now={now} canComment={canComment} onPick={onPick} onUpdate={onUpdate} />
+  const filters: { id: Filter; label: string }[] = [
+    { id: 'open', label: t('comments.filterOpen') },
+    { id: 'resolved', label: t('comments.filterResolved') },
+    ...(me ? [{ id: 'mine' as const, label: t('comments.filterMine') }] : []),
+  ]
   return (
-    <aside className="note-panel" aria-label={t('comments.title')}>
+    <aside className={`note-panel${tabs ? ' note-panel--island' : ''}`} aria-label={t('comments.title')}>
       <div className="note-panel__head">
-        <strong>{t('comments.title')}</strong>
-        {open.length > 0 && <span className="note-panel__count">{open.length}</span>}
+        {tabs ?? <strong>{t('comments.title')}</strong>}
+        {!tabs && open.length > 0 && <span className="note-panel__count">{open.length}</span>}
         <span className="note-panel__tools">
           {canComment && (
             <button type="button" className="icon-button" onClick={onStartComment} aria-label={t('comments.newComment')} title={t('comments.newCommentHint')}>
@@ -839,26 +857,29 @@ function Panel({ threads, openId, seen, me, canComment, hidden, setHidden, onPic
           </button>
         </span>
       </div>
+      <div className="note-filter" role="tablist">
+        {filters.map((f) => (
+          <button key={f.id} type="button" role="tab" aria-selected={filter === f.id} className={filter === f.id ? 'is-on' : ''} onClick={() => setFilter(f.id)}>
+            {f.label}
+            {f.id === 'open' && open.length > 0 && <span className="note-filter__n">{open.length}</span>}
+          </button>
+        ))}
+      </div>
       <div className="note-panel__list">
-        {open.map(row)}
-        {!open.length && (
+        {shown.map(row)}
+        {!shown.length && (
           <div className="note-empty">
-            {resolved.length ? <p>{t('comments.noOpen')}</p> : <p>{t('comments.none')}</p>}
-            {canComment && <p>{t('comments.emptyHint')}</p>}
-            {canComment && (
+            {filter === 'open' && (resolved.length ? <p>{t('comments.noOpen')}</p> : <p>{t('comments.none')}</p>)}
+            {filter === 'resolved' && <p>{t('comments.noResolved')}</p>}
+            {filter === 'mine' && <p>{t('comments.noMine')}</p>}
+            {filter === 'open' && canComment && <p>{t('comments.emptyHint')}</p>}
+            {filter === 'open' && canComment && (
               <button type="button" className="board-button board-button--ghost" onClick={onStartComment}>
                 {t('comments.addComment')}
               </button>
             )}
           </div>
         )}
-        {resolved.length > 0 && (
-          <button type="button" className={`note-toggle${showResolved ? ' is-open' : ''}`} onClick={() => setShowResolved(!showResolved)} aria-expanded={showResolved}>
-            <Glyph d={ICON.chevron} size={14} />
-            {t('comments.resolvedCount', { count: resolved.length })}
-          </button>
-        )}
-        {showResolved && resolved.map(row)}
       </div>
     </aside>
   )
@@ -866,7 +887,7 @@ function Panel({ threads, openId, seen, me, canComment, hidden, setHidden, onPic
 
 // ── Root ────────────────────────────────────────────────────────────────────
 
-export function Comments({ api, slug, threads, me, canComment, isTeam, draft, setDraft, onStartComment, hidden, setHidden, panelOpen, setPanelOpen, onCreate, onUpdate, people = [], agent = false, focus = null }: CommentsProps) {
+export function Comments({ tabs, api, slug, threads, me, canComment, isTeam, draft, setDraft, onStartComment, hidden, setHidden, panelOpen, setPanelOpen, onCreate, onUpdate, people = [], agent = false, focus = null }: CommentsProps) {
   const phone = usePhone()
   // The people of the board: who wrote in its threads and who is here now; the agent first where it answers.
   const mentionable = useMemo(
@@ -993,6 +1014,7 @@ export function Comments({ api, slug, threads, me, canComment, isTeam, draft, se
       {showDraft && <Composer key={`${draft!.x}:${draft!.y}`} api={api} draft={draft!} memory={memory} onSend={create} onCancel={() => setDraft(null)} />}
       {panelOpen && (
         <Panel
+          tabs={tabs}
           threads={threads}
           openId={openId}
           seen={seen}

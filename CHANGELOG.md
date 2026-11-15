@@ -7,6 +7,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Boards 2.0 (HRN-1480): the editor's own islands replace Excalidraw's menus — a bottom toolbar with tooltips (name and
+  key) and popovers (sticky colours, shapes, arrows, pen, text, frame, comment, reactions, «+» for a site, an image
+  and, in harnessly, the machine's terminal); a context bar over the selection per kind (sticky, shape, arrow, text,
+  site, terminal, several objects) with font, size, bold/italic/underline/strike, alignment, colours with hex, line
+  height and a «⋯» for opacity, lock, layers, duplicate, style copy and links; the title, the menu and view mode top
+  left; people, share and comments top right; zoom bottom right. Excalidraw's own UI stays hidden and is driven
+  through its API.
+- Sticky text shrinks while it is typed (28 → 10px) and the sticky grows once even 10px does not fit; a text's box
+  follows its words.
+- Reactions can go on any object (not only stickies): a row of counters under the object, a click takes one's own back.
+- Comments: the panel has filters (open, resolved, mine) and, in the harnessly view, sits under «Комментарии · Чат»
+  tabs; the chat tab and «Спросить» ask the harnessly chat about the selection (`chat.prompt`).
+- Objects the agent has just changed are outlined for a moment.
+- harnessly app package 0.6.0: the view hides its own bar under the editor's islands, «Спросить» publishes the
+  selection as the chat's context and sends the person's words to the chat, a site (http/https only) opens in the right
+  pane (`pane.open`), and a terminal card shows the last lines of the chat's terminal (new permission `terminal.read`).
+
 ### Added
 
 - A mention reaches the person (HRN-1469): the board keeps a stable id for each person who was on it signed in

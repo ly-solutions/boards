@@ -2,7 +2,7 @@
   "id": "harnessly.boards",
   "name": "Доски",
   "description": "Доски Excalidraw: агент читает доску как текст, рисует схему графом, дорисовывает и отвечает в комментариях",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "harnessly": ">=0.16.320",
   "trust": "sandboxed",
   "targets": [
@@ -19,7 +19,8 @@
   "permissions": [
     "chat.prompt",
     "pane.open",
-    "context.publish"
+    "context.publish",
+    "terminal.read"
   ],
   "agent": {
     "instructions": "instructions.md",

@@ -14,6 +14,7 @@
       search: 'Search boards', nothing: 'Nothing found.', empty: 'No boards yet — ask the agent in the conversation to draw the first one.',
       back: 'All boards', newTab: 'Open in a new tab', gone: 'There is no such board, or it is not yours to open.',
       signIn: 'Sign in to see the boards', signInGo: 'Sign in', retry: 'Try again',
+      askBoard: 'Board',
     },
     ru: {
       all: 'Все', mine: 'Мои', shared: 'Общие', mineMark: 'моя', recent: 'Недавние',
@@ -21,6 +22,7 @@
       search: 'Поиск по доскам', nothing: 'Ничего не нашлось.', empty: 'Досок пока нет — попросите агента в чате нарисовать первую.',
       back: 'Все доски', newTab: 'Открыть в новой вкладке', gone: 'Такой доски нет, или она вам недоступна.',
       signIn: 'Войдите, чтобы увидеть доски', signInGo: 'Войти', retry: 'Повторить',
+      askBoard: 'Доска',
     },
   }
   var LANG = document.documentElement.lang === 'ru' ? 'ru' : 'en'
@@ -219,6 +221,35 @@
     var area = typeof m.area === 'string' ? m.area : ''
     if (m.type === 'board-selection') {
       tell({ kind: 'board', title: opened.title, url: opened.url, object: opened.slug, selection: String(m.text || ''), rect: onPage(m.rect), area: area })
+    } else if (m.type === 'board-chrome') {
+      // Boards 2.0 (HRN-1480): the editor draws its own way back and title in its islands — the bar goes.
+      root.classList.toggle('ba--islands', Boolean(m.islands))
+      if (m.terminal) watchTerminal(true)
+    } else if (m.type === 'board-back') {
+      go(null)
+    } else if (m.type === 'board-ask') {
+      // «Спросить»: the selection goes to the chat as context (what the agent sees, HRN-1391); the chat gets only the
+      // person's own words and the board's address — what is written on the board is not passed off as their message.
+      var words = String(m.text || '').slice(0, 2000)
+      var picked = String(m.selection || '').slice(0, 600)
+      tell({ kind: 'board', title: opened.title, url: opened.url, object: opened.slug, selection: picked, rect: onPage(m.rect), area: area })
+      if (words.trim())
+        connect()
+          .then(function (hl) {
+            return hl.chat.send(words + '\n\n' + T.askBoard + ': ' + opened.url)
+          })
+          .catch(function () {})
+    } else if (m.type === 'board-pane') {
+      // Only a web page goes to the pane: a site card's address is whatever was typed on the board.
+      var target = String(m.target || '')
+      if (/^https?:\/\/[^\s]+$/i.test(target))
+        connect()
+          .then(function (hl) {
+            return hl.pane.open(target)
+          })
+          .catch(function () {})
+    } else if (m.type === 'board-terminal') {
+      watchTerminal(Boolean(m.on))
     } else if (m.type === 'board-call') {
       // A call in a comment carries its thread: harnessly sends it to the agent at once, the answer comes back there.
       var thread = typeof m.thread === 'string' ? m.thread : null
@@ -226,9 +257,37 @@
     }
   })
 
+  // ---- The machine's terminal on the board: its last lines every few seconds while a card is there ----
+
+  var termTimer = 0
+  function watchTerminal(on) {
+    clearInterval(termTimer)
+    termTimer = 0
+    if (!on) return
+    function pull() {
+      if (!canvas || !canvas.contentWindow) return
+      connect()
+        .then(function (hl) {
+          return hl.terminal.read({ lines: 18 })
+        })
+        .then(function (list) {
+          var first = (list || []).filter(function (x) {
+            return x && x.id !== 'agent'
+          })[0] || (list || [])[0]
+          canvas.contentWindow.postMessage({ type: 'terminal-text', text: first ? String(first.text || '') : '', live: Boolean(first) }, location.origin)
+        })
+        .catch(function () {
+          if (canvas && canvas.contentWindow) canvas.contentWindow.postMessage({ type: 'terminal-text', text: null, live: false }, location.origin)
+        })
+    }
+    pull()
+    termTimer = setInterval(pull, 3000)
+  }
+
   function route(again) {
     var slug = current()
     if (!slug) {
+      watchTerminal(false)
       canvas = null
       // The list has nothing open: harnessly drops the chip of a board shown before, even one of a frame before this
       // one (it starts anew when the chat is made, HRN-1452), so the agent never gets a board nobody looks at.

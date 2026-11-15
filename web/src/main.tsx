@@ -37,6 +37,10 @@ import { fitsSelection, loadWebPlugins, matchReference, pluginApi, toolbarButton
 import { fitScene, shouldFitOnLoad } from './fit'
 import { followPanHint } from './pan-hint'
 import { CALL_EVENT, MENTION, callWords, onScreen, selectionOf, toView, visibleArea, type CallDetail } from './app-call'
+import { Islands, type Person } from './islands/islands'
+import { SideChat, SideTabs } from './islands/side'
+import { GlowLayer, ReactionLayer, TerminalLayer, glow } from './islands/overlays'
+import { isTerminal } from './islands/scene'
 
 type Element = { id: string; version: number; versionNonce: number; isDeleted?: boolean; type: string; x?: number; y?: number; width?: number; height?: number; containerId?: string | null; customData?: Record<string, unknown>; fontSize?: number; fontFamily?: number; text?: string }
 type FileData = { id: string; mimeType: string; dataURL: string; created: number }
@@ -257,6 +261,8 @@ const STATUS_TEXT: Record<Status, string> = {
   live: t('editor.statusLive'),
 }
 /** Constant editor props — one reference, otherwise Excalidraw's memo does not kick in. */
+/** Boards 2.0: islands over the canvas instead of the editor's panels (HRN-1480) — wherever the studio is on. */
+const ISLANDS = Boolean(config.studio)
 const UI_OPTIONS = { canvasActions: { loadScene: false, saveToActiveFile: false, export: { saveFileToDisk: true } } }
 const REACTIONS = config.reactions ?? ['👍', '👎', '❤️']
 /** Icon of a plugin toolbar button that brings none: a puzzle piece. */
@@ -402,6 +408,10 @@ function Board() {
     if (p === 'checkpoints') setCommentsPanelRaw(false)
   }, [])
   const [properties, setProperties] = useState(false)
+  /** The chat tab of the right island (harnessly app only); the comments tab is commentsPanel. */
+  const [chatOpen, setChatOpen] = useState(false)
+  /** The machine's terminal as harnessly reads it, for the terminal card (app only). */
+  const [terminal, setTerminal] = useState<{ text: string | null; live: boolean }>({ text: null, live: false })
   const [stickyColor, setStickyColor] = useState(STICKY_COLORS[0].fill)
   const [meta, setMeta] = useState<BoardMeta>({ title: config.title, description: config.description ?? '', tags: config.tags ?? [], task: config.task ?? null, fields: config.fields ?? {} })
   /** The studio tool lives in state: toolbar buttons highlight from it. */
@@ -516,6 +526,8 @@ function Board() {
   )
 
   const [here, setHere] = useState<string[]>([])
+  /** Who is on the board, for the avatars of the right island. */
+  const [crowd, setCrowd] = useState<Person[]>([])
   const setPresence = useCallback(
     (viewers: Viewer[]) => {
       const next = new Map<string, Peer>()
@@ -531,6 +543,8 @@ function Board() {
       // Who is here can be mentioned in a comment (HRN-1452): signed-in names only, a guest cannot be told.
       const names = viewers.flatMap((v) => (v.name && !v.name.startsWith('guest: ') ? [v.name] : []))
       setHere((was) => (was.join('\u0000') === names.join('\u0000') ? was : names))
+      const people: Person[] = [...next].filter(([id]) => id !== selfId.current).map(([id, peer]) => ({ id, name: String(peer.username ?? ''), color: String(peer.color?.background ?? '#6965db'), idle: peer.userState !== 'active' }))
+      setCrowd((was) => (JSON.stringify(was) === JSON.stringify(people) ? was : people))
       // The person we followed left — nobody to follow any more.
       const api = apiRef.current
       const following = api?.getAppState().userToFollow as { socketId: string } | null | undefined
@@ -547,6 +561,11 @@ function Board() {
     if (fresh.length) api.scrollToContent(fresh, { fitToContent: false, animate: true })
     // Show where exactly something was added — a ring around new blocks; labels are ringed with their shape.
     pulse(fresh.filter((el) => !el.containerId && el.type !== 'arrow' && el.type !== 'line').map((el) => ({ x: el.x ?? 0, y: el.y ?? 0, width: el.width ?? 0, height: el.height ?? 0 })))
+  }, [])
+  /** What an edit by someone else changed, outlined for a moment: the agent edits in front of everyone (HRN-1480). */
+  const glowChanged = useCallback((changed: Element[]) => {
+    if (!config.studio) return
+    glow(changed as never)
   }, [])
 
   /** Remote edits — from the poll response, the hello reply and live channel broadcasts. */
@@ -589,8 +608,9 @@ function Board() {
         if (live.current.canEdit) schedulePreview()
       }
       for (const edit of data.edits ?? []) showEdit(edit, incoming.filter((el) => !el.isDeleted && el.version <= 2))
+      if (data.edits?.length) glowChanged(incoming.filter((el) => !el.isDeleted))
     },
-    [schedulePreview, setPresence, showEdit],
+    [schedulePreview, setPresence, showEdit, glowChanged],
   )
 
   const channel = useRef<LiveChannel | null>(null)
@@ -1122,15 +1142,21 @@ function Board() {
       if (config.app) {
         window.addEventListener('message', (event) => {
           if (event.origin !== location.origin || event.source !== window.parent) return
-          const data = event.data as { type?: string; theme?: string; id?: string } | null
+          const data = event.data as { type?: string; theme?: string; id?: string; text?: string; live?: boolean } | null
           if (data?.type === 'board-thread' && typeof data.id === 'string' && THREAD_ID_RE.test(data.id)) {
             const id = data.id
             setFocusThread((was) => ({ id, n: (was?.n ?? 0) + 1 }))
             return
           }
+          if (data?.type === 'terminal-text') {
+            setTerminal({ text: typeof data.text === 'string' ? data.text.slice(-6000) : null, live: Boolean(data.live) })
+            return
+          }
           if (data?.type !== 'board-theme' || (data.theme !== 'dark' && data.theme !== 'light')) return
           ;(api as Api).updateScene({ appState: { theme: data.theme } } as never)
         })
+        // Boards 2.0: the editor draws its own way back and title; the view hides its bar. A terminal card asks for text.
+        if (ISLANDS) toView({ type: 'board-chrome', islands: true, terminal: (api as Api).getSceneElements().some((e) => isTerminal(e as never) && !e.isDeleted) } as never)
         // A comment with `@harnessly`: its place on screen goes to the view with the words.
         window.addEventListener(CALL_EVENT, (event) => {
           const at = (event as CustomEvent<CallDetail>).detail
@@ -1284,7 +1310,7 @@ function Board() {
    * board, and it lands at that point. Excalidraw draws nothing for custom tools
    * and passes the point to onPointerDown.
    */
-  const toolbarSlot = useToolbarSlot(Boolean(studioApi) && canEdit)
+  const toolbarSlot = useToolbarSlot(Boolean(studioApi) && canEdit && !ISLANDS)
   useEffect(() => {
     document.body.classList.toggle('studio-top', Boolean(toolbarSlot))
   }, [toolbarSlot])
@@ -1435,6 +1461,67 @@ function Board() {
     if (!next || next === title) return
     if (await saveMeta({ title: next })) setTitle(next)
   }, [title, saveMeta])
+  /** Renamed in place, from the title of the top left island. */
+  const renameTo = useCallback(
+    async (next: string) => {
+      if (!next || next === title) return
+      if (await saveMeta({ title: next })) setTitle(next)
+    },
+    [title, saveMeta],
+  )
+
+  /** The right island: comments or (in harnessly) the chat — one place, one at a time. */
+  const side: 'comments' | 'chat' | null = commentsPanel ? 'comments' : chatOpen ? 'chat' : null
+  const setSide = useCallback(
+    (next: 'comments' | 'chat' | null) => {
+      setCommentsPanel(next === 'comments')
+      setChatOpen(next === 'chat')
+    },
+    [setCommentsPanel],
+  )
+
+  /**
+   * «Спросить»: the selection goes to harnessly's chat. Without words it opens the chat tab with the selection as a
+   * chip; with words (the chat tab, «Отдать агенту») they go to the agent at once, the selection as their context.
+   */
+  const ask = useCallback(
+    (words: string, ids: string[]) => {
+      const api = apiRef.current
+      if (!api) return
+      if (!words) {
+        setSide('chat')
+        return
+      }
+      const appState = api.getAppState() as never
+      const picked = Object.fromEntries(ids.map((id) => [id, true]))
+      const sel = selectionOf(api.getSceneElements() as never, picked)
+      toView({ type: 'board-ask', text: words, selection: sel.text, count: sel.count, ids, rect: sel.box ? onScreen(sel.box, appState) : null, area: visibleArea(appState) } as never)
+    },
+    [setSide],
+  )
+
+  /** «+»: a site in a frame, the machine's one terminal (in harnessly). */
+  const insertActions = (() => {
+    const api = studioApi
+    const taken = Boolean(api?.getSceneElements().some((e) => isTerminal(e as never) && !e.isDeleted))
+    return {
+      site: () => api?.setActiveTool({ type: 'embeddable' }),
+      terminalTaken: taken,
+      terminal: config.app
+        ? () => {
+            if (!api) return
+            const st = api.getAppState() as { scrollX: number; scrollY: number; zoom: { value: number }; width: number; height: number }
+            const w = 560
+            const h = 320
+            const x = Math.round(-st.scrollX + st.width / st.zoom.value / 2 - w / 2)
+            const y = Math.round(-st.scrollY + st.height / st.zoom.value / 2 - h / 2)
+            const [box] = convertToExcalidrawElements([{ type: 'rectangle', x, y, width: w, height: h, backgroundColor: '#111114', strokeColor: '#2a2a30', fillStyle: 'solid', strokeWidth: 1, roughness: 0, roundness: { type: 3, value: 12 }, customData: { kind: 'terminal', title: t('islands.terminalTitle') } }] as never) as unknown as Element[]
+            api.updateScene({ elements: [...api.getSceneElementsIncludingDeleted(), box] as never, appState: { selectedElementIds: { [box.id]: true } }, captureUpdate: CaptureUpdateAction.IMMEDIATELY })
+            toView({ type: 'board-terminal', on: true } as never)
+          }
+        : null,
+    }
+  })()
 
   const saveProperties = useCallback(
     async (changes: Partial<BoardMeta>) => {
@@ -1579,7 +1666,7 @@ function Board() {
         onPointerDown={config.studio ? (onStudioPointerDown as never) : undefined}
         validateEmbeddable
         UIOptions={UI_OPTIONS}
-        renderTopRightUI={renderTopRightUI}
+        renderTopRightUI={ISLANDS ? undefined : renderTopRightUI}
       >
         {excalidrawChildren}
       </Excalidraw>
@@ -1645,12 +1732,69 @@ function Board() {
           topRight,
         )}
 
-      {!config.app && <Brand />}
+      {!config.app && !ISLANDS && <Brand />}
+
+      {studioApi && ISLANDS && (
+        <Islands
+          api={studioApi as never}
+          canEdit={canEdit}
+          app={Boolean(config.app)}
+          title={title}
+          onRename={renameTo}
+          homeUrl={homeUrl}
+          textUrl={`${base}.md${q}`}
+          fileUrl={`${base}/scene.excalidraw${q}&download=1`}
+          crowd={crowd}
+          status={{ kind: shownStatus, text: statusText }}
+          onShare={config.app ? null : openShare}
+          openComments={openComments}
+          side={side}
+          setSide={setSide}
+          stickyColor={stickyColor}
+          setStickyColor={setStickyColor}
+          onStudioTool={onTool}
+          reactions={REACTIONS}
+          onPanel={openPanel}
+          votes={notes.reactions}
+          me={me}
+          onReact={react}
+          onAsk={config.app ? ask : null}
+          insert={insertActions}
+          menu={{
+            properties: config.studio ? openProperties : undefined,
+            snap: config.snap ? { on: snapOn, toggle: toggleSnap } : undefined,
+            smooth: config.motion ? { on: smooth, toggle: toggleSmooth } : undefined,
+            signIn: !config.app && !config.user && config.authEnabled ? loginUrl() : undefined,
+            signOut: !config.app && config.user ? { name: config.user.name, url: logoutUrl() } : undefined,
+          }}
+          extras={
+            <>
+              {canEdit && config.workboard && <TimerTool timer={timer.value} offset={timer.offset} canEdit={canEdit} onAct={timerAct} quiet open={timerOpen} onOpen={setTimerOpen} />}
+              {canEdit && config.workboard && (
+                <BarButton label={t('editor.checkpointsTitle')} on={panel === 'checkpoints'} onClick={() => openPanel(panel === 'checkpoints' ? null : 'checkpoints')}>
+                  <CheckpointsIcon />
+                </BarButton>
+              )}
+              {canEdit && <SlopBadge api={studioApi} placement="bar" quiet open={slopOpen} onOpen={setSlopOpen} />}
+              {toolbarButtons().map((button) => (
+                <BarButton key={button.id} label={button.label} onClick={() => void Promise.resolve(button.onClick({ api: pluginApi()! })).catch((error) => console.error(`[boards] toolbar button ${button.id} failed`, error))}>
+                  <span className="bar-btn__plugin-icon" aria-hidden dangerouslySetInnerHTML={{ __html: button.icon ?? PLUGIN_ICON }} />
+                </BarButton>
+              ))}
+            </>
+          }
+        />
+      )}
+      {studioApi && ISLANDS && <ReactionLayer api={studioApi} me={me} votes={notes.reactions} canReact={canEdit} onReact={react} />}
+      {studioApi && ISLANDS && <TerminalLayer api={studioApi} text={terminal.text} live={terminal.live} />}
+      {studioApi && ISLANDS && <GlowLayer />}
+      {studioApi && ISLANDS && chatOpen && config.app && <SideChat api={studioApi as never} setSide={setSide} onAsk={ask} />}
 
       {studioApi && config.motion && <PulseLayer />}
       {studioApi && <StickyOverlay api={studioApi} me={me} reactions={REACTIONS} votes={notes.reactions} canReact={canEdit} onReact={react} />}
       {studioApi && (
         <Comments
+          tabs={ISLANDS && config.app ? <SideTabs side={side} setSide={setSide} app /> : undefined}
           api={studioApi}
           slug={config.slug}
           threads={notes.comments}
@@ -1673,8 +1817,8 @@ function Board() {
       )}
       {studioApi && canEdit && (
         <>
-          {/* Desktop: buttons in the Excalidraw top toolbar; phone: the bottom dock. */}
-          {toolbarSlot
+          {/* Desktop: buttons in the Excalidraw top toolbar; phone: the bottom dock. Islands have their own toolbar. */}
+          {ISLANDS ? null : toolbarSlot
             ? createPortal(
                 <ToolbarTools tool={tool} onTool={onTool} panel={panel} setPanel={openPanel} stickyColor={stickyColor} />,
                 toolbarSlot,

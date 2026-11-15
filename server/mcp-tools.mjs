@@ -126,17 +126,17 @@ export function boardTools(ops) {
     {
       name: 'board_react',
       title: 'React to a sticky',
-      description: `Add or remove a reaction on a sticky (${reactions.join(' ')}). The vote is signed by whoever the agent works for.`,
+      description: `Add or remove a reaction on an object — a sticky, shape, arrow or frame (${reactions.join(' ')}). The vote is signed by whoever the agent works for.`,
       inputSchema: {
         type: 'object',
-        properties: { board: boardArg, id: { type: 'string', description: 'Sticky id' }, emoji: { type: 'string', enum: reactions }, on: { type: 'boolean', description: 'false — remove' } },
+        properties: { board: boardArg, id: { type: 'string', description: 'Object id' }, emoji: { type: 'string', enum: reactions }, on: { type: 'boolean', description: 'false — remove' } },
         required: ['board', 'id', 'emoji'],
       },
       run: async (args, { who }) => {
         const state = await ops.board(args.board)
         const votes = ops.react(state, who, { id: args.id, emoji: args.emoji, on: args.on })
         const line = Object.entries(votes).map(([emoji, names]) => `${emoji} ${names.length} (${names.join(', ')})`).join(' · ')
-        return line || 'No reactions on this sticky.'
+        return line || 'No reactions on this object.'
       },
     },
     {

@@ -187,3 +187,7 @@ body {
     flex: 1 1 100%;
   }
 }
+/* Boards 2.0: the editor draws its own way back and title in its islands. */
+.ba--islands .ba__top {
+  display: none;
+}
