@@ -180,6 +180,27 @@
 
   var canvas = null
   var opened = null
+
+  /** harnessly's own actions (share, the right pane, its menu) for our bar: none without harnessly or on an older one. */
+  function hostActions() {
+    return connect()
+      .then(function (hl) {
+        return hl.host ? hl.host.actions() : null
+      })
+      .then(function (r) {
+        return (r && Array.isArray(r.actions) && r.actions) || []
+      })
+      .catch(function () {
+        return []
+      })
+  }
+  function hostRun(id) {
+    connect()
+      .then(function (hl) {
+        if (hl.host && id) return hl.host.run(id)
+      })
+      .catch(function () {})
+  }
   // ---- What harnessly's chat knows: the board open, what is selected on it and where, a call written on it ----
 
   /** To harnessly, when it is there: the chat's context chip and the place its window opens beside. */
@@ -211,6 +232,13 @@
       if (m.terminal) watchTerminal(true)
     } else if (m.type === 'board-back') {
       go(null)
+    } else if (m.type === 'board-host-actions') {
+      // harnessly draws no bar above the app (HRN-1498): its actions go into the board's own ⋯.
+      hostActions().then(function (list) {
+        if (canvas && canvas.contentWindow) canvas.contentWindow.postMessage({ type: 'host-actions', actions: list }, location.origin)
+      })
+    } else if (m.type === 'board-host-run') {
+      hostRun(String(m.id || ''))
     } else if (m.type === 'board-ask') {
       // «Спросить»: the selection goes to the chat as context (what the agent sees, HRN-1391); the chat gets only the
       // person's own words and the board's address — what is written on the board is not passed off as their message.
@@ -347,6 +375,8 @@
     listUi = window.BoardsList.mount(root, {
       lang: LANG,
       base: BASE,
+      hostActions: hostActions,
+      hostRun: hostRun,
       rows: all,
       me: libMe,
       templates: TEMPLATES,

@@ -39,6 +39,14 @@
     pencil: '<path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/>',
     copy: '<path d="M9 9h11v11H9z"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/>',
     trash: '<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 10v6M14 10v6"/>',
+    // harnessly's actions in the head (HRN-1498), by harnessly's own icon names.
+    share: '<path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7M16 6l-4-4-4 4M12 2v13"/>',
+    'panel-right': '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/>',
+    info: '<circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/>',
+    settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+    bug: '<path d="M8 2l1.9 1.9M16 2l-1.9 1.9M9 7.1V6a3 3 0 0 1 6 0v1.1"/><path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6zM12 20v-9"/>',
+    x: '<path d="M18 6 6 18M6 6l12 12"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>',
   }
   function icon(name) {
     return '<svg viewBox="0 0 24 24" aria-hidden="true">' + ICON[name] + '</svg>'
@@ -123,6 +131,39 @@
     var newBtn = btn('bl-btn bl-btn--pri', icon('plus'))
     newBtn.appendChild(document.createTextNode(T.newBoard))
     head.appendChild(newBtn)
+    // harnessly draws no bar above the app (HRN-1498): its actions — share, the right pane, its menu — are here.
+    if (options.hostActions) {
+      var hostWrap = el('div', 'bl-host')
+      hostWrap.hidden = true
+      var hostBtn = btn('bl-btn bl-btn--icon', icon('dots'), T.more)
+      hostWrap.appendChild(hostBtn)
+      head.appendChild(hostWrap)
+      options.hostActions().then(function (list) {
+        if (list.length) hostWrap.hidden = false
+      })
+      hostBtn.addEventListener('click', function () {
+        if (state.menu === ':host') return closeMenu()
+        closeMenu()
+        options.hostActions().then(function (list) {
+          state.menu = ':host'
+          var m = el('div', 'bl-menu')
+          m.setAttribute('role', 'menu')
+          list.forEach(function (a) {
+            var b = btn('bl-mi' + (a.danger ? ' bl-mi--dg' : ''), ICON[a.icon] ? icon(a.icon) : icon('dots'))
+            b.setAttribute('role', 'menuitem')
+            b.appendChild(document.createTextNode(a.label))
+            if (a.pressed) b.appendChild(el('span', 'bl-mi-on')).innerHTML = icon('check')
+            b.addEventListener('click', function () {
+              closeMenu()
+              if (options.hostRun) options.hostRun(a.id)
+            })
+            m.appendChild(b)
+          })
+          hostWrap.appendChild(m)
+          menuEl = m
+        })
+      })
+    }
     root.appendChild(head)
 
     var sub = el('div', 'bl-sub')
@@ -248,7 +289,7 @@
       } else if (e.key === 'Escape' && state.menu) closeMenu()
     }
     var onDown = function (e) {
-      if (menuEl && !(e.target.closest && e.target.closest('.bl-menu, .bl-more'))) closeMenu()
+      if (menuEl && !(e.target.closest && e.target.closest('.bl-menu, .bl-more, .bl-host'))) closeMenu()
     }
     document.addEventListener('keydown', onKey)
     document.addEventListener('mousedown', onDown)
