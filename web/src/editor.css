@@ -607,6 +607,9 @@ body.studio-tool-on .excalidraw canvas.interactive { cursor: crosshair !importan
 }
 /* Excalidraw's dark mode darkens stickies — make the author caption light so it stays visible. */
 body:has(.excalidraw.theme--dark) .studio-sticky__author { color: rgba(236, 235, 243, 0.62); }
+/* With the dark paint (islands/dark-paint.ts) a colour sticky keeps its colour: a dark caption; a white one is a dark card. */
+html.isl-dark-paint body:has(.excalidraw.theme--dark) .studio-sticky__author { color: rgba(30, 30, 30, 0.62); }
+html.isl-dark-paint body:has(.excalidraw.theme--dark) .studio-sticky--surface .studio-sticky__author { color: rgba(236, 235, 243, 0.62); }
 
 /*
  * Checkpoints: a right panel in place of the comments panel, diff highlights on

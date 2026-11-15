@@ -11,6 +11,7 @@
  * with the server (shared/), so agents and people draw in one hand and are
  * judged by the same rules.
  */
+import { keepsColour } from './islands/dark-paint'
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { CameraLayer, inWindow, useSceneVersion, useSceneWindow } from './camera'
 import { createPortal } from 'react-dom'
@@ -466,7 +467,7 @@ export function addSticky(api: StudioApi, { fill, author, x, y }: { fill: string
   })
 }
 
-type StickyBox = { id: string; x: number; y: number; width: number; height: number; author: string | null; authorCovered: boolean; reactionsCovered: boolean }
+type StickyBox = { id: string; x: number; y: number; width: number; height: number; author: string | null; authorCovered: boolean; reactionsCovered: boolean; surface: boolean }
 
 /** What can cover a sticky's caption: filled shapes and images, not lines or text. */
 const COVERING = new Set(['rectangle', 'ellipse', 'diamond', 'image'])
@@ -522,8 +523,8 @@ export const StickyOverlay = memo(function StickyOverlay({ api, me, reactions, v
         if (!authorCovered && covers(over, el.x, bottom - AUTHOR_STRIP, el.x + el.width, bottom)) authorCovered = true
         if (!reactionsCovered && covers(over, el.x, bottom, el.x + Math.min(el.width, REACTIONS_WIDTH), bottom + REACTIONS_STRIP)) reactionsCovered = true
       }
-      out.push({ id: el.id, x: el.x, y: el.y, width: el.width, height: el.height, author, authorCovered, reactionsCovered })
-      sig += `${el.id}:${el.x}:${el.y}:${el.width}:${el.height}:${author}:${authorCovered ? 1 : 0}${reactionsCovered ? 1 : 0}|`
+      out.push({ id: el.id, x: el.x, y: el.y, width: el.width, height: el.height, author, authorCovered, reactionsCovered, surface: !keepsColour(el.backgroundColor, true) })
+      sig += `${el.id}:${el.x}:${el.y}:${el.width}:${el.height}:${author}:${authorCovered ? 1 : 0}${reactionsCovered ? 1 : 0}:${el.backgroundColor}|`
     }
     if (sig === signature.current) return
     signature.current = sig
@@ -538,7 +539,7 @@ export const StickyOverlay = memo(function StickyOverlay({ api, me, reactions, v
         const mineVotes = votes[v.id] ?? {}
         const shown = reactions.filter((e) => (mineVotes[e]?.length ?? 0) > 0)
         return (
-          <div key={v.id} className="studio-sticky" style={{ left: v.x, top: v.y, width: v.width, height: v.height }}>
+          <div key={v.id} className={`studio-sticky${v.surface ? ' studio-sticky--surface' : ''}`} style={{ left: v.x, top: v.y, width: v.width, height: v.height }}>
             {v.author && !v.authorCovered && <span className="studio-sticky__author" title={t('studio.author', { name: v.author })}>{v.author.replace(/^guest:\s*/, '')}</span>}
             {/* Reactions go below the sticky, as in FigJam: on the sticky they covered the text. */}
             <span className="studio-sticky__reactions" style={v.reactionsCovered ? { display: 'none' } : undefined}>

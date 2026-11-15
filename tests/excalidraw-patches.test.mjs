@@ -24,9 +24,11 @@ test('patched Excalidraw files exist and match the plugin rules', () => {
 })
 
 test('every render patch finds its code in the package exactly once', () => {
+  // Patches apply in order, so a later one may build on an earlier one's code.
+  const code = Object.fromEntries(Object.entries(paths).map(([file, path]) => [file, readFileSync(path, 'utf8')]))
   for (const patch of PATCHES) {
-    const code = readFileSync(paths[patch.file], 'utf8')
-    assert.equal(code.split(patch.find).length - 1, 1, `patch ${patch.id}`)
+    assert.equal(code[patch.file].split(patch.find).length - 1, 1, `patch ${patch.id}`)
+    code[patch.file] = code[patch.file].replace(patch.find, () => patch.replace)
   }
 })
 

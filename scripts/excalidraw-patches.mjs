@@ -79,6 +79,14 @@
  *    the canvas renderer draws the underline and the strike line under each line
  *    of the text. Without those fields everything is as before.
  *    measureText reads the size from that font string, so it skips the style words.
+ * 16. Dark theme without muddy colours (HRN-1480). The package darkens the board
+ *    by inverting every canvas in CSS, so a yellow sticky turns brown. When the
+ *    editor installs window.__tbDark (web/src/islands/dark-paint.ts — only where
+ *    a 2D canvas applies `filter`), the static canvas is not inverted and each
+ *    element is drawn with its own filter: colourless things get the old
+ *    inversion, colour fills keep their colour. The canvas background goes
+ *    transparent so CSS can draw the stage with its dot grid; the link icon keeps
+ *    the old inversion. Exports are untouched.
  */
 
 export const EXCALIDRAW_VERSION = '0.18.1'
@@ -125,6 +133,20 @@ export const PATCHES = [
     // Ee — the font string of a text element ("20px Nunito…"), ea — its family list.
     find: 'Ee=({fontSize:e,fontFamily:t})=>`${e}px ${ea({fontFamily:t})}`',
     replace: 'Ee=(o)=>`${o.customData&&o.customData.fontStyle==="italic"?"italic ":""}${o.customData&&o.customData.fontWeight==="bold"?"bold ":""}${o.fontSize}px ${ea({fontFamily:o.fontFamily})}`',
+  },
+  {
+    id: 'dark-paint-background',
+    file: 'render',
+    // The canvas background in the dark theme is CSS's (the stage and its dots), not a filled rectangle.
+    find: 'i&&o===ke.DARK&&(s.filter=Io),typeof a=="string"?',
+    replace: 'i&&o===ke.DARK&&(s.filter=Io),!i&&o===ke.DARK&&window.__tbDark&&(a="transparent"),typeof a=="string"?',
+  },
+  {
+    id: 'dark-paint-link-icon',
+    file: 'render',
+    // The link icon is a white card: it keeps the old inversion.
+    find: 't.drawImage(E,d-p,c-m,l,U),t.restore()',
+    replace: 'window.__tbDark&&n.theme==="dark"&&(t.filter="invert(93%) hue-rotate(180deg)"),t.drawImage(E,d-p,c-m,l,U),t.restore()',
   },
   {
     id: 'text-measure-style',
@@ -196,6 +218,15 @@ export const PATCHES = [
     find: 't.save(),t.scale(1/window.devicePixelRatio,1/window.devicePixelRatio);let b=oe(i,o);if(ee(i)&&b){',
     replace:
       'if(i.angle===0&&!("scale"in i)&&!(ee(i)&&oe(i,o))){let q=window.devicePixelRatio;t.drawImage(e.canvas,((d+r.scrollX)*q-a)/q,((c+r.scrollY)*q-a)/q,e.canvas.width/e.scale/q,e.canvas.height/e.scale/q);return}t.save(),t.scale(1/window.devicePixelRatio,1/window.devicePixelRatio);let b=oe(i,o);if(ee(i)&&b&&e.boundTextCanvas){',
+  },
+  {
+    id: 'dark-paint-element',
+    file: 'render',
+    // After draw-fast-path: the element's own filter (and a sticky's shadow) before its canvas is drawn, on both
+    // paths — the fast one draws in CSS pixels (unit 1), the full one in device pixels (unit = devicePixelRatio).
+    find: 'let q=window.devicePixelRatio;t.drawImage(e.canvas,((d+r.scrollX)*q-a)/q,((c+r.scrollY)*q-a)/q,e.canvas.width/e.scale/q,e.canvas.height/e.scale/q);return}t.save(),t.scale(1/window.devicePixelRatio,1/window.devicePixelRatio);',
+    replace:
+      'let q=window.devicePixelRatio,__k=window.__tbDark&&r.theme==="dark";__k&&(t.save(),window.__tbDark(i,t,r,o,d,c,l,U,1));t.drawImage(e.canvas,((d+r.scrollX)*q-a)/q,((c+r.scrollY)*q-a)/q,e.canvas.width/e.scale/q,e.canvas.height/e.scale/q);__k&&t.restore();return}t.save(),t.scale(1/window.devicePixelRatio,1/window.devicePixelRatio);window.__tbDark&&r.theme==="dark"&&window.__tbDark(i,t,r,o,d,c,l,U,window.devicePixelRatio);',
   },
   {
     id: 'curve-bounds-cache',
