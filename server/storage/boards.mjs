@@ -71,7 +71,7 @@ const yamlString = (value) => JSON.stringify(String(value ?? ''))
 
 export function buildMeta(meta) {
   const lines = []
-  for (const key of ['title', 'description', 'author', 'access', 'key', 'task', 'createdAt', 'updatedAt', 'editedBy', 'editedAt']) {
+  for (const key of ['title', 'description', 'author', 'access', 'key', 'task', 'createdAt', 'updatedAt', 'editedBy', 'editedAt', 'trashedAt', 'trashedBy']) {
     if (meta[key] === undefined || meta[key] === null || meta[key] === '') continue
     lines.push(`${key}: ${yamlString(meta[key])}`)
   }

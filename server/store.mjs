@@ -757,7 +757,8 @@ export function createStore({
     return accepted
   }
 
-  async function list() {
+  /** The boards; `trash: true` lists the ones in the trash instead (HRN-1478). */
+  async function list({ trash = false } = {}) {
     const slugs = new Set(await storage.listSlugs())
     // A board whose first write is still pending is listed too.
     for (const slug of boards.keys()) slugs.add(slug)
@@ -769,7 +770,20 @@ export function createStore({
         return meta ? { slug, ...meta, hasPreview: Boolean(meta.stats?.preview) } : null
       }),
     )
-    return metas.filter(Boolean).sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')))
+    return metas.filter((m) => m && Boolean(m.trashedAt) === trash).sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')))
+  }
+
+  /** Puts a board into the trash (`by` names who) or takes it out (`by` null): a trashed board opens for nobody. */
+  function setTrashed(state, by) {
+    if (by) {
+      state.meta.trashedAt = new Date(now()).toISOString().replace(/\.\d+Z$/, 'Z')
+      state.meta.trashedBy = by
+    } else {
+      delete state.meta.trashedAt
+      delete state.meta.trashedBy
+    }
+    metaCache.delete(state.slug)
+    schedule(state)
   }
 
   return {
@@ -785,6 +799,7 @@ export function createStore({
     sweep,
     apply,
     applyAgentEdit,
+    setTrashed,
     react,
     comment,
     notePerson,

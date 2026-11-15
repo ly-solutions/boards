@@ -18,9 +18,12 @@ refused. Browsers on origins listed in `BOARDS_CORS_ORIGINS` may call the API wi
 
 | Method | Path | Auth | Body / result |
 | --- | --- | --- | --- |
-| GET | `/b/api/boards?q=&tag=` | token / user | `{ boards: [ { slug, title, description, tags, task, author, access, createdAt, updatedAt, stats, key, url, markdown, json, embed, scene, live, preview } ] }` |
+| GET | `/b/api/boards?q=&tag=&trash=1` | token / user | `{ boards: [ { slug, title, description, tags, task, author, access, createdAt, updatedAt, editedBy, editedAt, trashedAt, trashedBy, stats, key, url, markdown, json, embed, scene, live, preview } ] }`; `trash=1` lists the boards in the trash instead |
 | POST | `/b/api/boards` | token / user | `{ title, description?, tags?, task?, access?, author?, template?, graph?, add?, at? }` → `201 { slug, title, key, url, markdown, json, embed, scene, live, summary }` |
 | GET | `/b/api/boards/<slug>` | token / user | board JSON (below), no key needed |
+| POST | `/b/api/boards/<slug>/copy` | token / user | `{ title?, author? }` → `201 { slug, title, key, url, …, summary }`: a new board with the scene as it is now, made by the caller |
+| POST | `/b/api/boards/<slug>/trash` | token / editor | `{ author? }` → `{ ok, slug, trashedAt, trashedBy }`: the board opens for nobody and leaves the list |
+| POST | `/b/api/boards/<slug>/restore` | token / editor | `{}` → `{ ok, slug, trashedAt: null, trashedBy: null }`: takes the board out of the trash |
 | GET | `/b/<slug>.json?k=` | key | board JSON: metadata (incl. plugin `fields`), links, `rev`, `stats`, `preview`, `text` |
 | GET | `/b/<slug>.md?k=` | key | `text/markdown` — the board as text |
 | GET | `/b/<slug>?k=` | key | editor page (HTML); `Accept: text/markdown` or `?format=md` returns the text; `&embed=1` read-only embed |

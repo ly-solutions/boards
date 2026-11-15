@@ -357,10 +357,11 @@ export function createApp({
    * A board by slug and key. A wrong key answers with the same 404 as a missing board: different answers would
    * tell someone guessing that the address is right and only the key is left.
    */
-  async function board(req, url, slug, { keyless = false } = {}) {
+  async function board(req, url, slug, { keyless = false, trashed = false } = {}) {
     if (!isValidSlug(slug)) throw new HttpError(404, 'no such board')
     const state = await store.get(slug)
-    if (!state) throw new HttpError(404, 'no such board')
+    // A board in the trash opens for nobody: only taking it out of the trash reaches it (HRN-1478).
+    if (!state || Boolean(state.meta.trashedAt) !== trashed) throw new HttpError(404, 'no such board')
     const key = url.searchParams.get('k') ?? req.headers['x-board-key']
     const { agent, user } = context(req)
     if (!agent && !(keyless && user) && !secretMatches(key, state.meta.key)) throw new HttpError(404, 'no such board')
@@ -709,7 +710,7 @@ export function createApp({
   async function listBoards(url) {
     const q = String(url.searchParams.get('q') ?? '').trim().toLowerCase()
     const tag = String(url.searchParams.get('tag') ?? '').trim().toLowerCase()
-    let boards = await store.list()
+    let boards = await store.list({ trash: url.searchParams.get('trash') === '1' })
     if (q) boards = boards.filter((b) => [b.title, b.description, ...(b.tags ?? [])].some((v) => String(v ?? '').toLowerCase().includes(q)))
     if (tag) boards = boards.filter((b) => (b.tags ?? []).some((t) => t.toLowerCase() === tag))
     return boards
@@ -986,6 +987,32 @@ export function createApp({
     if (one && req.method === 'GET') {
       requireMember(req)
       return json(res, 200, boardJson(await board(req, url, one[1], { keyless: true })))
+    }
+
+    // A copy of the board as it is now, the trash and back (HRN-1478): what the hub and the app call by the slug.
+    const act = /^api\/boards\/([a-z0-9-]+)\/(copy|trash|restore)$/.exec(rest)
+    if (act && req.method === 'POST') {
+      const [, slug, what] = act
+      const body = await readJson(req, 16 * 1024)
+      const state = await board(req, url, slug, { keyless: true, trashed: what === 'restore' })
+      if (what === 'copy') {
+        const who = requireMember(req)
+        const name = who.kind === 'user' ? who.name : authorOf(body)
+        const asked = typeof body.title === 'string' ? body.title.trim().slice(0, 120) : ''
+        const title = (asked.length >= 2 ? asked : t.locale === 'ru' ? `${state.meta.title} (копия)` : `${state.meta.title} (copy)`).slice(0, 120)
+        const at = stamp()
+        const copy = await store.create({
+          slug: makeSlug(title),
+          meta: { title, tags: state.meta.tags ?? [], description: state.meta.description ?? '', author: name, access: state.meta.access ?? 'team', key: makeKey(), task: state.meta.task ?? null, createdAt: at, updatedAt: at },
+          elements: structuredClone(store.elements(state)),
+        })
+        const files = [...state.files.values()]
+        if (files.length) store.apply(copy, [], structuredClone(files))
+        return json(res, 201, { ...describe(copy), summary: store.text(copy) })
+      }
+      const who = requireEditor(req, state, body)
+      store.setTrashed(state, what === 'trash' ? who.name : null)
+      return json(res, 200, { ok: true, slug: state.slug, trashedAt: state.meta.trashedAt ?? null, trashedBy: state.meta.trashedBy ?? null })
     }
 
     const md = /^([a-z0-9-]+)\.(md|json)$/.exec(rest)
