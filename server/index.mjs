@@ -138,6 +138,13 @@ export function isSafePreview(svg) {
   return !/<script|<foreignObject|\son[a-z]+\s*=|javascript:|<iframe|<embed|<object/i.test(svg)
 }
 
+/** The server's PNG thumbnail as a stored preview: an SVG with the picture inside (passes isSafePreview). */
+export function pngPreviewSvg(png) {
+  const w = png.readUInt32BE(16)
+  const h = png.readUInt32BE(20)
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><image width="${w}" height="${h}" href="data:image/png;base64,${png.toString('base64')}"/></svg>`
+}
+
 /** `task`: a free-form external reference (issue key or URL), up to 64 characters. */
 function normalizeTask(value) {
   if (value === undefined) return undefined
@@ -854,14 +861,30 @@ export function createApp({
   // Through MCP an agent writes on behalf of a person: comments are signed by the person and marked as the agent's,
   // so the webhook does not hand the agent its own message back as a person's question.
   /** The board's picture, cached per revision: an agent looks before and after its edit, often twice in a row. */
+  // The promise is kept, not the result: the boards list asks for thirty thumbnails at once, and the same board twice
+  // must not be drawn twice (HRN-1515). Drawing blocks the event loop of a one-CPU pod, so at most two run at a time.
   const pictures = new Map()
   const PICTURES_KEPT = 64
-  async function picture(state, ids = [], { thumb = false } = {}) {
+  const DRAWING_AT_ONCE = 2
+  let drawing = 0
+  const waiting = []
+  async function drawSlot(fn) {
+    if (drawing >= DRAWING_AT_ONCE) await new Promise((resolve) => waiting.push(resolve))
+    drawing++
+    try {
+      return await fn()
+    } finally {
+      drawing--
+      waiting.shift()?.()
+    }
+  }
+  function picture(state, ids = [], { thumb = false } = {}) {
     const key = `${state.slug}:${state.rev}:${thumb ? 'thumb' : ids.join(',')}`
     if (pictures.has(key)) return pictures.get(key)
     const scene = store.scene(state)
-    const png = await renderPicture(scene.elements ?? [], scene.files ?? {}, { ids, maxSide: thumb ? 720 : undefined })
+    const png = drawSlot(() => renderPicture(scene.elements ?? [], scene.files ?? {}, { ids, maxSide: thumb ? 720 : undefined }))
     pictures.set(key, png)
+    png.catch(() => pictures.get(key) === png && pictures.delete(key))
     if (pictures.size > PICTURES_KEPT) pictures.delete(pictures.keys().next().value)
     return png
   }
@@ -1329,12 +1352,20 @@ export function createApp({
       // No browser has sent a thumbnail yet, or an agent changed the board since: the server's own picture of it
       // (HRN-1480); an empty board or a failed render gets the sketch of its shapes.
       const stored = await store.previewSvg(state)
+      // A versioned address (`v` — when the board last changed) may be kept by the browser until the board changes.
+      const keep = url.searchParams.has('v') ? 'private, max-age=86400' : 'private, max-age=30'
       if ((!stored || state.previewStale) && store.elements(state).length) {
+        const rev = state.rev
         const png = await picture(state, [], { thumb: true }).catch((error) => {
           console.log(JSON.stringify({ at: new Date().toISOString(), level: 'warn', event: 'thumbnail_failed', slug: state.slug, error: String(error?.message ?? error).slice(0, 200) }))
           return null
         })
-        if (png) return sendBody(res, 200, { 'content-type': 'image/png', 'cache-control': 'private, max-age=30', 'x-content-type-options': 'nosniff', 'x-robots-tag': 'noindex' }, png)
+        if (png) {
+          // Kept as the board's thumbnail, so the next look at the list does not draw it again (HRN-1515) — unless
+          // the board changed while it was being drawn, or a browser sent its own meanwhile.
+          if (state.rev === rev && (state.previewStale || !state.previewExists)) store.setPreview(state, pngPreviewSvg(png))
+          return sendBody(res, 200, { 'content-type': 'image/png', 'cache-control': keep, 'x-content-type-options': 'nosniff', 'x-robots-tag': 'noindex' }, png)
+        }
       }
       const svg = stored ?? sketchSvg(store.elements(state))
       return sendBody(
@@ -1343,7 +1374,7 @@ export function createApp({
         {
           'content-type': 'image/svg+xml',
           'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; sandbox",
-          'cache-control': 'private, max-age=30',
+          'cache-control': keep,
           'x-content-type-options': 'nosniff',
           'x-robots-tag': 'noindex',
         },

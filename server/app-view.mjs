@@ -80,6 +80,7 @@ export function libraryRow(meta, { publicUrl, prefix, me }) {
     mine,
     url: `${publicUrl}${prefix}/${meta.slug}?k=${key}`,
     // A board without a browser's thumbnail gets a sketch of its shapes from the same address (sketch.mjs).
-    preview: `${prefix}/${meta.slug}/preview.svg?k=${key}`,
+    // `v` changes with the board, so the browser keeps the thumbnail until the board changes (HRN-1515).
+    preview: `${prefix}/${meta.slug}/preview.svg?k=${key}${meta.updatedAt ? `&v=${encodeURIComponent(meta.updatedAt)}` : ''}`,
   }
 }

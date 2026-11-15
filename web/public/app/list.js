@@ -460,6 +460,7 @@
       var img = el('img')
       img.alt = ''
       img.loading = 'lazy'
+      img.decoding = 'async'
       img.src = row.preview
       th.appendChild(img)
       var open = el('span', 'bl-open')

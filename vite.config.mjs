@@ -1,12 +1,27 @@
 import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import babel from '@rolldown/plugin-babel'
+import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import { excalidrawPatches } from './scripts/excalidraw-patches.mjs'
 import { selfHostedFonts } from './scripts/self-hosted-fonts.mjs'
+
+/**
+ * React Compiler (HRN-1515), only for the files listed here. Most of the editor reads Excalidraw imperatively while
+ * it renders (`api.getSceneElements()`, `api.getAppState()` after a tick or a scene version): the compiler caches such
+ * a call by the stable `api` and the component silently stops following the board — the build, types and tests stay
+ * green. A file goes on the list once its components read only props, state and hooks during render (refs and the
+ * api in effects and handlers are fine); a function that has to read the editor in render gets 'use no memo'.
+ */
+const COMPILED = [/\/web\/src\/(camera|timer|motion-fx|embed-view)\.tsx$/, /\/web\/src\/islands\/(icons|ui)\.tsx$/]
+function reactCompiler() {
+  const preset = reactCompilerPreset()
+  preset.rolldown.filter.id = { include: COMPILED }
+  return preset
+}
 
 // The editor is built once (into the image) and served by the server as static files under /b/_static.
 export default defineConfig({
   // Rendering patches for Excalidraw — see scripts/excalidraw-patches.mjs.
-  plugins: [excalidrawPatches(), selfHostedFonts(), react()],
+  plugins: [excalidrawPatches(), selfHostedFonts(), react(), babel({ presets: [reactCompiler()] })],
   base: '/b/_static/',
   publicDir: 'web/public',
   build: {
