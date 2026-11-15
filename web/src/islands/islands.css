@@ -107,6 +107,15 @@ html.islands-on body { background: var(--isl-canvas, transparent); }
 .isl-tools { left: 50%; bottom: 12px; transform: translateX(-50%); padding: 5px; gap: 3px; }
 .isl-bl { left: 12px; bottom: 12px; }
 html.isl-side-open .isl-tools { left: calc(50% - 186px); }
+/* The view-only and guest-name banners centre over the canvas left of the right island, never under it. */
+html.islands-on .board-banner { transition: left 0.2s var(--isl-ease), max-width 0.2s var(--isl-ease); }
+@media (min-width: 761px) {
+  html.isl-side-open .board-banner { box-sizing: border-box; width: max-content; left: calc(50% - 186px); max-width: calc(100vw - 32px - 372px); flex-wrap: wrap; white-space: normal; }
+}
+@media (max-width: 760px) {
+  /* The panel is a sheet over the bottom: the banner goes up, under the top islands. */
+  html.isl-side-open .board-banner { top: 60px; bottom: auto; }
+}
 
 .isl-ib {
   flex: none;

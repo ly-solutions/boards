@@ -22,6 +22,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Comments: the panel has filters (open, resolved, mine) and, in the harnessly view, sits under «Комментарии · Чат»
   tabs; the chat tab and «Спросить» ask the harnessly chat about the selection (`chat.prompt`).
 - Objects the agent has just changed are outlined for a moment.
+- The view-only and guest-name banners centre over the canvas left of the comments panel (on a phone they go up under
+  the top islands) instead of hiding under it.
 - harnessly app package 0.6.0: the view hides its own bar under the editor's islands, «Спросить» publishes the
   selection as the chat's context and sends the person's words to the chat, a site (http/https only) opens in the right
   pane (`pane.open`), and a terminal card shows the last lines of the chat's terminal (new permission `terminal.read`).
