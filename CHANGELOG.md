@@ -33,6 +33,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   selection as the chat's context and sends the person's words to the chat, a site (http/https only) opens in the right
   pane (`pane.open`), and a terminal card shows the last lines of the chat's terminal (new permission `terminal.read`).
 
+### Fixed
+
+- A guest of a team board (HRN-1480): no second banner over the board — «Войти» sits in the «Только просмотр» island
+  and fits a narrow window. Opening a board fits it between the islands (title at the top, tools at the bottom); a wide
+  window opens at 100 % around the content, a board larger than the window from its top-left corner.
+- The board flash of quick edits (HRN-1466) used helpers that #25 removed; it outlines with the shared glow now.
+
 ### Added
 
 - Agent edits you can watch (HRN-1480): an agent sees the board as a picture — `GET /b/<slug>/picture.png[?ids=a,b]`

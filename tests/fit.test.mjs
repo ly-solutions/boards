@@ -173,3 +173,25 @@ test('the editor fits the board on first load only in a narrow pane or a frame, 
   assert.ok(fit.zoom < 0.2 && fit.zoom >= 0.1, `a wide board shrinks to fit 420 px (zoom ${fit.zoom})`)
   assert.equal(fitScene([rect(0, 0, 100, 50)], { width: 420, height: 800 }, { maxZoom: 1 }).zoom, 1)
 })
+
+test('insets: the content is fitted into the free box between the islands', () => {
+  const fit = fitScene([rect(0, 0, 1000, 500)], { width: 800, height: 600 }, { margin: 0, insets: { top: 64, bottom: 72 } })
+  // 800 wide is the limit: zoom 0.8; the content's top lands right under the top island's 64 px band or lower.
+  assert.equal(fit.zoom, 0.8)
+  const top = (0 + fit.scrollY) * fit.zoom
+  const bottom = (500 + fit.scrollY) * fit.zoom
+  assert.ok(top >= 64 && bottom <= 600 - 72, `${top}..${bottom}`)
+  // Insets that would leave less than half the frame are ignored.
+  const tiny = fitScene([rect(0, 0, 100, 100)], { width: 200, height: 200 }, { margin: 0, insets: { top: 90, bottom: 90 } })
+  assert.equal(tiny.scrollY * tiny.zoom + 50 * tiny.zoom, 100)
+})
+
+test('anchorStart: a board larger than the frame at 100 % opens at its top-left, a small one is centred', () => {
+  const big = fitScene([rect(0, 0, 3000, 2000)], { width: 1200, height: 800 }, { margin: 20, minZoom: 1, maxZoom: 1, anchorStart: true, insets: { top: 64 } })
+  assert.equal(big.zoom, 1)
+  assert.equal(big.scrollX, 20)
+  assert.equal(big.scrollY, 84)
+  const small = fitScene([rect(0, 0, 200, 100)], { width: 1200, height: 800 }, { margin: 20, minZoom: 1, maxZoom: 1, anchorStart: true })
+  assert.equal(small.scrollX, 500)
+  assert.equal(small.scrollY, 350)
+})

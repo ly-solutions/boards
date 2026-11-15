@@ -509,12 +509,19 @@ function Toolbar({ api, tool, stickyColor, setStickyColor, onStudioTool, reactio
 }
 
 /** View only: no tools, only comments and reactions stay. */
-function ViewBar({ api, tool, canEdit, setViewOnly, onStudioTool, prefs }: { api: Api; tool: Tool; canEdit: boolean; setViewOnly: (v: boolean) => void; onStudioTool: IslandsProps['onStudioTool']; prefs: Prefs }) {
+function ViewBar({ api, tool, canEdit, setViewOnly, onStudioTool, prefs, signIn }: { api: Api; tool: Tool; canEdit: boolean; setViewOnly: (v: boolean) => void; onStudioTool: IslandsProps['onStudioTool']; prefs: Prefs; signIn?: string }) {
   const custom = tool.type === 'custom' ? tool.customType : null
   return (
     <div className="isl isl-tools isl-viewbar">
       <Icon name="eye" size={16} />
       <span className="isl-viewbar__label">{t('islands.viewOnly')}</span>
+      {/* A guest of a team board: the way in is here, not a second banner over the board (HRN-1480). */}
+      {!canEdit && signIn && (
+        <a className="isl-btn isl-btn--soft isl-viewbar__in" href={signIn} data-tip={t('editor.viewOnlyBanner')}>
+          <Icon name="pencil" size={16} />
+          {t('islands.signIn')}
+        </a>
+      )}
       {canEdit && (
         <>
           <Sep />
@@ -685,7 +692,7 @@ export function Islands(props: IslandsProps) {
       {editing ? (
         <Toolbar api={api} tool={tool} stickyColor={props.stickyColor} setStickyColor={props.setStickyColor} onStudioTool={onStudioTool} reactions={props.reactions} onPanel={props.onPanel} insert={props.insert} prefs={prefs} setPrefs={setPrefs} />
       ) : (
-        <ViewBar api={api} tool={tool} canEdit={canEdit} setViewOnly={setViewOnly} onStudioTool={onStudioTool} prefs={prefs} />
+        <ViewBar api={api} tool={tool} canEdit={canEdit} setViewOnly={setViewOnly} onStudioTool={onStudioTool} prefs={prefs} signIn={props.menu.signIn} />
       )}
       <Zoom api={api} canEdit={editing} />
       {editing && <ContextBar api={api} reactions={props.reactions} votes={votes} me={me} onReact={onReact} onAsk={props.onAsk} />}

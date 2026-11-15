@@ -28,6 +28,10 @@ export type FitOptions = {
   maxZoom?: number
   /** Lower zoom bound; Excalidraw does not go below 0.1. */
   minZoom?: number
+  /** Content larger than the frame at the chosen zoom starts at the frame's top-left instead of being centred. */
+  anchorStart?: boolean
+  /** Screen pixels covered at each edge (the editor's islands): the content is fitted into what is left. */
+  insets?: { top?: number; right?: number; bottom?: number; left?: number }
 }
 
 export type Fit = { zoom: number; scrollX: number; scrollY: number }
@@ -125,9 +129,16 @@ export function fitScene(elements: readonly FitElement[], viewport: Viewport, op
   }
 
   const margin = Math.max(0, options.margin ?? defaultMargin({ width, height }))
-  // A frame smaller than twice the margin would leave no room at all; then use the whole frame.
-  const availableWidth = width - 2 * margin > 0 ? width - 2 * margin : width
-  const availableHeight = height - 2 * margin > 0 ? height - 2 * margin : height
+  // Islands over the edges: fit into the free box between them, unless they would leave less than half the frame.
+  const inset = options.insets ?? {}
+  let [top, right, bottom, left] = [inset.top, inset.right, inset.bottom, inset.left].map((v) => (finite(v) && v > 0 ? v : 0))
+  if (width - left - right < width / 2) [left, right] = [0, 0]
+  if (height - top - bottom < height / 2) [top, bottom] = [0, 0]
+  const boxWidth = width - left - right
+  const boxHeight = height - top - bottom
+  // A frame smaller than twice the margin would leave no room at all; then use the whole box.
+  const availableWidth = boxWidth - 2 * margin > 0 ? boxWidth - 2 * margin : boxWidth
+  const availableHeight = boxHeight - 2 * margin > 0 ? boxHeight - 2 * margin : boxHeight
   const contentWidth = bounds.maxX - bounds.minX
   const contentHeight = bounds.maxY - bounds.minY
   // A zero extent (a single point, a straight line) does not constrain that axis.
@@ -138,7 +149,13 @@ export function fitScene(elements: readonly FitElement[], viewport: Viewport, op
 
   const centerX = (bounds.minX + bounds.maxX) / 2
   const centerY = (bounds.minY + bounds.maxY) / 2
-  return { zoom, scrollX: width / 2 / zoom - centerX, scrollY: height / 2 / zoom - centerY }
+  let scrollX = (left + boxWidth / 2) / zoom - centerX
+  let scrollY = (top + boxHeight / 2) / zoom - centerY
+  if (options.anchorStart) {
+    if (contentWidth * zoom > availableWidth) scrollX = (left + margin) / zoom - bounds.minX
+    if (contentHeight * zoom > availableHeight) scrollY = (top + margin) / zoom - bounds.minY
+  }
+  return { zoom, scrollX, scrollY }
 }
 
 /** Trailing-edge debounce with `cancel`, so a pending call can be dropped on unmount. */
