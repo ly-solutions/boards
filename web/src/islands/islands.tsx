@@ -7,6 +7,7 @@
  * and popovers of variants. Bottom left: undo, redo and zoom. Over the selection: the context bar (ctxbar.tsx).
  */
 import { HOST_ICON, runHostAction, useHostActions } from '../host-actions'
+import { installDarkDots } from './dark-dots'
 import { darkKind, installDarkPaint, type DarkEl } from './dark-paint'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { STICKY_COLORS } from '../../../shared/palette.mjs'
@@ -73,11 +74,18 @@ export type IslandsProps = {
 
 type Tool = { type: string; customType?: string; locked?: boolean }
 
-/** The editor's app state, re-read once per frame while it changes. */
+/**
+ * The editor's app state, re-read once per frame while something the islands show changes. Excalidraw calls
+ * onChange on every repaint — every frame of a pan — so a bump that only moves the camera is skipped unless
+ * something is selected (the context bar follows the selection on screen). Re-rendering every island on every
+ * frame of a pan was a good part of the lag of Boards 2.0 (HRN-1515).
+ */
 export function useEditorTick(api: Api) {
   const [tick, setTick] = useState(0)
   useEffect(() => {
     let frame = 0
+    let seenState: Record<string, unknown> | null = null
+    let seenElements: readonly unknown[] | null = null
     const bump = () => {
       if (frame) return
       frame = requestAnimationFrame(() => {
@@ -85,8 +93,25 @@ export function useEditorTick(api: Api) {
         setTick((n) => n + 1)
       })
     }
-    const offChange = api.onChange?.(bump)
-    const offScroll = (api as unknown as { onScrollChange?: (cb: () => void) => () => void }).onScrollChange?.(bump)
+    const followsCamera = (st: Record<string, unknown>) =>
+      Boolean(st.editingTextElement) || Object.values((st.selectedElementIds ?? {}) as Record<string, boolean>).some(Boolean)
+    const onChange = (elements: readonly unknown[], st: Record<string, unknown>) => {
+      const was = seenState
+      const wasElements = seenElements
+      seenState = st
+      seenElements = elements
+      if (!was || elements !== wasElements || followsCamera(st)) return bump()
+      for (const k in st) {
+        if (k === 'scrollX' || k === 'scrollY') continue
+        if (st[k] !== was[k]) return bump()
+      }
+    }
+    const onScroll = () => {
+      const st = api.getAppState()
+      if (followsCamera(st)) bump()
+    }
+    const offChange = api.onChange?.(onChange)
+    const offScroll = (api as unknown as { onScrollChange?: (cb: () => void) => () => void }).onScrollChange?.(onScroll)
     window.addEventListener('resize', bump)
     return () => {
       cancelAnimationFrame(frame)
@@ -626,21 +651,9 @@ export function Islands(props: IslandsProps) {
     document.documentElement.classList.add('islands-on')
     return () => document.documentElement.classList.remove('islands-on')
   }, [])
-  // Dark theme: colours stay themselves (dark-paint.ts); the stage's dots follow the camera.
   useEffect(() => {
     if (!installDarkPaint()) return
-    const root = document.documentElement.style
-    const follow = (sx: number, sy: number, zoom: { value: number }) => {
-      let g = 24 * zoom.value
-      while (g < 12) g *= 2
-      const at = (v: number) => `${(((v * zoom.value) % g) + g) % g}px`
-      root.setProperty('--isl-grid', `${g}px`)
-      root.setProperty('--isl-gx', at(sx))
-      root.setProperty('--isl-gy', at(sy))
-    }
-    const st = api.getAppState() as { scrollX: number; scrollY: number; zoom: { value: number } }
-    follow(st.scrollX, st.scrollY, st.zoom)
-    const offScroll = (api as unknown as { onScrollChange?: (cb: typeof follow) => () => void }).onScrollChange?.(follow)
+    installDarkDots()
     // Text typed into a coloured sticky stays dark on its colour, as it will be drawn; free text is inverted.
     let typingId: string | null = null
     const offChange = api.onChange?.((elements, appState) => {
@@ -656,7 +669,6 @@ export function Islands(props: IslandsProps) {
       document.documentElement.classList.toggle('isl-edit-keep', keep)
     })
     return () => {
-      offScroll?.()
       offChange?.()
       document.documentElement.classList.remove('isl-edit-keep')
     }
