@@ -81,7 +81,7 @@ export function arrowGeometry(fromBox, toBox) {
 const nonce = () => randomInt(1, 2 ** 31 - 1)
 
 /** New element version: every edit must bump `version`, or the merge will drop it. */
-function bump(el, changes, now) {
+export function bump(el, changes, now) {
   return { ...el, ...changes, version: (el.version ?? 1) + 1, versionNonce: nonce(), updated: now }
 }
 

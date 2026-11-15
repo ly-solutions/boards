@@ -1,7 +1,7 @@
 # Boards — a harnessly app
 
 The harnessly app package of this service: the agent works with boards through MCP tools (`board_read`,
-`board_create`, `board_edit`, `board_comment`, `board_react`, `board_list`, `board_library`, `board_templates`); people
+`board_create`, `board_edit`, `board_comment`, `board_react`, `board_list`, `board_library`, `board_templates`, and `quick_read` / `quick_apply` / `quick_undo` for quick voice edits); people
 get a "Boards" entry under Apps — the boards home with the library, and a board canvas next to the conversation.
 
 - `harnessly/app.json` — the manifest (`trust: sandboxed`, targets `app`, `pane` and `chat`).

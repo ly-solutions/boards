@@ -143,7 +143,7 @@ test('MCP with a platform token: create, read, edit and comment are signed by th
   assert.equal(note.status, 202)
 
   const list = await rpc(app.base, token, 'tools/list')
-  assert.deepEqual(list.body.result.tools.map((t) => t.name).sort(), ['board_comment', 'board_create', 'board_edit', 'board_library', 'board_list', 'board_look', 'board_react', 'board_read', 'board_signin', 'board_templates'])
+  assert.deepEqual(list.body.result.tools.map((t) => t.name).sort(), ['board_comment', 'board_create', 'board_edit', 'board_library', 'board_list', 'board_look', 'board_react', 'board_read', 'board_signin', 'board_templates', 'quick_apply', 'quick_read', 'quick_undo'])
 
   const created = await call(app.base, token, 'board_create', { title: 'Order flow', graph: { nodes: [{ id: 'web', label: 'Site' }, { id: 'api', label: 'API' }], edges: [{ from: 'web', to: 'api', label: 'HTTP' }] } })
   assert.equal(created.isError, false, created.content[0].text)

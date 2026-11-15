@@ -38,7 +38,8 @@ import { summarize as summarizeChanges, weekOutcome } from '../shared/checkpoint
 import { createLinks } from './links.mjs'
 import { refsOf } from '../shared/links.mjs'
 import { isValidSlug, makeKey, makeSlug, secretMatches } from './access.mjs'
-import { EditError, applyDeletes, applyUpdates, layoutGraph, loadEngine, materialize } from './engine.mjs'
+import { EditError, applyDeletes, applyUpdates, bump, layoutGraph, loadEngine, materialize } from './engine.mjs'
+import { QuickError, createQuickEdit } from './quick-edit.mjs'
 import { editorHeaders, embedHeaders, homeFieldValues, pageHeaders, renderBoardPage, renderEmbedPage, renderHome, renderNotFound, renderTokenLogin, webAssets } from './html.mjs'
 import { API_HELP } from './help.mjs'
 import { createAuth } from './auth.mjs'
@@ -786,7 +787,16 @@ export function createApp({
   }
 
   const actorOf = (who) => ({ name: who.name, kind: 'agent', email: who.email ?? null })
+  const quick = createQuickEdit({
+    materialize,
+    applyUpdates,
+    applyDeletes,
+    bump,
+    elementsOf: (state) => store.elements(state, { includeDeleted: true }),
+    save: (state, elements, { by, note }) => store.applyAgentEdit(state, elements, { by, note }),
+  })
   const mcpTools = boardTools({
+    quick,
     reactions: REACTIONS,
     board: async (ref) => {
       const slug = slugOf(ref)
@@ -864,6 +874,7 @@ export function createApp({
       serverInfo: { name: 'boards', version: VERSION },
       instructions: 'Excalidraw boards: read a board with board_read and look at it with board_look, draw diagrams with board_create/board_edit through graph (the server lays it out), answer people in threads with board_comment (pass ids of what you changed). After an edit look at the picture and fix what looks wrong; answer in one or two lines with the «Show on the board» link, no lists.',
       describeError: (error) => {
+        if (error instanceof QuickError) return JSON.stringify({ code: error.code, message: error.message })
         if (error instanceof ToolError || error instanceof HttpError || error instanceof EditError || error instanceof LimitError || error instanceof CommentError) return error.message
         if (error instanceof StorageUnavailableError) {
           console.error(JSON.stringify({ level: 'warn', event: 'mcp_storage_unavailable', error: error.message }))

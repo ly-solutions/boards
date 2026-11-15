@@ -48,6 +48,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   reactions on a thread (`react: { emoji }` on `POST /comments/<id>`), «агент печатает…» while a call waits for its
   answer; right-island tooltips go to the left while the panel is open so they no longer cover its header.
 - Board list as in the prototype: search, filters, templates row and a card menu, without native selects.
+- Quick edit for voice (HRN-1466): MCP tools `quick_read` (the board as text, one JSON line per element, with a version),
+  `quick_apply` (exact `{ old, new }` replacements on that text: change a label or a colour, add or, with `confirmed`,
+  remove a shape) and `quick_undo` (put the last apply back). The harnessly manifest declares them as `quickEdit`
+  (package 0.7.0); the app view outlines the changed elements when the host sends a `quick-edit` event.
 
 - A mention reaches the person (HRN-1469): the board keeps a stable id for each person who was on it signed in
   (`hub:<id>` from the harnessly app view, else HMAC-SHA256 of the e-mail keyed with the webhook secret), in storage only;

@@ -428,6 +428,12 @@
         if (object) go(object, thread)
         else if (!first && current()) go(null)
       }
+      // A voice quick edit changed elements of the open board (HRN-1466): the canvas outlines them for a moment.
+      hl.on('event', function (e) {
+        if (!e || e.kind !== 'quick-edit' || e.object !== current() || !Array.isArray(e.ids) || !canvas || !canvas.contentWindow) return
+        var ids = e.ids.filter(function (id) { return typeof id === 'string' }).slice(0, 50)
+        if (ids.length) canvas.contentWindow.postMessage({ type: 'board-flash', ids: ids }, location.origin)
+      })
       ask(hl.context.data)
       hl.on('context', function (next) {
         ask(next && next.data)
