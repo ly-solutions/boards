@@ -14,8 +14,11 @@
   --bl-border-strong: rgba(12, 14, 34, 0.14);
   --bl-accent: #7b61ff;
   --bl-accent-soft: rgba(123, 97, 255, 0.12);
-  --bl-primary: #7b61ff;
+  /* The main button is neutral, the text's colour (HRN-1498): near black here, white in the dark theme. */
+  --bl-primary: #16161d;
   --bl-primary-fg: #ffffff;
+  --bl-primary-hover: #2b2b33;
+  --bl-primary-active: #3a3a44;
   --bl-danger: #e5484d;
   --bl-stage: #f6f6f8;
   --bl-dot: rgba(12, 14, 34, 0.14);
@@ -39,8 +42,10 @@
     --bl-border-strong: rgba(255, 255, 255, 0.14);
     --bl-accent: #a28bff;
     --bl-accent-soft: rgba(132, 104, 255, 0.2);
-    --bl-primary: #a28bff;
+    --bl-primary: #f6f6f7;
     --bl-primary-fg: #141416;
+    --bl-primary-hover: #e4e4e7;
+    --bl-primary-active: #d4d4d8;
     --bl-stage: #e9e9ef;
     --bl-toast: #f6f6f7;
     --bl-toast-fg: #141416;
@@ -61,8 +66,10 @@ html[data-theme='dark'] .bl {
   --bl-border-strong: rgba(255, 255, 255, 0.14);
   --bl-accent: #a28bff;
   --bl-accent-soft: rgba(132, 104, 255, 0.2);
-  --bl-primary: #a28bff;
+  --bl-primary: #f6f6f7;
   --bl-primary-fg: #141416;
+  --bl-primary-hover: #e4e4e7;
+  --bl-primary-active: #d4d4d8;
   --bl-stage: #e9e9ef;
   --bl-toast: #f6f6f7;
   --bl-toast-fg: #141416;
@@ -170,14 +177,17 @@ html[data-theme='dark'] .bl {
   font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
-  transition: filter 0.12s, opacity 0.12s;
+  transition: background-color 0.12s, opacity 0.12s;
 }
 .bl-btn--pri {
   background: var(--bl-primary);
   color: var(--bl-primary-fg);
 }
 .bl-btn--pri:hover:not(:disabled) {
-  filter: brightness(1.08);
+  background: var(--bl-primary-hover);
+}
+.bl-btn--pri:active:not(:disabled) {
+  background: var(--bl-primary-active);
 }
 .bl-btn:disabled {
   opacity: 0.55;
@@ -266,9 +276,9 @@ html[data-theme='dark'] .bl {
   transform: translateY(-2px);
 }
 .bl-pv--new {
-  background: var(--bl-accent-soft);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bl-accent) 30%, transparent);
-  color: var(--bl-accent);
+  background: var(--bl-field);
+  box-shadow: inset 0 0 0 1px var(--bl-border-strong);
+  color: var(--bl-fg);
 }
 .bl-pv--new svg {
   width: 24px;
