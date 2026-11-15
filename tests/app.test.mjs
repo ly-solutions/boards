@@ -2,7 +2,7 @@ import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile, readdir } from 'node:fs/promises'
-import { isSafePreview } from '../server/index.mjs'
+import { isSafePreview, pngPreviewSvg } from '../server/index.mjs'
 import { createStore } from '../server/store.mjs'
 import { createBoardStorage } from '../server/storage/boards.mjs'
 import { fsObjects } from '../server/storage/objects.mjs'
@@ -119,6 +119,36 @@ test('preview upload: an editor may post a safe SVG, a viewer may not, scripts a
   assert.equal(served.status, 200)
   assert.match(served.headers.get('content-security-policy'), /sandbox/)
   assert.equal(await served.text(), svg)
+})
+
+test('a server thumbnail is drawn once per change and kept as the preview (HRN-1515)', async () => {
+  const { body } = await create({ graph: { nodes: [{ id: 'a', label: 'one' }, { id: 'b', label: 'two' }], edges: [{ from: 'a', to: 'b' }] } })
+  const url = `${base}/b/${body.slug}/preview.svg?k=${body.key}`
+  // The boards list asks for many at once: the same board is drawn once and all get the picture.
+  const first = await Promise.all([1, 2, 3].map(() => fetch(url)))
+  for (const r of first) {
+    assert.equal(r.status, 200)
+    assert.equal(r.headers.get('content-type'), 'image/png')
+  }
+  const sizes = await Promise.all(first.map(async (r) => (await r.arrayBuffer()).byteLength))
+  assert.ok(sizes[0] > 100 && sizes.every((n) => n === sizes[0]))
+  // Kept: the next look serves the stored preview, an SVG with the picture inside.
+  const again = await fetch(`${url}&v=1`)
+  assert.equal(again.status, 200)
+  assert.match(again.headers.get('content-type'), /image\/svg\+xml/)
+  assert.match(again.headers.get('cache-control'), /max-age=86400/)
+  const svg = await again.text()
+  assert.ok(isSafePreview(svg))
+  assert.match(svg, /<image [^>]*href="data:image\/png;base64,/)
+})
+
+test('pngPreviewSvg keeps the size of the picture', () => {
+  const png = Buffer.alloc(24)
+  png.writeUInt32BE(320, 16)
+  png.writeUInt32BE(180, 20)
+  const svg = pngPreviewSvg(png)
+  assert.match(svg, /width="320" height="180" viewBox="0 0 320 180"/)
+  assert.ok(isSafePreview(svg))
 })
 
 test('a team board opened by link without signing in is view-only', async () => {

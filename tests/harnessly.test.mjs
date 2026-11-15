@@ -283,7 +283,7 @@ test('library rows: "mine" by the person in the token, a link with the key, the 
   const row = libraryRow(meta, { publicUrl: 'https://boards.example', prefix: '/b', me: { name: 'Ada', email: 'ada@example.com' } })
   assert.equal(row.mine, true)
   assert.equal(row.url, 'https://boards.example/b/pay?k=k%201')
-  assert.equal(row.preview, '/b/pay/preview.svg?k=k%201')
+  assert.equal(row.preview, '/b/pay/preview.svg?k=k%201&v=2026-11-10T10%3A00%3A00Z')
   assert.equal(libraryRow(meta, { publicUrl: '', prefix: '/b', me: { name: 'Bob' } }).mine, false)
   assert.equal(libraryRow(meta, { publicUrl: '', prefix: '/b', me: null }).mine, false)
 })

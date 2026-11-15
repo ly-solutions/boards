@@ -237,7 +237,7 @@ test('the boards list page: anonymous visitors go to sign-in, members see their 
   assert.equal(row.title, 'Listed on home')
   assert.ok(row.url.endsWith(`/b/${body.slug}?k=${body.key}`))
   // Every board has a preview address (the browser's thumbnail or the server's sketch), and the library says whose it is.
-  assert.equal(row.preview, `/b/${body.slug}/preview.svg?k=${body.key}`)
+  assert.ok(row.preview.startsWith(`/b/${body.slug}/preview.svg?k=${body.key}&v=`), row.preview)
   assert.equal(row.mine, false, 'made by an agent token, not by Ada')
   assert.equal(me.name, 'Ada Lovelace')
   // The search runs in the page: the server only hands over the first query.

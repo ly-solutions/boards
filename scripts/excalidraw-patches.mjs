@@ -81,12 +81,16 @@
  *    measureText reads the size from that font string, so it skips the style words.
  * 16. Dark theme without muddy colours (HRN-1480). The package darkens the board
  *    by inverting every canvas in CSS, so a yellow sticky turns brown. When the
- *    editor installs window.__tbDark (web/src/islands/dark-paint.ts — only where
+ *    editor installs window.__tbDarkBake (web/src/islands/dark-paint.ts — only where
  *    a 2D canvas applies `filter`), the static canvas is not inverted and each
- *    element is drawn with its own filter: colourless things get the old
- *    inversion, colour fills keep their colour. The canvas background goes
+ *    element is drawn from a copy of its canvas baked once with its own filter
+ *    (HRN-1515: a filter per element per frame is software work): colourless
+ *    things get the old inversion, colour fills keep their colour. The canvas background goes
  *    transparent so CSS can draw the stage with its dot grid; the link icon keeps
  *    the old inversion. Exports are untouched.
+ * 17. The selection colour is read once per theme (HRN-1515). The interactive
+ *    canvas called getComputedStyle for --color-selection on every render: a
+ *    forced style recalculation in each frame of a pan or a drag.
  */
 
 export const EXCALIDRAW_VERSION = '0.18.1'
@@ -139,14 +143,14 @@ export const PATCHES = [
     file: 'render',
     // The canvas background in the dark theme is CSS's (the stage and its dots), not a filled rectangle.
     find: 'i&&o===ke.DARK&&(s.filter=Io),typeof a=="string"?',
-    replace: 'i&&o===ke.DARK&&(s.filter=Io),!i&&o===ke.DARK&&window.__tbDark&&(a="transparent"),typeof a=="string"?',
+    replace: 'i&&o===ke.DARK&&(s.filter=Io),!i&&o===ke.DARK&&window.__tbDarkBake&&(a="transparent"),typeof a=="string"?',
   },
   {
     id: 'dark-paint-link-icon',
     file: 'render',
     // The link icon is a white card: it keeps the old inversion.
     find: 't.drawImage(E,d-p,c-m,l,U),t.restore()',
-    replace: 'window.__tbDark&&n.theme==="dark"&&(t.filter="invert(93%) hue-rotate(180deg)"),t.drawImage(E,d-p,c-m,l,U),t.restore()',
+    replace: 'window.__tbDarkBake&&n.theme==="dark"&&(t.filter="invert(93%) hue-rotate(180deg)"),t.drawImage(E,d-p,c-m,l,U),t.restore()',
   },
   {
     id: 'text-measure-style',
@@ -222,11 +226,53 @@ export const PATCHES = [
   {
     id: 'dark-paint-element',
     file: 'render',
-    // After draw-fast-path: the element's own filter (and a sticky's shadow) before its canvas is drawn, on both
-    // paths — the fast one draws in CSS pixels (unit 1), the full one in device pixels (unit = devicePixelRatio).
+    // After draw-fast-path: in the dark theme the element is drawn from a copy of its canvas baked once with its
+    // filter and a sticky's shadow (HRN-1515: a filter per element per frame cost seconds a pan on a big board).
     find: 'let q=window.devicePixelRatio;t.drawImage(e.canvas,((d+r.scrollX)*q-a)/q,((c+r.scrollY)*q-a)/q,e.canvas.width/e.scale/q,e.canvas.height/e.scale/q);return}t.save(),t.scale(1/window.devicePixelRatio,1/window.devicePixelRatio);',
     replace:
-      'let q=window.devicePixelRatio,__k=window.__tbDark&&r.theme==="dark";__k&&(t.save(),window.__tbDark(i,t,r,o,d,c,l,U,1));t.drawImage(e.canvas,((d+r.scrollX)*q-a)/q,((c+r.scrollY)*q-a)/q,e.canvas.width/e.scale/q,e.canvas.height/e.scale/q);__k&&t.restore();return}t.save(),t.scale(1/window.devicePixelRatio,1/window.devicePixelRatio);window.__tbDark&&r.theme==="dark"&&window.__tbDark(i,t,r,o,d,c,l,U,window.devicePixelRatio);',
+      'let q=window.devicePixelRatio;__tbDrawEl(t,e.canvas,((d+r.scrollX)*q-a)/q,((c+r.scrollY)*q-a)/q,e.canvas.width/e.scale/q,e.canvas.height/e.scale/q,i,o,r,l-d,U-c,a*e.scale,a*e.scale,e.scale*q);return}t.save(),t.scale(1/window.devicePixelRatio,1/window.devicePixelRatio);',
+  },
+  {
+    id: 'dark-paint-bound-text',
+    file: 'render',
+    // The full path of a container with a label draws its bound-text canvas (shape and label together).
+    find: 't.drawImage(e.boundTextCanvas,-(l-d)/2*window.devicePixelRatio-E/s-a,-(U-c)/2*window.devicePixelRatio-g/s-a,e.boundTextCanvas.width/s,e.boundTextCanvas.height/s)',
+    replace:
+      '__tbDrawEl(t,e.boundTextCanvas,-(l-d)/2*window.devicePixelRatio-E/s-a,-(U-c)/2*window.devicePixelRatio-g/s-a,e.boundTextCanvas.width/s,e.boundTextCanvas.height/s,i,o,r,l-d,U-c,E+a*s,g+a*s,s*window.devicePixelRatio)',
+  },
+  {
+    id: 'dark-paint-full-path',
+    file: 'render',
+    // The full path of anything else: rotated, flipped or with a label that is not there yet.
+    find: 't.drawImage(e.canvas,(d+r.scrollX)*window.devicePixelRatio-a*e.scale/e.scale,(c+r.scrollY)*window.devicePixelRatio-a*e.scale/e.scale,e.canvas.width/e.scale,e.canvas.height/e.scale)',
+    replace:
+      '__tbDrawEl(t,e.canvas,(d+r.scrollX)*window.devicePixelRatio-a*e.scale/e.scale,(c+r.scrollY)*window.devicePixelRatio-a*e.scale/e.scale,e.canvas.width/e.scale,e.canvas.height/e.scale,i,o,r,l-d,U-c,a*e.scale,a*e.scale,e.scale*window.devicePixelRatio)',
+  },
+  {
+    id: 'selection-color-cache',
+    file: 'app',
+    // The interactive canvas read --color-selection with getComputedStyle on every render — a forced style
+    // recalculation per frame of a pan or a drag (HRN-1515). It changes only with the theme class: read it once per
+    // class name.
+    find: 'let l=e.containerRef?.current&&getComputedStyle(e.containerRef.current).getPropertyValue("--color-selection")||"#6965db";',
+    replace: 'let l=__tbSelectionColor(e.containerRef?.current)||"#6965db";',
+  },
+  {
+    id: 'dark-paint-dots',
+    file: 'render',
+    // The stage's dot grid, drawn into the static canvas under the elements (window.__tbDots, dark-paint.ts) rather
+    // than as a CSS background that moved with the camera: that repainted a full-screen layer on every frame.
+    find: 'theme:a.theme,isExporting:c,viewBackgroundColor:a.viewBackgroundColor});p.scale(a.zoom.value,a.zoom.value),',
+    replace: 'theme:a.theme,isExporting:c,viewBackgroundColor:a.viewBackgroundColor});!c&&a.theme==="dark"&&window.__tbDots&&window.__tbDots(p,a,l,U,i);p.scale(a.zoom.value,a.zoom.value),',
+  },
+  {
+    id: 'dark-paint-interactive',
+    file: 'app',
+    // The interactive canvas (selection, handles, cursors) was inverted by a CSS filter on a full-screen layer, which
+    // cost a filtered repaint of the whole screen on every frame of a pan. With dark paint on, the context inverts what
+    // it draws instead (islands.css drops the CSS filter).
+    find: 'let[c,m]=Cs(e,i),d=Is({canvas:e,scale:i,normalizedWidth:c,normalizedHeight:m});',
+    replace: 'let[c,m]=Cs(e,i),d=Is({canvas:e,scale:i,normalizedWidth:c,normalizedHeight:m});d.filter=a.theme==="dark"&&window.__tbDarkBake?"invert(93%) hue-rotate(180deg)":"none";',
   },
   {
     id: 'curve-bounds-cache',
@@ -637,6 +683,15 @@ function __tbQueued(throttled) {
   queued.cancel = throttled.cancel;
   return queued;
 }
+// Dark theme (HRN-1515): draw an element from its copy baked with its filter, see web/src/islands/dark-paint.ts.
+function __tbDrawEl(t, src, x, y, w, h, el, map, appState, sw, sh, offX, offY, pps) {
+  var bake = appState.theme === "dark" ? globalThis.__tbDarkBake : null;
+  var b = bake ? bake(el, map, src, offX, offY, pps, sw, sh) : null;
+  if (b) {
+    var m = (b.m * w) / src.width;
+    t.drawImage(b.canvas, x - m, y - m, w + 2 * m, h + 2 * m);
+  } else t.drawImage(src, x, y, w, h);
+}
 var __tbCurveCache = new WeakMap();
 function __tbCurveBounds(shape, toOps, minMax) {
   var bounds = __tbCurveCache.get(shape);
@@ -649,6 +704,17 @@ function __tbCurveBounds(shape, toOps, minMax) {
 `
 
 const APP_RUNTIME = `
+;var __tbSelColor = { node: null, cls: null, value: "" };
+function __tbSelectionColor(node) {
+  if (!node) return "";
+  var c = __tbSelColor, cls = node.className + "|" + document.documentElement.className;
+  if (c.node !== node || c.cls !== cls) {
+    c.node = node;
+    c.cls = cls;
+    c.value = getComputedStyle(node).getPropertyValue("--color-selection");
+  }
+  return c.value;
+}
 ;var __tbSelectedCache = { elements: null, length: -1, ids: null, result: [] };
 function __tbSelected(elements, appState) {
   var c = __tbSelectedCache;

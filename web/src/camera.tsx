@@ -39,7 +39,12 @@ const ZOOM_SETTLE_MS = 300
 let settledZoom = 1
 let settleTimer: ReturnType<typeof setTimeout> | undefined
 
+/** The zoom each layer's sizes were last written for: a custom property restyles the whole layer, so a pan must not touch them. */
+const sizedAt = new WeakMap<HTMLElement, number>()
+
 function paintSizes(layer: HTMLElement, zoom: number) {
+  if (sizedAt.get(layer) === zoom) return
+  sizedAt.set(layer, zoom)
   layer.style.setProperty('--camera-inv', String(1 / zoom))
   layer.style.setProperty('--camera-sticky', String(Math.min(1.25, Math.max(0.7, zoom)) / zoom))
   layer.classList.toggle('is-far', zoom < FAR_ZOOM)
@@ -49,7 +54,7 @@ function paint(layer: HTMLElement, zooming = false) {
   const { scrollX, scrollY, zoom } = view
   // Scene point p lands on screen at zoom·(p + scroll), exactly like the canvas.
   layer.style.transform = `matrix(${zoom}, 0, 0, ${zoom}, ${zoom * scrollX}, ${zoom * scrollY})`
-  layer.classList.toggle('is-zooming', zooming)
+  if (layer.classList.contains('is-zooming') !== zooming) layer.classList.toggle('is-zooming', zooming)
   if (!zooming) paintSizes(layer, zoom)
 }
 

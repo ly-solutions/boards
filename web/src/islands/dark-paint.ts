@@ -16,8 +16,6 @@ type El = {
   containerId?: string | null
   customData?: Record<string, unknown>
 }
-type Ctx = CanvasRenderingContext2D
-type AppState = { zoom: { value: number } }
 
 const INVERT = 'invert(93%) hue-rotate(180deg)'
 const SURFACE = 'invert(84%) hue-rotate(180deg)'
@@ -103,42 +101,52 @@ function kindOf(el: El, map: Map<string, El>): DarkKind {
   return kind
 }
 
+type Baked = { src: HTMLCanvasElement; kind: DarkKind; canvas: HTMLCanvasElement; m: number }
+const baked = new WeakMap<HTMLCanvasElement, Baked>()
+
 /**
- * Called by the patched renderer before an element's canvas is drawn on the static canvas in the dark theme;
- * the caller restores the context afterwards. (x1, y1)–(x2, y2) are the element's bounds in scene coordinates;
- * `unit` is how many context units a scene unit is before the zoom (1, or devicePixelRatio on the full path).
+ * Called by the patched renderer for each element in the dark theme (HRN-1515). A canvas `filter` and a shadow on
+ * the static canvas are drawn in software on every frame: with a thousand elements panning fell to 2 FPS. So the
+ * element's own cached canvas is drawn once more into a copy with its filter and shadow, and frames draw the copy
+ * as it is. The copy lives as long as the cached canvas: a new zoom level or an edit makes a new cached canvas and
+ * so a new copy. Returns null when the element is drawn as it is (an image).
+ *
+ * `off` is where the element's box starts inside `src` (x, y in its pixels), `pps` how many of its pixels a scene
+ * unit is, (w, h) the element's size in scene units. `m` in the result is the copy's margin on every side, in `src`
+ * pixels (room for a sticky's shadow).
  */
-function paint(el: El, ctx: Ctx, appState: AppState & { scrollX: number; scrollY: number }, map: Map<string, El>, x1: number, y1: number, x2: number, y2: number, unit = 1) {
+function bake(el: El, map: Map<string, El>, src: HTMLCanvasElement, offX: number, offY: number, pps: number, w: number, h: number): Baked | null {
   const kind = kindOf(el, map)
-  if (kind === 'raw') return
-  if (kind === 'invert') {
-    ctx.filter = INVERT
-    return
-  }
-  const dpr = window.devicePixelRatio || 1
-  if (isSticky(el)) {
-    const z = appState.zoom.value
+  if (kind === 'raw') return null
+  const was = baked.get(src)
+  if (was && was.kind === kind) return was
+  const sticky = isSticky(el)
+  const blur = sticky ? 14 * pps : 0
+  const dy = sticky ? 4 * pps : 0
+  const m = sticky ? Math.ceil(blur + dy + 2) : 0
+  const canvas = document.createElement('canvas')
+  canvas.width = src.width + 2 * m
+  canvas.height = src.height + 2 * m
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  if (sticky) {
     ctx.shadowColor = 'rgba(0, 0, 0, 0.45)'
-    ctx.shadowBlur = 14 * z * dpr
-    ctx.shadowOffsetY = 4 * z * dpr
+    ctx.shadowBlur = blur
+    ctx.shadowOffsetY = dy
   }
-  if (kind === 'keep') {
-    ctx.filter = KEEP
-    return
-  }
-  // A surface: a white or grey sticky turns into a raised dark card; with no fill at all it gets one.
-  ctx.filter = SURFACE
-  if (!parse(el.backgroundColor) && ctx.roundRect) {
-    const r = 8 * unit
-    ctx.save()
-    ctx.filter = 'none'
+  if (kind === 'surface' && !parse(el.backgroundColor) && ctx.roundRect) {
+    // A sticky with no fill at all gets a raised dark card under it; the card carries the shadow.
     ctx.fillStyle = '#2a2a2f'
     ctx.beginPath()
-    ctx.roundRect((x1 + appState.scrollX) * unit, (y1 + appState.scrollY) * unit, (x2 - x1) * unit, (y2 - y1) * unit, r)
+    ctx.roundRect(m + offX, m + offY, w * pps, h * pps, 8 * pps)
     ctx.fill()
-    ctx.restore()
     ctx.shadowColor = 'transparent'
   }
+  ctx.filter = kind === 'invert' ? INVERT : kind === 'keep' ? KEEP : SURFACE
+  ctx.drawImage(src, m, m)
+  const out = { src, kind, canvas, m }
+  baked.set(src, out)
+  return out
 }
 
 /** Whether this browser applies `filter` to a 2D canvas; without it the old whole-canvas inversion stays. */
@@ -165,7 +173,7 @@ export function installDarkPaint(): boolean {
   if (installed !== null) return installed
   installed = canvasFilters()
   if (installed) {
-    ;(window as unknown as { __tbDark: typeof paint }).__tbDark = paint
+    ;(window as unknown as { __tbDarkBake: typeof bake }).__tbDarkBake = bake
     document.documentElement.classList.add('isl-dark-paint')
   }
   return installed
