@@ -386,6 +386,13 @@
       onOpen: function (row) {
         go(row.slug)
       },
+      onShare: function (row) {
+        connect()
+          .then(function (hl) {
+            return hl.pane.open('share:' + row.slug)
+          })
+          .catch(function () {})
+      },
       onCreated: function (made) {
         // The new board is not in the cached library yet.
         rowsReady = null

@@ -79,6 +79,9 @@ Turn it off explicitly with `BOARDS_AUTH=none` for a local instance.
 | `BOARDS_HANDOFF_TTL` | `120` | Lifetime in seconds of hand-off links minted by `POST /b/api/handoff`. |
 | `BOARDS_COMMENTS_WEBHOOK_URL` | — | POST comment events (`thread.created`, `thread.replied`, …) here. |
 | `BOARDS_COMMENTS_WEBHOOK_SECRET` | — | Sent as `x-boards-webhook-secret` with every webhook call. |
+| `BOARDS_HUB_RIGHTS` | `off` | `on`: a harnessly hub decides who may view, comment on and edit a board it knows (the share dialog of harnessly), and its links without sign-in open here as `/b/<slug>?g=<token>`. Needs BOARDS_HUB_URL (or BOARDS_HARNESSLY_ISSUER) and BOARDS_HUB_RIGHTS_TOKEN. See docs/integrations/harnessly.md. |
+| `BOARDS_HUB_URL` | — | With BOARDS_HUB_RIGHTS=on: the hub address; empty — BOARDS_HARNESSLY_ISSUER. |
+| `BOARDS_HUB_RIGHTS_TOKEN` | — | With BOARDS_HUB_RIGHTS=on: the secret the hub knows this service by (its HUB_BOARD_EVENTS_SECRET); empty — BOARDS_COMMENTS_WEBHOOK_SECRET. |
 | `BOARDS_LINK_PREVIEW` | `off` | `on`: link cards show the page title, description and image from its Open Graph tags. The server then fetches pasted URLs — only public addresses, never private, loopback or link-local ones (SSRF guard). |
 
 ### Plugins

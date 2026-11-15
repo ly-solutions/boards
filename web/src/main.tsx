@@ -123,6 +123,14 @@ const config = JSON.parse(document.getElementById('board-config')?.textContent ?
   user: { name: string; email: string | null } | null
   canEdit: boolean
   canManage: boolean
+  /** May comment: an editor, or one the harnessly hub gave «comments» (HRN-1519). */
+  canComment?: boolean
+  /** The harnessly hub decided who may do what here (its share dialog): canEdit and canComment are its word. */
+  hubDecided?: boolean
+  /** «Поделиться» opens the hub's dialog of this board (people, roles, links without sign-in); null: the old dialog. */
+  shareUrl?: string | null
+  /** A guest of a hub link: the name the link was made for ('' when it names nobody); null otherwise. */
+  guestOf?: string | null
   /** Sign-in is available. */
   authEnabled: boolean
   loginUrl?: string
@@ -420,7 +428,8 @@ function Board() {
   /** The studio tool lives in state: toolbar buttons highlight from it. */
   const [tool, setTool] = useState<StudioTool>(null)
   // A checkpoint snapshot is read-only for everyone, even those who can edit the board.
-  const canEdit = !config.at && (Boolean(config.user) || access === 'link')
+  const canEdit = !config.at && (config.hubDecided ? Boolean(config.canEdit) : Boolean(config.user) || access === 'link')
+  const canComment = config.hubDecided ? Boolean(config.canComment) : canEdit
   const apiRef = useRef<Api | null>(null)
   /** The same API, but in state: studio panels must appear as soon as the editor is ready. */
   const [studioApi, setStudioApi] = useState<StudioApi | null>(null)
@@ -1633,7 +1642,11 @@ function Board() {
    */
   const [topRight, setTopRight] = useState<HTMLElement | null>(null)
   const renderTopRightUI = useCallback(() => <div className="board-top" ref={setTopRight} />, [])
-  const openShare = useCallback(() => setSharing(true), [])
+  // Where the hub decides who may open the board, «Поделиться» is its dialog, the one of documents and designs (HRN-1519).
+  const openShare = useCallback(() => {
+    if (config.shareUrl) window.open(config.shareUrl, '_blank', 'noopener')
+    else setSharing(true)
+  }, [])
   const openProperties = useCallback(() => setProperties(true), [])
   const startComment = useCallback(() => onTool('comment'), [onTool])
   const openComments = useMemo(() => notes.comments.filter((t) => !t.resolved).length, [notes.comments])
@@ -1719,7 +1732,7 @@ function Board() {
   }
   if (!initial) return null
 
-  const needsGuestName = !config.at && !config.user && access === 'link' && !guest
+  const needsGuestName = !config.at && !config.user && !config.hubDecided && access === 'link' && !guest
 
   return (
     <>
@@ -1808,6 +1821,7 @@ function Board() {
         <Islands
           api={studioApi as never}
           canEdit={canEdit}
+          canComment={canComment}
           app={Boolean(config.app)}
           title={title}
           onRename={renameTo}
@@ -1873,7 +1887,7 @@ function Board() {
           slug={config.slug}
           threads={notes.comments}
           me={me}
-          canComment={canEdit}
+          canComment={canComment}
           isTeam={Boolean(config.user)}
           draft={commentDraft}
           setDraft={setCommentDraft}

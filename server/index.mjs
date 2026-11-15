@@ -38,6 +38,7 @@ import { summarize as summarizeChanges, weekOutcome } from '../shared/checkpoint
 import { createLinks } from './links.mjs'
 import { refsOf } from '../shared/links.mjs'
 import { isValidSlug, makeKey, makeSlug, secretMatches } from './access.mjs'
+import { createHubRights, GUEST_PREFIX, HubRightsError, rankOf } from './hub-rights.mjs'
 import { EditError, applyDeletes, applyUpdates, bump, layoutGraph, loadEngine, materialize } from './engine.mjs'
 import { QuickError, createQuickEdit } from './quick-edit.mjs'
 import { editorHeaders, embedHeaders, homeFieldValues, pageHeaders, renderBoardPage, renderEmbedPage, renderHome, renderNotFound, renderTokenLogin, webAssets } from './html.mjs'
@@ -230,6 +231,8 @@ export function createApp({
   ready = async () => true,
   /** harnessly platform tokens (`harnessly` in BOARDS_AUTH); off unless configured. */
   platform = createPlatformAuth({ harnessly: config.auth?.harnessly ?? null, audience: config.publicUrl }),
+  /** Who may view, comment on and edit a board the harnessly hub knows (BOARDS_HUB_RIGHTS, hub-rights.mjs); null: off. */
+  hubRights = config.hubRights ? createHubRights({ issuer: config.hubRights.url, token: config.hubRights.token }) : null,
 } = {}) {
   // One translator for pages and plugins: a host built elsewhere brings its own, with its plugins' messages in it.
   if (plugins.t) t = plugins.t
@@ -279,12 +282,34 @@ export function createApp({
   function editor(req, state, body = {}) {
     const { agent, user } = context(req)
     if (agent) return { kind: 'agent', name: authorOf(body) }
+    // The hub decided this request's right on the board (board() below): only `edit` edits.
+    const granted = req.boardAccess
+    if (granted) return granted.right === 'edit' && user ? { kind: 'user', name: user.name, email: user.email, id: personId(user, webhookSecret) } : null
     if (user) return { kind: 'user', name: user.name, email: user.email, id: personId(user, webhookSecret) }
     if ((state.meta.access ?? 'team') === 'link') {
       const guest = typeof body.guest === 'string' ? body.guest.trim().slice(0, 40) : ''
       return { kind: 'guest', name: guest ? `guest: ${guest}` : 'guest' }
     }
     return null
+  }
+
+  /**
+   * Who is commenting, and may they: an editor always; where the hub decided the right (board() below), `comment` too —
+   * a guest of a link that allows comments signs with the name the link was made for.
+   */
+  function commenter(req, state, body = {}) {
+    const granted = req.boardAccess
+    if (!granted || granted.right === 'edit') return editor(req, state, body)
+    if (granted.right !== 'comment') return null
+    const { user } = context(req)
+    if (user) return { kind: 'user', name: user.name, email: user.email, id: personId(user, webhookSecret) }
+    return { kind: 'guest', name: granted.guest ? `guest: ${granted.guest}` : 'guest' }
+  }
+
+  function requireCommenter(req, state, body) {
+    const who = commenter(req, state, body)
+    if (!who) throw new HttpError(403, req.boardAccess ? 'you can view this board but not comment on it' : 'sign in to comment on this board', { login: `${PREFIX}/auth/login` })
+    return who
   }
 
   function requireEditor(req, state, body) {
@@ -333,7 +358,7 @@ export function createApp({
   /** Comment requests: new thread or a change to one. Permissions here, data rules in comments.mjs. */
   async function handleComment(req, res, state, threadId) {
     const body = await readJson(req, 64 * 1024)
-    const who = requireEditor(req, state, body)
+    const who = requireCommenter(req, state, body)
     const actor = { name: who.name, kind: who.kind === 'agent' ? 'agent' : 'person', email: who.email, id: who.kind === 'agent' ? null : who.id ?? null }
     try {
       if (!threadId) {
@@ -365,10 +390,65 @@ export function createApp({
     const state = await store.get(slug)
     // A board in the trash opens for nobody: only taking it out of the trash reaches it (HRN-1478).
     if (!state || Boolean(state.meta.trashedAt) !== trashed) throw new HttpError(404, 'no such board')
-    const key = url.searchParams.get('k') ?? req.headers['x-board-key']
+    const guestLink = url.searchParams.get('g')
+    const key = url.searchParams.get('k') ?? req.headers['x-board-key'] ?? (guestLink ? `${GUEST_PREFIX}${guestLink}` : null)
     const { agent, user } = context(req)
+    if (!agent && hubRights) {
+      const granted = await hubAccess(req, state, key)
+      if (granted) {
+        req.boardAccess = granted
+        return state
+      }
+    }
     if (!agent && !(keyless && user) && !secretMatches(key, state.meta.key)) throw new HttpError(404, 'no such board')
     return state
+  }
+
+  /** The boards a signed-in person may open: where the hub decides, only those it gives at least view (HRN-1519). */
+  async function visibleBoards(user, boards) {
+    if (!hubRights || user.via === 'token' || boards.length === 0) return boards
+    let said
+    try {
+      said = await hubRights.personRights(hubPerson(user), boards.map((b) => b.slug))
+    } catch (error) {
+      if (error instanceof HubRightsError) throw new HttpError(503, 'the hub did not say which boards you may open; retry in a minute')
+      throw error
+    }
+    return boards.filter((b) => {
+      const r = said.get(b.slug)
+      return !r || !r.known || rankOf(r.right) >= rankOf('view')
+    })
+  }
+
+  /** The person a hub knows: their hub id when they signed in from harnessly, otherwise their address. */
+  const hubPerson = (user) => (user.via === 'harnessly' ? { hubId: user.sub } : { email: user.email ?? null })
+
+  /**
+   * The hub's word on this request (BOARDS_HUB_RIGHTS): { right, guest? } for a board the hub knows, null where this
+   * service's own rules stay (a board the hub has never heard of, a sign-in with an API token). A guest's credential
+   * (`g.<token>` in place of the key, `?g=` on the page) is the hub's link: it allows what the hub says or opens nothing.
+   * A person the hub gives no right sees the board only by its key, to read — the key is the old "anyone with the link".
+   */
+  async function hubAccess(req, state, key) {
+    const { user } = context(req)
+    const keyOk = secretMatches(key, state.meta.key)
+    try {
+      if (typeof key === 'string' && key.startsWith(GUEST_PREFIX)) {
+        const link = await hubRights.guest(key.slice(GUEST_PREFIX.length), state.slug)
+        if (!link) throw new HttpError(404, 'no such board')
+        return { right: link.right, guest: link.forWhom || null, token: key.slice(GUEST_PREFIX.length) }
+      }
+      if (user && user.via === 'token') return null
+      const said = await hubRights.personRight(user ? hubPerson(user) : {}, state.slug)
+      if (!said.known) return null
+      let right = user ? said.right : 'none'
+      if (rankOf(right) < rankOf('view') && keyOk) right = 'view'
+      if (rankOf(right) < rankOf('view')) throw new HttpError(404, 'no such board')
+      return { right }
+    } catch (error) {
+      if (error instanceof HubRightsError) throw new HttpError(503, 'the hub did not say who may open this board; retry in a minute')
+      throw error
+    }
   }
 
   /** Graph, skeleton, updates and deletes — one request, one revision. */
@@ -937,7 +1017,7 @@ export function createApp({
       }
       const me = { name: user.name, email: user.email }
       const fields = plugins.homeFields()
-      const rows = (await store.list()).map((b) => ({ ...libraryRow(b, { publicUrl, prefix: PREFIX, me }), fields: homeFieldValues(b, fields, t) }))
+      const rows = (await visibleBoards(user, await store.list())).map((b) => ({ ...libraryRow(b, { publicUrl, prefix: PREFIX, me }), fields: homeFieldValues(b, fields, t) }))
       res.writeHead(200, pageHeaders({ frameAncestors: config.frameAncestors }))
       return res.end(renderHome({ staticBase, rows, templates: localTemplates(), user, canSignOut: auth.mode !== 'none', q: url.searchParams.get('q') ?? '', t }))
     }
@@ -964,7 +1044,8 @@ export function createApp({
       const { user } = context(req)
       if (!user) throw new HttpError(401, 'not signed in')
       const me = { name: user.name, email: user.email }
-      const rows = (await store.list()).map((b) => libraryRow(b, { publicUrl, prefix: PREFIX, me }))
+      const boards = await visibleBoards(user, await store.list())
+      const rows = boards.map((b) => libraryRow(b, { publicUrl, prefix: PREFIX, me }))
       return json(res, 200, { me, boards: rows })
     }
     if (rest === 'auth/login') return auth.login(req, res, url, { renderTokenForm, readForm })
@@ -1166,25 +1247,34 @@ export function createApp({
       const app = Boolean(config.appView) && url.searchParams.get('app') === '1'
       const theme = ['dark', 'light'].includes(url.searchParams.get('theme')) ? url.searchParams.get('theme') : null
       // `?at=<checkpoint>`: the board as it was — read-only, no live channel.
+      const granted = req.boardAccess ?? null
+      const guestToken = granted?.token ?? null
+      const guestUrl = guestToken ? `${publicUrl}${PREFIX}/${slug}?g=${encodeURIComponent(guestToken)}` : null
       const atId = url.searchParams.get('at')
       const at = atId && features.workboard ? ((await store.checkpoints(state)).find((c) => c.id === atId) ?? null) : null
       const pageConfig = {
         slug,
-        key: state.meta.key,
+        // A guest of a hub link never gets the board's key: the link is their key, and it can be switched off.
+        key: guestToken ? `${GUEST_PREFIX}${guestToken}` : state.meta.key,
         title: state.meta.title,
         author: state.meta.author ?? null,
         access,
         user: user ? { name: user.name, email: user.email } : null,
-        canEdit: !at && (Boolean(user) || access === 'link'),
-        canManage: !at && Boolean(user),
-        canCopy: (Boolean(user) || access === 'link'),
+        canEdit: !at && Boolean(editor(req, state, {})),
+        canComment: !at && Boolean(commenter(req, state, {})),
+        canManage: !at && Boolean(user) && (!granted || granted.right === 'edit'),
+        canCopy: granted ? granted.right === 'edit' && Boolean(user) : (Boolean(user) || access === 'link'),
+        // «Поделиться» opens the hub's dialog of this board where the hub decides who may open it (HRN-1519).
+        shareUrl: hubRights && user && granted ? `${hubRights.url}/docs/${encodeURIComponent(slug)}?share=1` : null,
+        guestOf: guestToken ? (granted.guest || '') : null,
+        hubDecided: Boolean(granted),
         authEnabled: auth.enabled && auth.mode !== 'none',
         loginUrl: `${PREFIX}/auth/login`,
         logoutUrl: `${PREFIX}/auth/logout`,
         homeUrl,
         hasPreview: store.hasPreview(state),
         previewStale: Boolean(state.previewStale),
-        agentUrl: store.boardUrl(state),
+        agentUrl: guestToken ? guestUrl : store.boardUrl(state),
         staticBase,
         live: !at && features.live !== false,
         studio: features.studio !== false,
@@ -1194,7 +1284,7 @@ export function createApp({
         snap: features.snap !== false,
         app,
         theme: app ? theme : null,
-        boardUrl: `${publicUrl}${PREFIX}/${slug}?k=${encodeURIComponent(state.meta.key)}`,
+        boardUrl: guestToken ? guestUrl : `${publicUrl}${PREFIX}/${slug}?k=${encodeURIComponent(state.meta.key)}`,
         description: state.meta.description ?? '',
         tags: state.meta.tags ?? [],
         task: state.meta.task ?? null,
@@ -1204,7 +1294,10 @@ export function createApp({
         flags: userFlags,
         plugins: { ...plugins.clientView(), cardsForLinks: Boolean(links.claimsLinks?.()), apiVersion: PLUGIN_API_VERSION },
       }
-      const html = renderBoardPage({ state, text: store.text(state), config: pageConfig, assets: webAssets(join(webDir, '.vite/manifest.json')).editor, staticBase, t })
+      let html = renderBoardPage({ state, text: guestToken ? withoutBoardKeys(store.text(state), publicUrl, PREFIX) : store.text(state), config: pageConfig, assets: webAssets(join(webDir, '.vite/manifest.json')).editor, staticBase, t })
+      if (guestToken && state.meta.key) html = html.split(state.meta.key).join('')
+      // An opening of the link counts on the hub (its «открыта N раз»); the page's own calls after it do not.
+      if (guestToken && !app) hubRights.guest(guestToken, slug, { open: true }).catch(() => {})
       return sendBody(res, 200, editorHeaders({ publicUrl, frameAncestors: config.frameAncestors, scriptOrigins: plugins.scriptOrigins() }), html)
     }
 
