@@ -162,3 +162,31 @@ test('flush during an in-flight write also writes the edits made meanwhile (shut
   assert.ok(writes.at(-1).includes('second'), `last write: ${writes.at(-1)}`)
   assert.equal(state.dirty, false)
 })
+
+test('the board remembers who changed it last and when, apart from its author (HRN-1478)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'boards-edited-'))
+  try {
+    let t = Date.parse('2026-11-15T01:00:00Z')
+    const open = () => createStore({ storage: createBoardStorage({ objects: fsObjects({ dir }) }), flushDelayMs: 10_000, now: () => t, log: () => {} })
+    const a = open()
+    const state = await a.create({ slug: 'edited-000000000000', meta: { title: 'Plan', key: 'k', author: 'Ada' }, elements: [el('base', 1)] })
+    assert.equal(state.meta.editedBy, undefined)
+    t += 60_000
+    a.applyAgentEdit(state, [el('agent', 1)], { by: 'Claude' })
+    t += 60_000
+    a.apply(state, [el('bob', 1)], [], { by: 'Bob' })
+    assert.equal(state.meta.editedBy, 'Bob')
+    assert.equal(state.meta.editedAt, '2026-11-15T01:02:00Z')
+    // A change without a name (a restore, an import) does not name anybody.
+    t += 60_000
+    a.apply(state, [el('anon', 1)])
+    assert.equal(state.meta.editedBy, 'Bob')
+    await a.flush(state)
+    const [listed] = await open().list()
+    assert.equal(listed.author, 'Ada')
+    assert.equal(listed.editedBy, 'Bob')
+    assert.equal(listed.editedAt, '2026-11-15T01:02:00Z')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
