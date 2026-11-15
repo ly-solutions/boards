@@ -64,14 +64,17 @@ test('server pages follow the locale: lang attribute and Russian text, English b
   assert.match(renderEmbedPage({ state, text: 'T', scene: {}, boardUrl: 'u', assets, staticUrl: 'S', t: ru }), /<html lang="ru">[\s\S]*Просмотрщик не собран/)
   assert.match(renderNotFound('/s', '/b/', ru), /<h1>Такой доски нет<\/h1>[\s\S]*<a href="\/b\/">список всех досок<\/a>/)
   assert.match(renderTokenLogin({ staticBase: '/s', next: '/b/', t: ru }), /Токен доступа[\s\S]*<button type="submit">Войти<\/button>/)
-  const home = renderHome({ staticBase: '/s', boards: [{ slug: 'a', key: 'k', title: 'A', updatedAt: new Date(Date.now() - 5 * 60_000).toISOString() }], templates: [], user: { name: 'Ада' }, canSignOut: true, t: ru })
+  const row = { slug: 'a', title: '</script>A', updatedAt: new Date(Date.now() - 5 * 60_000).toISOString(), url: '/b/a?k=k', preview: '/b/a/preview.svg?k=k' }
+  const home = renderHome({ staticBase: '/s', rows: [row], templates: [{ id: 'retro', title: 'Ретро' }], user: { name: 'Ада' }, canSignOut: true, t: ru })
   assert.match(home, /<title>Доски<\/title>/)
-  assert.match(home, /5 мин назад/)
-  assert.match(home, /превью пока нет/)
   assert.match(home, />Выйти</)
-  // The inline script gets the message as a JS string that cannot break out of the string or the tag.
-  assert.match(home, /alert\(body\.error \|\| '[^'<]*'\)/)
-  assert.match(renderHome({ staticBase: '/s', boards: [], templates: [], user: null, t: ru }), /Досок пока нет — создайте первую\./)
+  // The list is drawn by our own scripts (no inline script); the rows travel as JSON that cannot close its tag.
+  assert.match(home, /<script src="\/s\/app\/list\.js"><\/script>/)
+  assert.doesNotMatch(home.replace(/<script type="application\/json"[\s\S]*?<\/script>/, ''), /<script>/)
+  const data = JSON.parse(/<script type="application\/json" id="boards-data">([\s\S]*?)<\/script>/.exec(home)[1])
+  assert.equal(data.lang, 'ru')
+  assert.deepEqual(data.rows, [row])
+  assert.deepEqual(data.templates, [{ id: 'retro', title: 'Ретро' }])
 })
 
 test('embed, guest view: only for an API token; the page carries no key, neither of this board nor of a linked one', async () => {

@@ -14,9 +14,6 @@ export const escape = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) =>
 /** JSON inside `<script>` must not be able to close the tag. */
 const safeJson = (value) => JSON.stringify(value).replace(/</g, '\\u003c')
 
-/** A message as a single-quoted JavaScript string inside an inline `<script>`: it can neither end the string nor the tag. */
-const jsString = (value) => `'${String(value).replace(/[\\'\n\r\u2028\u2029<]/g, (ch) => `\\u${ch.charCodeAt(0).toString(16).padStart(4, '0')}`)}'`
-
 /** English unless a translator is passed: BOARDS_LOCALE is wired in server/index.mjs. */
 const EN = translator('en')
 
@@ -215,7 +212,7 @@ ${scripts || `<p>${t('pages.viewerNotBuilt')}</p>`}
 export function pageHeaders({ frameAncestors = "'self'" } = {}) {
   return {
     'content-type': 'text/html; charset=utf-8',
-    'content-security-policy': `default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; form-action 'self'; frame-ancestors ${frameAncestors}; base-uri 'none'; object-src 'none'`,
+    'content-security-policy': `default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; form-action 'self'; frame-ancestors ${frameAncestors}; base-uri 'none'; object-src 'none'`,
     'x-robots-tag': 'noindex, nofollow',
     'referrer-policy': 'no-referrer',
     'x-content-type-options': 'nosniff',
@@ -283,83 +280,51 @@ const relative = (iso, t = EN) => {
 }
 
 /**
- * Plugin-defined board properties marked for the list (`home: true`), e.g. a deadline. Dates read in the interface
- * language; a date in the past is marked overdue.
+ * Plugin-defined board properties marked for the list (`home: true`), e.g. a deadline, as label/value pairs for the
+ * card. Dates read in the interface language; a date in the past is marked late.
  */
-function homeFields(board, fields, t) {
-  const shown = fields.filter((f) => board.fields?.[f.id] !== undefined && board.fields?.[f.id] !== null && board.fields?.[f.id] !== '')
-  if (!shown.length) return ''
+export function homeFieldValues(board, fields, t = EN) {
   const today = new Date().toISOString().slice(0, 10)
-  const value = (f) => {
-    const raw = board.fields[f.id]
-    if (f.type === 'date' && /^\d{4}-\d{2}-\d{2}$/.test(String(raw))) return new Date(`${raw}T00:00:00Z`).toLocaleDateString(t.locale === 'ru' ? 'ru-RU' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
-    if (f.type === 'select') return f.options?.find((o) => String(o.value) === String(raw))?.label ?? String(raw)
-    return String(raw)
-  }
-  return `<span class="fields">${shown.map((f) => `<span class="field${f.type === 'date' && String(board.fields[f.id]) < today ? ' overdue' : ''}" data-field="${escape(f.id)}">${escape(f.label)}: <b>${escape(value(f))}</b></span>`).join('')}</span>`
+  return fields
+    .filter((f) => board.fields?.[f.id] !== undefined && board.fields?.[f.id] !== null && board.fields?.[f.id] !== '')
+    .map((f) => {
+      const raw = board.fields[f.id]
+      let value = String(raw)
+      if (f.type === 'date' && /^\d{4}-\d{2}-\d{2}$/.test(String(raw))) value = new Date(`${raw}T00:00:00Z`).toLocaleDateString(t.locale === 'ru' ? 'ru-RU' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
+      else if (f.type === 'select') value = f.options?.find((o) => String(o.value) === String(raw))?.label ?? String(raw)
+      return { id: f.id, label: f.label, value, late: f.type === 'date' && String(raw) < today }
+    })
 }
 
-/** The boards list: every board with its thumbnail, plus "New board". */
-export function renderHome({ staticBase, boards, templates, user, canSignOut, q = '', t = EN, fields = [] }) {
-  const cards = boards
-    .map(
-      (b) => `<a class="card" href="${escape(`/b/${b.slug}?k=${encodeURIComponent(b.key)}`)}">
-  <div class="thumb">${b.hasPreview ? `<img loading="lazy" alt="" src="${escape(`/b/${b.slug}/preview.svg?k=${encodeURIComponent(b.key)}`)}">` : `<span>${t('pages.noPreview')}</span>`}</div>
-  <div class="meta"><strong>${escape(b.title)}</strong><span>${escape(relative(b.updatedAt, t))}${b.author ? ` · ${escape(b.author)}` : ''}</span>${(b.tags ?? []).length ? `<span class="tags">${b.tags.map((t) => `<i>${escape(t)}</i>`).join('')}</span>` : ''}${homeFields(b, fields, t)}</div>
-</a>`,
-    )
-    .join('\n')
+/**
+ * The boards list: the shell of the page; the list itself is drawn by web/public/app/list.js (the same screen as the
+ * harnessly app view) from the rows below. `rows` are library rows (server/app-view.mjs `libraryRow`) plus `fields`.
+ */
+export function renderHome({ staticBase, rows, templates, user, canSignOut, q = '', t = EN }) {
+  const data = { lang: t.locale, base: '/b', query: q, me: user ? { name: user.name, email: user.email ?? null } : null, templates: templates.map(({ id, title }) => ({ id, title })), rows }
   return `<!doctype html>
 <html lang="${t.locale}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex"><title>${t('pages.boardsTitle')}</title>
 <link rel="icon" href="${staticBase}/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="${staticBase}/app/list.css">
 <style>${BASE_STYLE}
-  header { display: flex; align-items: center; gap: 1rem; padding: 1rem clamp(1rem, 4vw, 2.5rem); border-bottom: 1px solid var(--line); }
+  :root { --page: #ffffff; --line: rgba(12, 14, 34, 0.08); }
+  @media (prefers-color-scheme: dark) { :root { --page: #141416; --line: rgba(255, 255, 255, 0.08); } }
+  html, body { background: var(--page); }
+  body { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  header { display: flex; align-items: center; gap: 1rem; max-width: 1280px; margin: 0 auto; padding: 18px 36px 0; box-sizing: border-box; }
   header .spacer { flex: 1; }
   header .who { color: var(--muted); font-size: .9rem; }
-  main { padding: 1.5rem clamp(1rem, 4vw, 2.5rem) 3rem; }
-  .bar { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; margin-bottom: 1.5rem; }
-  .bar h1 { font-size: 1.4rem; margin: 0 auto 0 0; letter-spacing: -.01em; }
-  input, select, button { font: inherit; padding: .55rem .7rem; border: 1px solid var(--line); border-radius: .5rem; background: var(--card); color: var(--fg); }
-  button.primary { background: var(--accent); color: var(--accent-fg); border-color: transparent; font-weight: 600; cursor: pointer; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 1rem; }
-  .card { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: .75rem; overflow: hidden; color: inherit; text-decoration: none; background: var(--card); transition: border-color .15s; }
-  .card:hover { border-color: var(--accent); }
-  .thumb { height: 10rem; overflow: hidden; display: grid; place-items: center; background: #fafafa; border-bottom: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
-  .thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
-  .meta { display: grid; gap: .2rem; padding: .7rem .8rem .8rem; }
-  .meta span { color: var(--muted); font-size: .82rem; }
-  .tags i { font-style: normal; border: 1px solid var(--line); border-radius: 999px; padding: 0 .45rem; margin-right: .25rem; }
-  .fields { display: flex; flex-wrap: wrap; gap: .2rem .7rem; }
-  .fields b { font-weight: 600; color: var(--fg); }
-  .fields .overdue b { color: #e03131; }
-  .empty { color: var(--muted); padding: 3rem 0; text-align: center; }
-  @media (prefers-color-scheme: dark) { .thumb { background: #f4f4f6; } }
+  header a:not(.brand) { color: var(--muted); font-size: .9rem; text-decoration: none; }
+  header a:not(.brand):hover { color: var(--fg); }
+  @media (max-width: 720px) { header { padding: 14px 16px 0; } }
 </style></head>
 <body>
 <header>${brand(staticBase)}<span class="spacer"></span>${user ? `<span class="who">${escape(user.name)}</span>${canSignOut ? `<a href="/b/auth/logout?next=/b/">${t('pages.signOut')}</a>` : ''}` : ''}</header>
-<main>
-<div class="bar">
-  <h1>${t('pages.boardsTitle')}</h1>
-  <form method="get" action="/b/"><input type="search" name="q" value="${escape(q)}" placeholder="${escape(t('pages.searchBoards'))}" aria-label="${escape(t('pages.searchBoards'))}"></form>
-  <form id="create">
-    <input name="title" required minlength="2" maxlength="120" placeholder="${escape(t('pages.newBoardTitle'))}" aria-label="${escape(t('pages.newBoardTitle'))}">
-    <select name="template" aria-label="${escape(t('pages.template'))}"><option value="">${t('pages.blank')}</option>${templates.map((t) => `<option value="${escape(t.id)}">${escape(t.title)}</option>`).join('')}</select>
-    <button class="primary" type="submit">${t('pages.newBoard')}</button>
-  </form>
-</div>
-${boards.length ? `<div class="grid">${cards}</div>` : `<p class="empty">${q ? t('pages.noMatches') : t('pages.noBoards')}</p>`}
-</main>
-<script>
-document.getElementById('create').addEventListener('submit', async (event) => {
-  event.preventDefault()
-  const form = new FormData(event.target)
-  const response = await fetch('/b/api/boards', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: form.get('title'), template: form.get('template') || undefined }) })
-  const body = await response.json().catch(() => ({}))
-  if (response.ok) location.href = body.url
-  else alert(body.error || ${jsString(t('pages.createFailed'))})
-})
-</script>
+<main id="boards" aria-busy="true"></main>
+<script type="application/json" id="boards-data">${safeJson(data)}</script>
+<script src="${staticBase}/app/list.js"></script>
+<script src="${staticBase}/app/home.js"></script>
 </body></html>
 `
 }
