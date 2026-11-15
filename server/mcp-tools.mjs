@@ -201,6 +201,41 @@ export function boardTools(ops) {
         return JSON.stringify({ pass: ops.signin(ctx.who) })
       },
     },
+    ...(ops.quick
+      ? [
+          {
+            name: 'quick_read',
+            title: 'Quick edit: read a board as text',
+            description: 'For a host that edits by exact text replacements. Answers JSON { kind: "board", title, text, version }: text is one JSON line per element (id, type, text, stroke, bg, x, y, w, h, font, sw, rough, op), version changes with every edit of the board.',
+            inputSchema: { type: 'object', properties: { object: boardArg, selection: { type: 'string', description: 'What the person selected; the whole board text is returned either way' } }, required: ['object'] },
+            annotations: { readOnlyHint: true },
+            run: async (args) => ({ structured: ops.quick.read(await ops.board(args.object)) }),
+          },
+          {
+            name: 'quick_apply',
+            title: 'Quick edit: replace text',
+            description: 'edits: [{ old, new }] — exact replacements in the text of quick_read; each old must occur once. A changed line changes its element, a new line creates one (rectangle, ellipse, diamond, text), a removed line deletes it and needs confirmed: true. Errors: conflict, not_unique, bad_edit, needs_yes.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                object: boardArg,
+                version: { type: 'string', description: 'The version from quick_read' },
+                edits: { type: 'array', items: { type: 'object', properties: { old: { type: 'string' }, new: { type: 'string' } }, required: ['old', 'new'] } },
+                confirmed: { type: 'boolean', description: 'true when the person agreed to delete elements' },
+              },
+              required: ['object', 'version', 'edits'],
+            },
+            run: async (args, { who }) => ({ structured: await ops.quick.apply(await ops.board(args.object), args, who) }),
+          },
+          {
+            name: 'quick_undo',
+            title: 'Quick edit: undo the last apply',
+            description: 'version — the one quick_apply returned. Puts the elements back as they were, unless the board changed since: then conflict.',
+            inputSchema: { type: 'object', properties: { object: boardArg, version: { type: 'string' } }, required: ['object', 'version'] },
+            run: async (args, { who }) => ({ structured: ops.quick.undo(await ops.board(args.object), args, who) }),
+          },
+        ]
+      : []),
     {
       name: 'board_templates',
       title: 'Board templates',

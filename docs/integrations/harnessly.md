@@ -250,6 +250,28 @@ keys are not accepted. The tools (`server/mcp-tools.mjs`) wrap the same operatio
 | `board_library` | boards as JSON for the app home, with "mine" | — |
 | `board_signin` | for the app view: a one-time pass that signs the person of the token in to the site | — |
 | `board_templates` | templates | `GET /b/api/templates` |
+| `quick_read` | quick edit: the board as text, a line per element, and its `version` | — |
+| `quick_apply` | quick edit: `{ old, new }` replacements on that text | — |
+| `quick_undo` | quick edit: put the last `quick_apply` back | — |
+
+**Quick edit.** For a host that changes an object by exact text replacements (a voice command over an open board).
+`quick_read { object: <slug>, selection? }` answers JSON (as `structuredContent` and as the first text)
+`{ kind: "board", title, text, version }`. `text` has one compact JSON object per live element in z-order; the label of a
+shape is on the shape's line, an arrow's or a bound label has no line of its own:
+
+```
+{"id":"a","type":"rectangle","text":"Заявка","stroke":"#1e1e1e","bg":"#ffffff","x":0,"y":0,"w":140,"h":70,"font":20,"sw":2,"rough":1,"op":100}
+```
+
+`quick_apply { object, version, edits: [{ old, new }], confirmed? }` re-renders the text and compares `version` (a hash of
+the text; another one — `conflict`), applies each replacement (`old` must occur exactly once — `not_unique`), parses the
+lines back (`bad_edit`) and saves the changed elements like `board_edit` does, so open boards update at once. A removed
+line deletes the element and needs `confirmed: true` (`needs_yes`, nothing applied); a line with an unknown id creates a
+`rectangle`, `ellipse`, `diamond` or `text`. It answers `{ changed, version, hint, ids }`. `quick_undo { object, version }`
+puts the elements of the last apply back while the board still has the version `quick_apply` returned (`conflict`
+otherwise, `nothing_to_undo` after a restart: the snapshot lives in the process's memory). An error is a tool result
+with `isError` and text `{ "code", "message" }`. The manifest names the three tools in `quickEdit`; the host sends the
+view `{ kind: "quick-edit", object, ids, hint }` as an event and the open board outlines those elements for a second.
 
 The `board` argument is a slug or a link. Through MCP a comment has `authorKind: agent`, so the comment webhook does
 not hand an agent its own message back as a person's question. With an API token the signature is the `author`

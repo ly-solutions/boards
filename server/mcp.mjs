@@ -42,8 +42,10 @@ export async function handleMessage(message, { tools, ctx, serverInfo, instructi
     const args = params.arguments && typeof params.arguments === 'object' ? params.arguments : {}
     try {
       const out = await tool.run(args, ctx)
-      // A tool answers text, or MCP content as is (a picture: board_look).
+      // A tool answers text, MCP content as is (a picture: board_look), or `{ structured }`: JSON for hosts that read
+      // `structuredContent`, and the same JSON as text (quick edit).
       if (out && typeof out === 'object' && Array.isArray(out.content)) return rpcResult(id, { content: out.content, isError: false })
+      if (out && typeof out === 'object' && 'structured' in out) return rpcResult(id, { content: [{ type: 'text', text: JSON.stringify(out.structured) }], structuredContent: out.structured, isError: false })
       return rpcResult(id, { content: [{ type: 'text', text: out }], isError: false })
     } catch (error) {
       return rpcResult(id, { content: [{ type: 'text', text: describeError(error) }], isError: true })

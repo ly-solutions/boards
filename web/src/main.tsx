@@ -1164,10 +1164,19 @@ function Board() {
       if (config.app) {
         window.addEventListener('message', (event) => {
           if (event.origin !== location.origin || event.source !== window.parent) return
-          const data = event.data as { type?: string; theme?: string; id?: string; text?: string; live?: boolean } | null
+          const data = event.data as { type?: string; theme?: string; id?: string; ids?: unknown[]; text?: string; live?: boolean } | null
           if (data?.type === 'board-thread' && typeof data.id === 'string' && THREAD_ID_RE.test(data.id)) {
             const id = data.id
             setFocusThread((was) => ({ id, n: (was?.n ?? 0) + 1 }))
+            return
+          }
+          if (data?.type === 'board-flash' && Array.isArray(data.ids)) {
+            // A quick edit by voice (HRN-1466): scroll to what changed and outline it, the label with its shape.
+            const ids = new Set(data.ids.filter((id): id is string => typeof id === 'string'))
+            const hit = (api as Api).getSceneElements().filter((el) => ids.has(el.id) || (el.containerId && ids.has(el.containerId))) as unknown as Element[]
+            if (!hit.length) return
+            ;(api as Api).scrollToContent(hit as never, { fitToContent: false, animate: true })
+            glow(hit as never)
             return
           }
           if (data?.type === 'terminal-text') {
