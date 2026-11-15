@@ -272,7 +272,7 @@ export const PATCHES = [
     // cost a filtered repaint of the whole screen on every frame of a pan. With dark paint on, the context inverts what
     // it draws instead (islands.css drops the CSS filter).
     find: 'let[c,m]=Cs(e,i),d=Is({canvas:e,scale:i,normalizedWidth:c,normalizedHeight:m});',
-    replace: 'let[c,m]=Cs(e,i),d=Is({canvas:e,scale:i,normalizedWidth:c,normalizedHeight:m});d.filter=a.theme==="dark"&&window.__tbDark?"invert(93%) hue-rotate(180deg)":"none";',
+    replace: 'let[c,m]=Cs(e,i),d=Is({canvas:e,scale:i,normalizedWidth:c,normalizedHeight:m});d.filter=a.theme==="dark"&&window.__tbDarkBake?"invert(93%) hue-rotate(180deg)":"none";',
   },
   {
     id: 'curve-bounds-cache',
