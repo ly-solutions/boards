@@ -192,7 +192,7 @@ export function createPluginHost({ config = {}, env = {}, t = createTranslator(c
       addMetaField({ id, label: text, type = 'text', options = null, placeholder = null, home = false, maxLength = 200, validate = null } = {}) {
         register('meta field', name, () => {
           if (!/^[a-z][a-zA-Z0-9_-]{0,40}$/.test(String(id ?? ''))) throw new Error(`id "${id}": a letter, then letters, digits, _ or -`)
-          if (['title', 'description', 'tags', 'task', 'access', 'key', 'author', 'createdAt', 'updatedAt', 'editedBy', 'editedAt', 'stats', 'fields'].includes(id)) throw new Error(`id "${id}" is a built-in property`)
+          if (['title', 'description', 'tags', 'task', 'access', 'key', 'author', 'createdAt', 'updatedAt', 'editedBy', 'editedAt', 'trashedAt', 'trashedBy', 'stats', 'fields'].includes(id)) throw new Error(`id "${id}" is a built-in property`)
           if (fields.has(id)) throw new Error(`field ${id} is already registered by plugin ${fields.get(id).plugin}`)
           if (!FIELD_TYPES.includes(type)) throw new Error(`type: one of ${FIELD_TYPES.join(', ')}`)
           if (type === 'select' && (!Array.isArray(options) || !options.length)) throw new Error('a select field needs options: [{ value, label }]')
