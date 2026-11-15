@@ -124,6 +124,26 @@ read-only experience — host both under one registrable domain when you can. Co
 carry a foreign `Origin` are refused (CSRF guard), so the editor only works with its own origin inside the frame,
 which is what an iframe gives it.
 
+## 3a. Who may open a board: the hub's share dialog
+
+In harnessly a board is shared in the same dialog as documents and designs: its owner gives the team, people and links
+without sign-in a role — view, comment or edit. With `BOARDS_HUB_RIGHTS=on` (and `BOARDS_HUB_URL`, `BOARDS_HUB_RIGHTS_TOKEN`
+— the hub's `HUB_BOARD_EVENTS_SECRET`) this service asks the hub and does what the role allows, for a board the hub keeps
+a record of:
+
+| Who | How the hub is asked | What they may do |
+| --- | --- | --- |
+| a person signed in from harnessly (`board_signin`) | `POST <hub>/api/platform/docs/_rights {sub, slugs}` | `view` reads, `comment` reads and comments, `edit` edits; `none` — the board is not there (404) |
+| a person signed in here (OIDC) | the same with `{email, slugs}`: only an address a person of the hub has proved names them | the same |
+| anybody with the board key `?k=` | — | reads, nothing more |
+| a guest of a link without sign-in, `/b/<slug>?g=<token>` | `POST <hub>/api/platform/docs/_guest {token, slug}` | what the link allows, `view` or `comment`; comments are signed with the name the link was made for. The page never carries the board key: the link is the guest's key, and switching it off on the hub closes the board to them |
+| an agent with an API token | — | everything, as before |
+
+A board the hub has never heard of keeps the old rules (a signed-in person edits, `access: link` lets guests edit). The
+board lists (`/b/`, `/b/app`) show a person only the boards they may open. «Поделиться» opens the hub's dialog of the board
+(`<hub>/docs/<slug>?share=1`); inside harnessly the app asks the page for it with `hl.pane.open('share:<slug>')`. Answers are
+kept for ten seconds; when the hub does not answer, a board it knows answers 503 rather than opening to everybody.
+
 ## 4. JSON and text API (server-to-server, agents, harnessly UI)
 
 All responses are JSON unless stated; errors are `{ "error": "<reason>" }` with a 4xx/5xx status.

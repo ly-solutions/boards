@@ -9,7 +9,7 @@
     en: {
       title: 'Boards', find: 'Find a board', newBoard: 'New board', all: 'All', mine: 'Mine', shared: 'Shared',
       sort: 'Recently updated first', start: 'Start from a template', recent: 'Recent', blank: 'Blank board',
-      open: 'Open', more: 'More', rename: 'Rename', copy: 'Make a copy', del: 'Delete', undo: 'Undo',
+      open: 'Open', more: 'More', rename: 'Rename', share: 'Share…', copy: 'Make a copy', del: 'Delete', undo: 'Undo',
       nothing: 'Nothing found. Try another name or create a board.', empty: 'No boards yet — create the first one.',
       untitled: 'New board', justNow: 'just now', minAgo: '{n} min ago', hrAgo: '{n} h ago',
       copied: 'Copy is ready', deleted: 'Board “{t}” deleted', restored: 'Board “{t}” is back',
@@ -20,7 +20,7 @@
     ru: {
       title: 'Доски', find: 'Найти доску', newBoard: 'Новая доска', all: 'Все', mine: 'Мои', shared: 'Общие',
       sort: 'Сначала недавние', start: 'Начать с шаблона', recent: 'Недавние', blank: 'Пустая доска',
-      open: 'Открыть', more: 'Ещё', rename: 'Переименовать', copy: 'Сделать копию', del: 'Удалить', undo: 'Вернуть',
+      open: 'Открыть', more: 'Ещё', rename: 'Переименовать', share: 'Поделиться…', copy: 'Сделать копию', del: 'Удалить', undo: 'Вернуть',
       nothing: 'Ничего не нашлось. Попробуйте другое название или создайте доску.', empty: 'Досок пока нет — создайте первую.',
       untitled: 'Новая доска', justNow: 'только что', minAgo: '{n} мин назад', hrAgo: '{n} ч назад',
       copied: 'Копия доски готова', deleted: 'Доска «{t}» удалена', restored: 'Доска «{t}» вернулась',
@@ -361,6 +361,11 @@
         state.renaming = row.slug
         draw()
       })
+      // «Поделиться…»: the share dialog of harnessly — people, roles, links without sign-in (HRN-1519).
+      if (options.onShare)
+        item('', 'share', T.share, function () {
+          options.onShare(row)
+        })
       item('', 'copy', T.copy, function () {
         copy(row)
       })

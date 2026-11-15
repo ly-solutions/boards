@@ -79,6 +79,9 @@ export const OPTIONS = [
   ['BOARDS_HANDOFF_TTL', '120', 'Lifetime in seconds of hand-off links minted by `POST /b/api/handoff`.', 'Integration'],
   ['BOARDS_COMMENTS_WEBHOOK_URL', '', 'POST comment events (`thread.created`, `thread.replied`, …) here.', 'Integration'],
   ['BOARDS_COMMENTS_WEBHOOK_SECRET', '', 'Sent as `x-boards-webhook-secret` with every webhook call.', 'Integration'],
+  ['BOARDS_HUB_RIGHTS', 'off', '`on`: a harnessly hub decides who may view, comment on and edit a board it knows (the share dialog of harnessly), and its links without sign-in open here as `/b/<slug>?g=<token>`. Needs BOARDS_HUB_URL (or BOARDS_HARNESSLY_ISSUER) and BOARDS_HUB_RIGHTS_TOKEN. See docs/integrations/harnessly.md.', 'Integration'],
+  ['BOARDS_HUB_URL', '', 'With BOARDS_HUB_RIGHTS=on: the hub address; empty — BOARDS_HARNESSLY_ISSUER.', 'Integration'],
+  ['BOARDS_HUB_RIGHTS_TOKEN', '', 'With BOARDS_HUB_RIGHTS=on: the secret the hub knows this service by (its HUB_BOARD_EVENTS_SECRET); empty — BOARDS_COMMENTS_WEBHOOK_SECRET.', 'Integration'],
   ['BOARDS_LINK_PREVIEW', 'off', '`on`: link cards show the page title, description and image from its Open Graph tags. The server then fetches pasted URLs — only public addresses, never private, loopback or link-local ones (SSRF guard).', 'Integration'],
 
   ['BOARDS_PLUGINS', '', 'Comma-separated server plugins to load at start-up: paths (absolute or relative to the working directory), `file:` URLs or package names. See docs/plugins.md.', 'Plugins'],
@@ -168,6 +171,14 @@ export function loadConfig(env = process.env) {
     for (const name of ['BOARDS_OIDC_ISSUER', 'BOARDS_OIDC_CLIENT_ID', 'BOARDS_OIDC_CLIENT_SECRET']) if (!env[name]) problems.push(`${name}: required with BOARDS_AUTH=oidc`)
   }
   const appView = String(env.BOARDS_APP_VIEW || 'off').toLowerCase()
+  let hubRights = null
+  if (bool(String(env.BOARDS_HUB_RIGHTS || 'off').toLowerCase())) {
+    const hubUrl = String(env.BOARDS_HUB_URL || env.BOARDS_HARNESSLY_ISSUER || '').replace(/\/+$/, '')
+    const hubToken = env.BOARDS_HUB_RIGHTS_TOKEN || env.BOARDS_COMMENTS_WEBHOOK_SECRET || ''
+    if (!/^https?:\/\/[^/]+$/.test(hubUrl)) problems.push(`BOARDS_HUB_URL: required with BOARDS_HUB_RIGHTS=on — the hub origin, got "${hubUrl}"`)
+    if (!hubToken) problems.push('BOARDS_HUB_RIGHTS_TOKEN: required with BOARDS_HUB_RIGHTS=on (or BOARDS_COMMENTS_WEBHOOK_SECRET)')
+    hubRights = { url: hubUrl, token: hubToken }
+  }
   if (!['on', 'off', 'true', 'false', '1', '0', 'yes', 'no'].includes(appView)) problems.push('BOARDS_APP_VIEW: expected on or off')
   const sameSite = (env.BOARDS_COOKIE_SAMESITE || 'lax').toLowerCase()
   if (!['lax', 'strict', 'none'].includes(sameSite)) problems.push('BOARDS_COOKIE_SAMESITE: expected lax, strict or none')
@@ -232,6 +243,7 @@ export function loadConfig(env = process.env) {
       harnessly,
     },
     appView: bool(appView),
+    hubRights,
     frameAncestors: env.BOARDS_FRAME_ANCESTORS || "'self'",
     corsOrigins: list(env.BOARDS_CORS_ORIGINS).map((o) => o.replace(/\/+$/, '')),
     webhook: { url: env.BOARDS_COMMENTS_WEBHOOK_URL || '', secret: env.BOARDS_COMMENTS_WEBHOOK_SECRET || '' },

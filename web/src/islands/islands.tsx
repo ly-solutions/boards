@@ -30,6 +30,8 @@ export type Person = { id: string; name: string; color: string; idle?: boolean }
 export type IslandsProps = {
   api: Api
   canEdit: boolean
+  /** May comment without editing: the harnessly hub's «comments» (HRN-1519); absent: as canEdit. */
+  canComment?: boolean
   /** Inside the harnessly app view: back and chat go to harnessly. */
   app: boolean
   title: string
@@ -520,14 +522,20 @@ function Toolbar({ api, tool, stickyColor, setStickyColor, onStudioTool, reactio
 }
 
 /** View only: no tools, only comments and reactions stay. */
-function ViewBar({ api, tool, canEdit, setViewOnly, onStudioTool, prefs, signIn }: { api: Api; tool: Tool; canEdit: boolean; setViewOnly: (v: boolean) => void; onStudioTool: IslandsProps['onStudioTool']; prefs: Prefs; signIn?: string }) {
+function ViewBar({ api, tool, canEdit, canComment = canEdit, setViewOnly, onStudioTool, prefs, signIn }: { api: Api; tool: Tool; canEdit: boolean; canComment?: boolean; setViewOnly: (v: boolean) => void; onStudioTool: IslandsProps['onStudioTool']; prefs: Prefs; signIn?: string }) {
   const custom = tool.type === 'custom' ? tool.customType : null
   return (
     <div className="isl isl-tools isl-viewbar">
       <Icon name="eye" size={16} />
       <span className="isl-viewbar__label">{t('islands.viewOnly')}</span>
       {/* A guest of a team board: the way in is here, not a second banner over the board (HRN-1480). */}
-      {!canEdit && signIn && (
+      {!canEdit && canComment && (
+        <>
+          <Sep />
+          <Btn icon="comment" tip={t('islands.comment')} keyHint="C" on={custom === 'comment'} onClick={() => onStudioTool(custom === 'comment' ? null : 'comment')} />
+        </>
+      )}
+      {!canEdit && !canComment && signIn && (
         <a className="isl-btn isl-btn--soft isl-viewbar__in" href={signIn} data-tip={t('editor.viewOnlyBanner')}>
           <Icon name="pencil" size={16} />
           {t('islands.signIn')}
@@ -668,7 +676,7 @@ export function Islands(props: IslandsProps) {
       if (st.editingTextElement) return
       const k = e.key.toLowerCase()
       if (k === 's' && editing) onStudioTool('sticky')
-      else if (k === 'c' && canEdit) onStudioTool('comment')
+      else if (k === 'c' && (props.canComment ?? canEdit)) onStudioTool('comment')
       else if (k === 'e' && canEdit) api.setActiveTool({ type: 'custom', customType: 'react' })
       else if (k === 'w' && editing) props.insert.site()
       else return
@@ -703,7 +711,7 @@ export function Islands(props: IslandsProps) {
       {editing ? (
         <Toolbar api={api} tool={tool} stickyColor={props.stickyColor} setStickyColor={props.setStickyColor} onStudioTool={onStudioTool} reactions={props.reactions} onPanel={props.onPanel} insert={props.insert} prefs={prefs} setPrefs={setPrefs} />
       ) : (
-        <ViewBar api={api} tool={tool} canEdit={canEdit} setViewOnly={setViewOnly} onStudioTool={onStudioTool} prefs={prefs} signIn={props.menu.signIn} />
+        <ViewBar api={api} tool={tool} canEdit={canEdit} canComment={props.canComment} setViewOnly={setViewOnly} onStudioTool={onStudioTool} prefs={prefs} signIn={props.menu.signIn} />
       )}
       <Zoom api={api} canEdit={editing} />
       {editing && <ContextBar api={api} reactions={props.reactions} votes={votes} me={me} onReact={onReact} onAsk={props.onAsk} />}
