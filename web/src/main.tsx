@@ -71,9 +71,16 @@ type Remote = {
  * person has finished writing a text with `@harnessly` in it (only their own editing counts, never a peer's).
  */
 const told = { selection: '', editing: null as string | null }
+const toldScan: { elements: readonly unknown[] | null; picked: unknown } = { elements: null, picked: null }
+
 function tellView(elements: readonly Element[], appState: Record<string, unknown>) {
   const view = appState as never
-  const sel = selectionOf(elements, (appState.selectedElementIds ?? {}) as Record<string, boolean>)
+  // onChange comes every frame of a pan with the same elements and selection: scan them only when either changes.
+  const picked = appState.selectedElementIds
+  if (elements === toldScan.elements && picked === toldScan.picked && told.editing === ((appState.editingTextElement as { id?: string } | null)?.id ?? null)) return
+  toldScan.elements = elements
+  toldScan.picked = picked
+  const sel = selectionOf(elements, (picked ?? {}) as Record<string, boolean>)
   const key = `${sel.count}\u0000${sel.text}`
   if (key !== told.selection) {
     told.selection = key

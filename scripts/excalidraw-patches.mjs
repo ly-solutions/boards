@@ -258,6 +258,23 @@ export const PATCHES = [
     replace: 'let l=__tbSelectionColor(e.containerRef?.current)||"#6965db";',
   },
   {
+    id: 'dark-paint-dots',
+    file: 'render',
+    // The stage's dot grid, drawn into the static canvas under the elements (window.__tbDots, dark-paint.ts) rather
+    // than as a CSS background that moved with the camera: that repainted a full-screen layer on every frame.
+    find: 'theme:a.theme,isExporting:c,viewBackgroundColor:a.viewBackgroundColor});p.scale(a.zoom.value,a.zoom.value),',
+    replace: 'theme:a.theme,isExporting:c,viewBackgroundColor:a.viewBackgroundColor});!c&&a.theme==="dark"&&window.__tbDots&&window.__tbDots(p,a,l,U,i);p.scale(a.zoom.value,a.zoom.value),',
+  },
+  {
+    id: 'dark-paint-interactive',
+    file: 'app',
+    // The interactive canvas (selection, handles, cursors) was inverted by a CSS filter on a full-screen layer, which
+    // cost a filtered repaint of the whole screen on every frame of a pan. With dark paint on, the context inverts what
+    // it draws instead (islands.css drops the CSS filter).
+    find: 'let[c,m]=Cs(e,i),d=Is({canvas:e,scale:i,normalizedWidth:c,normalizedHeight:m});',
+    replace: 'let[c,m]=Cs(e,i),d=Is({canvas:e,scale:i,normalizedWidth:c,normalizedHeight:m});d.filter=a.theme==="dark"&&window.__tbDark?"invert(93%) hue-rotate(180deg)":"none";',
+  },
+  {
     id: 'curve-bounds-cache',
     file: 'render',
     find: 'let p=he.generateElementShape(t,null),m=It(p[0]),[b,E,g,h]=Hr(m);',
