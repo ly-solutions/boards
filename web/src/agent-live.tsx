@@ -134,6 +134,10 @@ export class AgentLive {
     }
     this.turnState = turn
     const fresh = incoming.filter((el) => !el.isDeleted && !current.has(el.id))
+    // What the agent drew is out of view: the camera goes there first, then the objects appear.
+    const seen = fresh.length ? fresh : incoming.filter((el) => !el.isDeleted && !el.containerId)
+    const away = seen.length > 0 && !inView(api, seen)
+    if (away) api.scrollToContent(seen, { fitToContent: seen.length > 1, animate: true })
     const units = unitsOf(fresh)
     if (units.length < 2 || units.length > PLAY_MAX || !motionAllowed()) {
       this.showTurn()
@@ -157,7 +161,7 @@ export class AgentLive {
     this.set({ playing: true })
     this.pointAt(units[0])
     glow(units[0] as never)
-    this.timer = setTimeout(tick, step)
+    this.timer = setTimeout(tick, away ? step + 420 : step)
     return incoming.filter((el) => !later.has(el.id))
   }
 
@@ -232,6 +236,20 @@ export class AgentLive {
     if (this.turnState) this.turnState.closed = true
     this.set({ turn: null })
   }
+}
+
+/** Whether these elements are all within the visible part of the board. */
+function inView(api: Api, els: El[]) {
+  const st = api.getAppState() as { scrollX: number; scrollY: number; width: number; height: number; zoom: { value: number } }
+  const z = st.zoom?.value || 1
+  const x1 = -st.scrollX
+  const y1 = -st.scrollY
+  const x2 = x1 + st.width / z
+  const y2 = y1 + st.height / z
+  return els.every((el) => {
+    const b = boxOf(el)
+    return b.x1 >= x1 && b.y1 >= y1 && b.x2 <= x2 && b.y2 <= y2
+  })
 }
 
 function motionAllowed() {

@@ -165,3 +165,18 @@ test('HTTP: viewers cannot comment; guests on link boards can, but delete only t
     await t.close()
   }
 })
+
+test('a reply names objects on the board (only live ones); a thread reaction toggles per person', () => {
+  const n = notes()
+  const t = openThread(n, elements, { text: 'draw it', x: 0, y: 0 }, ada)
+  const r = changeThread(n, elements, t.id, { reply: 'done', ids: ['box', 'nope', 'box', 7] }, { author: 'bot', kind: 'agent' })
+  assert.deepEqual(r.replied.ids, ['box'])
+  assert.equal(changeThread(n, elements, t.id, { reply: 'no ids' }, ada).replied.ids, undefined)
+  changeThread(n, elements, t.id, { react: { emoji: '👍' } }, ada)
+  changeThread(n, elements, t.id, { react: { emoji: '👍' } }, { author: 'Grace' })
+  assert.deepEqual(t.reactions['👍'], ['Ada', 'Grace'])
+  changeThread(n, elements, t.id, { react: { emoji: '👍' } }, ada)
+  assert.deepEqual(t.reactions['👍'], ['Grace'])
+  changeThread(n, elements, t.id, { react: { emoji: '💩' } }, ada)
+  assert.equal(t.reactions['💩'], undefined)
+})

@@ -237,3 +237,5 @@ body:has(.studio-dock) .note-composer { bottom: 76px; }
 .note-rx__pill:disabled { cursor: default; }
 .note-rx__pill:not(:disabled):hover { background: var(--studio-accent-bg); }
 @media (prefers-reduced-motion: reduce) { .note-typing__orb, .note-typing__dots i { animation: none; } }
+.note-show, .note-rx__pill { border-style: solid; cursor: pointer; }
+.note-show { border: 0; }

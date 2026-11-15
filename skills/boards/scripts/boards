@@ -8,11 +8,14 @@
 # Usage:
 #   boards read <board-link|slug>            the board as markdown (shapes, labels, connections, ids)
 #   boards json <board-link|slug>            the board as JSON (metadata + links + text)
+#   boards look <board-link> [ids] [out.png] the board as a PNG (ids=a,b: those objects and what is around them);
+#                                            prints the file path — open it and look; editors see «Агент рисует…»
 #   boards list [query]                      boards visible to the token (title, updated, link)
 #   boards create <title> [payload.json|-]   new board; optional JSON body with graph/add/template/tags/…
 #   boards edit <board-link> <payload.json|->   apply {graph, add, update, delete, note}; prints the new text
 #   boards comment <board-link> <text> [element-id]   add a comment thread (pinned to a shape when id is given)
-#   boards reply <board-link> <thread-id> <text>      reply in a thread
+#   boards reply <board-link> <thread-id> <text> [ids]  reply in a thread (ids=a,b: «Показать на доске» shows them)
+#   boards done <board-link>                 tell editors you finished (hides «Агент рисует…» at once)
 #   boards history <board-link>              automatic snapshots, newest first
 #   boards help                              the server's API cheat sheet (GET /b/api)
 set -euo pipefail
@@ -72,6 +75,15 @@ cmd="${1:-help}"; shift || true
 case "$cmd" in
   read)    parse "${1:?board link}"; call GET "$ORIGIN/b/$SLUG.md$(q)" ;;
   json)    parse "${1:?board link}"; call GET "$ORIGIN/b/$SLUG.json$(q)" ;;
+  look)
+    parse "${1:?board link}"; ids="${2:-}"; out="${3:-${TMPDIR:-/tmp}/board-$SLUG-$(date +%H%M%S).png}"
+    call POST "$ORIGIN/b/$SLUG/agent$(q)" '{"status":"working"}' >/dev/null 2>&1 || true
+    sep='?'; [ -n "$KEY" ] && sep='&'
+    url="$ORIGIN/b/$SLUG/picture.png$(q)"; [ -n "$ids" ] && url="$url${sep}ids=$ids"
+    code=$(curl -sS -o "$out" -w '%{http_code}' "${auth[@]}" "$url")
+    [ "$code" = 200 ] || { cat "$out" >&2; echo >&2; rm -f "$out"; die "HTTP $code from GET $url"; }
+    echo "$out" ;;
+  done)    parse "${1:?board link}"; call POST "$ORIGIN/b/$SLUG/agent$(q)" '{"status":"done"}' >/dev/null && echo "done" ;;
   list)
     [ -n "${BOARDS_URL:-}" ] || die "set BOARDS_URL"
     query=""; [ -n "${1:-}" ] && query="?q=$(printf '%s' "$1" | sed 's/ /%20/g')"
@@ -103,8 +115,11 @@ print(json.dumps(d))' "$text" "$el")
     else payload="{\"text\":\"$text\",\"x\":0,\"y\":0${el:+,\"elementId\":\"$el\"}}"; fi
     call POST "$ORIGIN/b/$SLUG/comments$(q)" "$payload" >/dev/null && echo "comment added" ;;
   reply)
-    parse "${1:?board link}"; thread="${2:?thread id}"; text="${3:?text}"
-    payload=$(python3 -c 'import sys,json; print(json.dumps({"reply":sys.argv[1]}))' "$text" 2>/dev/null || printf '{"reply":"%s"}' "$text")
+    parse "${1:?board link}"; thread="${2:?thread id}"; text="${3:?text}"; ids="${4:-}"
+    payload=$(python3 -c 'import sys,json
+d={"reply":sys.argv[1]}
+if sys.argv[2]: d["ids"]=[x for x in sys.argv[2].split(",") if x]
+print(json.dumps(d))' "$text" "$ids" 2>/dev/null || printf '{"reply":"%s"}' "$text")
     call POST "$ORIGIN/b/$SLUG/comments/$thread$(q)" "$payload" >/dev/null && echo "reply added" ;;
   history) parse "${1:?board link}"; call GET "$ORIGIN/b/$SLUG/history$(q)" ;;
   help|-h|--help)

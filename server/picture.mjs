@@ -77,7 +77,7 @@ export function pick(elements, ids) {
 }
 
 /** PNG bytes of the board (or of the given objects and their surroundings), null when the ids are not on it. */
-export async function renderPicture(elements, files = {}, { ids = [] } = {}) {
+export async function renderPicture(elements, files = {}, { ids = [], maxSide = MAX_SIDE } = {}) {
   const chosen = pick(elements, ids)
   if (!chosen) return null
   const engine = await loadEngine()
@@ -91,7 +91,7 @@ export async function renderPicture(elements, files = {}, { ids = [] } = {}) {
   const svg = fixFonts(svgEl.outerHTML, families)
   const w = Number(svgEl.getAttribute('width')) || 800
   const h = Number(svgEl.getAttribute('height')) || 600
-  const scale = Math.min(MAX_SCALE, MAX_SIDE / Math.max(w, h))
+  const scale = Math.min(MAX_SCALE, maxSide / Math.max(w, h))
   const out = new Resvg(svg, {
     fitTo: { mode: 'width', value: Math.max(1, Math.round(w * scale)) },
     font: { fontBuffers, defaultFontFamily: 'Liberation Sans', loadSystemFonts: false },

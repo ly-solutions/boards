@@ -395,7 +395,10 @@ export function createApp({
     if (Array.isArray(body.delete) && body.delete.length) touched.push(...merged()(applyDeletes(body.delete, current, { now })))
     if (!touched.length) throw new EditError('empty edit: send graph, add, update or delete')
     const accepted = store.applyAgentEdit(state, touched, { by: authorOf(body), note: typeof body.note === 'string' ? body.note.slice(0, 200) : null })
-    return { accepted, created: touched.filter((el) => el.version === 1).map((el) => el.id) }
+    // What to show on the board for this edit (HRN-1480): the changed objects, labels counted with their shapes.
+    const live = new Set(store.elements(state).filter((el) => !el.isDeleted).map((el) => el.id))
+    const changed = [...new Set(touched.map((el) => el.containerId ?? el.id))].filter((id) => live.has(id)).slice(0, 40)
+    return { accepted, created: touched.filter((el) => el.version === 1).map((el) => el.id), changed }
   }
 
   async function createBoard(body, who) {
@@ -771,13 +774,14 @@ export function createApp({
   // so the webhook does not hand the agent its own message back as a person's question.
   /** The board's picture, cached per revision: an agent looks before and after its edit, often twice in a row. */
   const pictures = new Map()
-  async function picture(state, ids = []) {
-    const key = `${state.slug}:${state.rev}:${ids.join(',')}`
+  const PICTURES_KEPT = 64
+  async function picture(state, ids = [], { thumb = false } = {}) {
+    const key = `${state.slug}:${state.rev}:${thumb ? 'thumb' : ids.join(',')}`
     if (pictures.has(key)) return pictures.get(key)
     const scene = store.scene(state)
-    const png = await renderPicture(scene.elements ?? [], scene.files ?? {}, { ids })
+    const png = await renderPicture(scene.elements ?? [], scene.files ?? {}, { ids, maxSide: thumb ? 720 : undefined })
     pictures.set(key, png)
-    if (pictures.size > 24) pictures.delete(pictures.keys().next().value)
+    if (pictures.size > PICTURES_KEPT) pictures.delete(pictures.keys().next().value)
     return png
   }
 
@@ -858,7 +862,7 @@ export function createApp({
       tools: platformUser ? mcpTools : mcpTools.map((tool) => ({ ...tool, run: (args, ctx) => tool.run(args, { ...ctx, who: { kind: 'agent', name: authorOf(args ?? {}) } }) })),
       ctx: { who },
       serverInfo: { name: 'boards', version: VERSION },
-      instructions: 'Excalidraw boards: read a board with board_read, draw diagrams with board_create/board_edit through graph (the server lays it out), answer people in threads with board_comment. After an edit read the board again and check the slop section.',
+      instructions: 'Excalidraw boards: read a board with board_read and look at it with board_look, draw diagrams with board_create/board_edit through graph (the server lays it out), answer people in threads with board_comment (pass ids of what you changed). After an edit look at the picture and fix what looks wrong; answer in one or two lines with the «Show on the board» link, no lists.',
       describeError: (error) => {
         if (error instanceof ToolError || error instanceof HttpError || error instanceof EditError || error instanceof LimitError || error instanceof CommentError) return error.message
         if (error instanceof StorageUnavailableError) {
@@ -1218,8 +1222,17 @@ export function createApp({
     }
 
     if (action === 'preview.svg' && req.method === 'GET') {
-      // No browser has sent a thumbnail yet (a board an agent drew): a sketch of its shapes stands in.
-      const svg = (await store.previewSvg(state)) ?? sketchSvg(store.elements(state))
+      // No browser has sent a thumbnail yet, or an agent changed the board since: the server's own picture of it
+      // (HRN-1480); an empty board or a failed render gets the sketch of its shapes.
+      const stored = await store.previewSvg(state)
+      if ((!stored || state.previewStale) && store.elements(state).length) {
+        const png = await picture(state, [], { thumb: true }).catch((error) => {
+          console.log(JSON.stringify({ at: new Date().toISOString(), level: 'warn', event: 'thumbnail_failed', slug: state.slug, error: String(error?.message ?? error).slice(0, 200) }))
+          return null
+        })
+        if (png) return sendBody(res, 200, { 'content-type': 'image/png', 'cache-control': 'private, max-age=30', 'x-content-type-options': 'nosniff', 'x-robots-tag': 'noindex' }, png)
+      }
+      const svg = stored ?? sketchSvg(store.elements(state))
       return sendBody(
         res,
         200,
@@ -1254,7 +1267,9 @@ export function createApp({
       const body = await readJson(req, 4 * 1024 * 1024)
       const who = requireEditor(req, state, body)
       const result = await applyEdit(state, { ...body, author: who.name })
-      return json(res, 200, { ...describe(state), rev: state.rev, ...result, summary: store.text(state) })
+      const links = describe(state)
+      const show = result.changed?.length ? `${links.url}${links.url.includes('?') ? '&' : '?'}show=${result.changed.join(',')}` : links.url
+      return json(res, 200, { ...links, rev: state.rev, ...result, show, summary: store.text(state) })
     }
 
     if (action === 'agent' && req.method === 'POST') {

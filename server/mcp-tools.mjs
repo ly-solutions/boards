@@ -107,7 +107,9 @@ export function boardTools(ops) {
         const state = await ops.board(args.board)
         const result = await ops.edit(state, { graph: args.graph, add: args.add, update: args.update, delete: args.delete, at: args.at, note: str(args.note), author: who.name })
         const created = result.created.length ? `, new ids: ${result.created.join(', ')}` : ''
-        return `Edit accepted (revision ${state.rev}${created}).\n\n${ops.text(state)}`
+        const d = ops.describe(state)
+        const show = result.changed?.length ? `${d.url}&show=${result.changed.join(',')}` : d.url
+        return `Edit accepted (revision ${state.rev}${created}).\nShow on the board: ${show}\nLook at it now (board_look with ids: ${(result.changed ?? []).slice(0, 12).join(', ') || '—'}) and fix what looks wrong. Answer the person in one or two lines with this link, no lists.\n\n${ops.text(state)}`
       },
     },
     {

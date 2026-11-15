@@ -39,7 +39,7 @@ import { followPanHint } from './pan-hint'
 import { CALL_EVENT, MENTION, callWords, onScreen, selectionOf, toView, visibleArea, type CallDetail } from './app-call'
 import { Islands, type Person } from './islands/islands'
 import { SideChat, SideTabs } from './islands/side'
-import { GlowLayer, ReactionLayer, TerminalLayer } from './islands/overlays'
+import { GlowLayer, ReactionLayer, TerminalLayer, glow } from './islands/overlays'
 import { AgentBar, AgentCursor, AgentLive, useAgentWorking } from './agent-live'
 import { isTerminal } from './islands/scene'
 
@@ -1116,6 +1116,24 @@ function Board() {
   const fitOnLoad = useCallback((api: Api) => {
     if (fitted.current) return
     fitted.current = true
+    // `?show=a,b`: a link from an agent's answer («Показать на доске», HRN-1480) opens the board on what it changed.
+    const show = (new URLSearchParams(location.search).get('show') ?? '').split(',').filter((id) => /^[\w-]{1,64}$/.test(id))
+    if (show.length) {
+      requestAnimationFrame(() => {
+        const want = new Set(show)
+        const els = (api.getSceneElements() as unknown as { id: string }[]).filter((el) => want.has(el.id))
+        if (!els.length) return
+        // Fit with a margin, never above 100 %: a single sticky should not fill the screen.
+        ;(api as unknown as StudioApi).scrollToContent(els as never, { fitToViewport: true, viewportZoomFactor: 0.8, animate: false } as never)
+        const z = (api.getAppState() as { zoom: { value: number } }).zoom.value
+        if (z > 1) {
+          api.updateScene({ appState: { zoom: { value: 1 } }, captureUpdate: CaptureUpdateAction.NEVER } as never)
+          ;(api as unknown as StudioApi).scrollToContent(els as never, { fitToContent: false } as never)
+        }
+        setTimeout(() => glow(els as never), 300)
+      })
+      return
+    }
     let framed = false
     try {
       framed = window.self !== window.top

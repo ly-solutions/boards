@@ -481,3 +481,7 @@ html.isl-side-open .isl-tr [data-tip]:last-child:hover::after { transform: trans
 .isl-chat__am p { margin: 0; white-space: pre-wrap; word-break: break-word; }
 .isl-chat__show { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px 0 7px; border-radius: 8px; background: var(--isl-accent-soft); color: var(--isl-accent); font-weight: 600; font-size: 12px; }
 .isl-chat__typing { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; color: var(--isl-accent); font-weight: 600; font-size: 12px; }
+.agent-bar button { border: 0; background: transparent; font: inherit; cursor: pointer; margin: 0; }
+.agent-bar .agent-bar__btn:hover { background: var(--isl-accent-soft); }
+.agent-bar .agent-bar__x:hover { background: var(--isl-hover); }
+.isl-chat__show { border: 0; cursor: pointer; font-family: inherit; }
