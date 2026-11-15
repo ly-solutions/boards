@@ -38,6 +38,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A guest of a team board (HRN-1480): no second banner over the board — «Войти» sits in the «Только просмотр» island
   and fits a narrow window. Opening a board fits it between the islands (title at the top, tools at the bottom); a wide
   window opens at 100 % around the content, a board larger than the window from its top-left corner.
+- Opening a board on a slow connection: the editor's own centring no longer lands after our fit and undoes it; the fit
+  is applied again until the person touches the board (not for a link to a thread).
 - The board flash of quick edits (HRN-1466) used helpers that #25 removed; it outlines with the shared glow now.
 
 ### Added
