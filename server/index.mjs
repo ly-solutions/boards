@@ -38,7 +38,7 @@ import { createLinks } from './links.mjs'
 import { refsOf } from '../shared/links.mjs'
 import { isValidSlug, makeKey, makeSlug, secretMatches } from './access.mjs'
 import { EditError, applyDeletes, applyUpdates, layoutGraph, loadEngine, materialize } from './engine.mjs'
-import { editorHeaders, embedHeaders, pageHeaders, renderBoardPage, renderEmbedPage, renderHome, renderNotFound, renderTokenLogin, webAssets } from './html.mjs'
+import { editorHeaders, embedHeaders, homeFieldValues, pageHeaders, renderBoardPage, renderEmbedPage, renderHome, renderNotFound, renderTokenLogin, webAssets } from './html.mjs'
 import { API_HELP } from './help.mjs'
 import { createAuth } from './auth.mjs'
 import { createLive } from './live.mjs'
@@ -904,9 +904,11 @@ export function createApp({
         if (auth.enabled) return loginRedirect(res, homeUrl)
         throw new HttpError(401, 'not signed in')
       }
-      const boards = await listBoards(url)
+      const me = { name: user.name, email: user.email }
+      const fields = plugins.homeFields()
+      const rows = (await store.list()).map((b) => ({ ...libraryRow(b, { publicUrl, prefix: PREFIX, me }), fields: homeFieldValues(b, fields, t) }))
       res.writeHead(200, pageHeaders({ frameAncestors: config.frameAncestors }))
-      return res.end(renderHome({ staticBase, boards, templates: localTemplates(), user, canSignOut: auth.mode !== 'none', q: url.searchParams.get('q') ?? '', t, fields: plugins.homeFields() }))
+      return res.end(renderHome({ staticBase, rows, templates: localTemplates(), user, canSignOut: auth.mode !== 'none', q: url.searchParams.get('q') ?? '', t }))
     }
 
     if (rest === 'api' || rest === 'api/') return text(res, 200, API_HELP)
@@ -940,7 +942,7 @@ export function createApp({
     if (rest === 'auth/handoff') return auth.handoff(req, res, url)
 
     // Templates, library and palette are not secret; the editor needs them without a token.
-    if (rest === 'api/templates' && req.method === 'GET') return json(res, 200, { templates: TEMPLATES.map(({ id, title, description }) => ({ id, title, description })) })
+    if (rest === 'api/templates' && req.method === 'GET') return json(res, 200, { templates: localTemplates().map(({ id, title, description }) => ({ id, title, description })) })
     const tpl = /^api\/templates\/([a-z-]+)$/.exec(rest)
     if (tpl && req.method === 'GET') {
       if (!templateById(tpl[1])) throw new HttpError(404, 'no such template')

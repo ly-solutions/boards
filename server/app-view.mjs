@@ -52,11 +52,13 @@ export function renderAppView({ staticBase, locale = 'en', title = 'Boards' }) {
 <title>${escape(title)}</title>
 <script src="${s}/hl/bridge-shim.js"></script>
 <link rel="stylesheet" href="${s}/hl/hl-ui.css">
+<link rel="stylesheet" href="${s}/app/list.css">
 <link rel="stylesheet" href="${s}/app/app.css">
 </head>
 <body class="hl-body">
 <div id="app" class="ba" aria-busy="true"></div>
 <script src="${s}/hl/app-sdk.classic.js"></script>
+<script src="${s}/app/list.js"></script>
 <script src="${s}/app/app.js"></script>
 </body>
 </html>
