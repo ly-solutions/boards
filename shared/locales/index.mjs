@@ -17,6 +17,7 @@ import enPages from './en/pages.mjs'
 import enText from './en/text.mjs'
 import enEmbed from './en/embed.mjs'
 import enPlugins from './en/plugins.mjs'
+import enIslands from './en/islands.mjs'
 import ruEditor from './ru/editor.mjs'
 import ruStudio from './ru/studio.mjs'
 import ruComments from './ru/comments.mjs'
@@ -26,11 +27,12 @@ import ruPages from './ru/pages.mjs'
 import ruText from './ru/text.mjs'
 import ruEmbed from './ru/embed.mjs'
 import ruPlugins from './ru/plugins.mjs'
+import ruIslands from './ru/islands.mjs'
 
 /** Area name → messages, per locale. Exported for the completeness test. */
 export const AREAS = {
-  en: { editor: enEditor, studio: enStudio, comments: enComments, checkpoints: enCheckpoints, slop: enSlop, pages: enPages, text: enText, embed: enEmbed, plugins: enPlugins },
-  ru: { editor: ruEditor, studio: ruStudio, comments: ruComments, checkpoints: ruCheckpoints, slop: ruSlop, pages: ruPages, text: ruText, embed: ruEmbed, plugins: ruPlugins },
+  en: { editor: enEditor, studio: enStudio, comments: enComments, checkpoints: enCheckpoints, slop: enSlop, pages: enPages, text: enText, embed: enEmbed, plugins: enPlugins, islands: enIslands },
+  ru: { editor: ruEditor, studio: ruStudio, comments: ruComments, checkpoints: ruCheckpoints, slop: ruSlop, pages: ruPages, text: ruText, embed: ruEmbed, plugins: ruPlugins, islands: ruIslands },
 }
 
 const join = (areas) => Object.fromEntries(Object.entries(areas).flatMap(([area, messages]) => Object.entries(messages).map(([key, value]) => [`${area}.${key}`, value])))

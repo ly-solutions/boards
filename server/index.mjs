@@ -159,7 +159,8 @@ export function normalizeTags(value) {
 }
 
 /** Reactions on stickies: exactly three. */
-export const REACTIONS = ['👍', '👎', '❤️']
+/** Reactions people put on objects (HRN-1480: any object, not only stickies). 👎 stays for older votes. */
+export const REACTIONS = ['👍', '❤️', '🎉', '✅', '❓', '👎']
 
 const stamp = () => new Date().toISOString().replace(/\.\d+Z$/, 'Z')
 /**
@@ -793,7 +794,7 @@ export function createApp({
     react: (state, who, input) => {
       if (!REACTIONS.includes(input.emoji)) throw new ToolError(`emoji: one of ${REACTIONS.join(' ')}`)
       const reactions = store.react(state, String(input.id ?? ''), input.emoji, who.name, input.on !== false)
-      if (!reactions) throw new ToolError('no sticky with that id on the board')
+      if (!reactions) throw new ToolError('no object with that id on the board')
       return reactions
     },
     list: async () => (await store.list()).map((b) => ({ ...b, url: `${publicUrl}${PREFIX}/${b.slug}?k=${encodeURIComponent(b.key)}` })),
@@ -1249,7 +1250,7 @@ export function createApp({
       const who = requireEditor(req, state, body)
       if (!REACTIONS.includes(body.emoji)) throw new HttpError(400, `emoji: one of ${REACTIONS.join(' ')}`)
       const reactions = store.react(state, String(body.id ?? ''), body.emoji, who.name, body.on !== false)
-      if (!reactions) throw new HttpError(404, 'no sticky with that id on the board')
+      if (!reactions) throw new HttpError(404, 'no object with that id on the board')
       return json(res, 200, { ok: true, reactions, notes: store.notes(state) })
     }
 

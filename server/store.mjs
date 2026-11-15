@@ -301,10 +301,10 @@ export function createStore({
     emit({ type: 'notes', slug: state.slug, notes: notesView(state) })
   }
 
-  /** Toggle a reaction on a sticky. Two simultaneous 👍 both count. */
+  /** Toggle a reaction on an object (a sticky, a shape, an arrow…; not a label inside one). Two simultaneous 👍 both count. */
   function react(state, id, emoji, name, on) {
     const el = state.elements.get(id)
-    if (!el || el.isDeleted || el.customData?.kind !== 'sticky') return null
+    if (!el || el.isDeleted || (el.type === 'text' && el.containerId)) return null
     const reactions = { ...(state.notes.reactions[id] ?? {}) }
     const names = new Set(reactions[emoji] ?? [])
     if (on) names.add(name)

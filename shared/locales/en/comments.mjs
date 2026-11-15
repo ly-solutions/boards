@@ -66,4 +66,9 @@ export default {
   none: 'No comments yet.',
   emptyHint: 'Pick the comment tool and click the board, or right-click a shape and choose “Comment”.',
   resolvedCount: 'Resolved ({count})',
+  filterOpen: 'Open',
+  filterResolved: 'Resolved',
+  filterMine: 'Mine',
+  noResolved: 'No resolved comments yet.',
+  noMine: 'Nothing you wrote or were mentioned in.',
 }

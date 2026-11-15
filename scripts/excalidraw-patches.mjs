@@ -72,6 +72,13 @@
  *    the same queue and appear over the next frames, center first. When the
  *    viewport is still, everything is drawn at once as before: an edit must not
  *    flicker.
+ * 15. Text styles of the islands' text bar (HRN-1480). Excalidraw has no bold, italic,
+ *    underline or strike-through. The style lives in the text element's
+ *    customData (fontWeight, fontStyle, underline, strike): the font string the
+ *    package measures, draws and edits text with gets the weight and slant, and
+ *    the canvas renderer draws the underline and the strike line under each line
+ *    of the text. Without those fields everything is as before.
+ *    measureText reads the size from that font string, so it skips the style words.
  */
 
 export const EXCALIDRAW_VERSION = '0.18.1'
@@ -112,6 +119,29 @@ export const FILES = {
 // the same throttled to a frame, ya — copy onto the canvas, ee — "is an arrow",
 // oe — a shape's bound text, It/Hr — shape curves and their bounds, he — shape cache.
 export const PATCHES = [
+  {
+    id: 'text-font-style',
+    file: 'render',
+    // Ee — the font string of a text element ("20px Nunito…"), ea — its family list.
+    find: 'Ee=({fontSize:e,fontFamily:t})=>`${e}px ${ea({fontFamily:t})}`',
+    replace: 'Ee=(o)=>`${o.customData&&o.customData.fontStyle==="italic"?"italic ":""}${o.customData&&o.customData.fontWeight==="bold"?"bold ":""}${o.fontSize}px ${ea({fontFamily:o.fontFamily})}`',
+  },
+  {
+    id: 'text-measure-style',
+    file: 'render',
+    // measureText takes the font size from the font string: with "italic bold 20px …" it has to skip the style words.
+    find: 'o=parseFloat(t),i=B6(r,o,n)',
+    replace: 'o=parseFloat(String(t).replace(/^(?:italic |bold )+/,"")),i=B6(r,o,n)',
+  },
+  {
+    id: 'text-decoration',
+    file: 'render',
+    // The text renderer's loop over lines: s — the lines, d — x by alignment, c — line height, l — baseline offset.
+    find: 'for(let U=0;U<s.length;U++)n.fillText(s[U],d,U*c+l);',
+    replace:
+      'for(let U=0;U<s.length;U++){n.fillText(s[U],d,U*c+l);let __d=e.customData;if(__d&&(__d.underline||__d.strike)&&s[U]){let __w=n.measureText(s[U]).width,__x=d-(e.textAlign==="center"?__w/2:e.textAlign==="right"?__w:0),__t=Math.max(1,e.fontSize/14);' +
+      '__d.underline&&n.fillRect(__x,U*c+l+e.fontSize*.12,__w,__t);__d.strike&&n.fillRect(__x,U*c+l-e.fontSize*.3,__w,__t)}}',
+  },
   {
     id: 'regen-defer',
     file: 'render',
