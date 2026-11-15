@@ -228,6 +228,11 @@ export function createStore({
     if (accepted > 0) {
       state.previewStale = true
       schedule(state)
+      // Who changed the board last and when: a link card names them (HRN-1478), not whoever made the board.
+      if (by) {
+        state.meta.editedBy = by
+        state.meta.editedAt = state.meta.updatedAt
+      }
       emit({ type: 'elements', slug: state.slug, rev: state.rev, origin, elements: acceptedElements.sort(byIndex), files: acceptedFiles })
     }
     return accepted
