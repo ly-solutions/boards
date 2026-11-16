@@ -43,6 +43,7 @@ const Chev = () => <Icon name="chevron" size={12} className="isl-chev" />
 const Sep = () => <span className="isl-vs" />
 
 export function ContextBar({ api, reactions, votes, me, onReact, onAsk }: { api: Api; reactions: string[]; votes: Record<string, Record<string, string[]>>; me: string | null; onReact: (id: string, emoji: string, on: boolean) => void; onAsk: ((text: string, ids: string[]) => void) | null }) {
+  'use no memo' // reads the editor (api) while rendering: the compiler would cache it by the stable api (HRN-1515)
   const st = api.getAppState() as Record<string, unknown>
   const pop = useOpenKey<PopKey>()
   const ref = useRef<HTMLDivElement | null>(null)
@@ -630,6 +631,7 @@ function LineOptions({ api, first }: { api: Api; first: El }) {
 }
 
 function SiteBar({ api, el }: { api: Api; el: El }) {
+  'use no memo' // reads the editor (api) while rendering: the compiler would cache it by the stable api (HRN-1515)
   const [url, setUrl] = useState(el.link ?? '')
   const st = api.getAppState() as { activeEmbeddable?: { element: { id: string }; state: string } | null }
   const active = st.activeEmbeddable?.element?.id === el.id && st.activeEmbeddable.state === 'active'

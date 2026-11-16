@@ -108,6 +108,7 @@ type Item = { key: string; label: string; icon: ReactNode; hint?: string; danger
 type Native = { name: string; label: string; hint: string; checked: boolean } | 'sep'
 
 export function BoardMenu({ api, menu, onClose, onComment, onSticky, pluginItems = [] }: Props) {
+  'use no memo' // reads the editor (api) while rendering: the compiler would cache it by the stable api (HRN-1515)
   // The editor decided which edits fit: read them from its hidden menu.
   const [nativeItems, setNativeItems] = useState<Native[]>([])
   useLayoutEffect(() => {

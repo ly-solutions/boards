@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Big boards keep up (HRN-1515): a zoom draws the last frame or a picture of the whole board scaled, made in idle
+  time; dragging many shapes moves them as one layer and sends the change when they are dropped; the editor is
+  compiled with React Compiler; comments, the chat, the palette, templates, properties and checkpoints load when
+  needed; the browser no longer exports a thumbnail after edits (the server draws it); the boards list loads
+  thumbnails of the cards on screen only.
 - Dark theme keeps colours (HRN-1480): the canvas is no longer inverted as a whole. Colour fills (stickies, shapes,
   column headers) keep their light-theme colour with dark text; black and grey lines, free text and near-white tints
   are inverted as before; a white, grey or empty sticky becomes a raised dark card with a shadow; the stage is the

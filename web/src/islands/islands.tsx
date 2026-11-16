@@ -156,6 +156,7 @@ function initialOf(name: string) {
 // ── Top left: back, title, menu, edit/view ───────────────────────────────────
 
 function TopLeft({ api, app, title, onRename, homeUrl, textUrl, fileUrl, canEdit, menu, viewOnly, setViewOnly }: Pick<IslandsProps, 'api' | 'app' | 'title' | 'onRename' | 'homeUrl' | 'textUrl' | 'fileUrl' | 'canEdit' | 'menu'> & { viewOnly: boolean; setViewOnly: (v: boolean) => void }) {
+  'use no memo' // reads the editor (api) while rendering: the compiler would cache it by the stable api (HRN-1515)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(title)
   const pop = useOpenKey<'menu'>()
@@ -304,6 +305,7 @@ function TopLeft({ api, app, title, onRename, homeUrl, textUrl, fileUrl, canEdit
 // ── Top right: people, share, comments, chat ─────────────────────────────────
 
 function TopRight({ api, crowd, agentWorking, status, onShare, openComments, side, setSide, app, extras }: Pick<IslandsProps, 'api' | 'crowd' | 'agentWorking' | 'status' | 'onShare' | 'openComments' | 'side' | 'setSide' | 'app' | 'extras'>) {
+  'use no memo' // reads the editor (api) while rendering: the compiler would cache it by the stable api (HRN-1515)
   const following = (api.getAppState().userToFollow as { socketId?: string } | null)?.socketId ?? null
   const shown = crowd.slice(0, 4)
   const more = crowd.length - shown.length
@@ -368,6 +370,7 @@ function readPrefs(): Prefs {
 }
 
 function Toolbar({ api, tool, stickyColor, setStickyColor, onStudioTool, reactions, onPanel, insert, prefs, setPrefs }: Pick<IslandsProps, 'api' | 'stickyColor' | 'setStickyColor' | 'onStudioTool' | 'reactions' | 'onPanel' | 'insert'> & { tool: Tool; prefs: Prefs; setPrefs: (p: Partial<Prefs>) => void }) {
+  'use no memo' // reads the editor (api) while rendering: the compiler would cache it by the stable api (HRN-1515)
   const pop = useOpenKey<'sticky' | 'shape' | 'arrow' | 'pen' | 'react' | 'plus'>()
   const close = pop.close
   const custom = tool.type === 'custom' ? tool.customType : null
@@ -586,6 +589,7 @@ function ViewBar({ api, tool, canEdit, canComment = canEdit, setViewOnly, onStud
 // ── Bottom left: history and zoom ────────────────────────────────────────────
 
 function Zoom({ api, canEdit }: { api: Api; canEdit: boolean }) {
+  'use no memo' // reads the editor (api) while rendering: the compiler would cache it by the stable api (HRN-1515)
   const zoom = Math.round(((api.getAppState().zoom as { value: number })?.value ?? 1) * 100)
   return (
     <div className="isl isl-bl">
@@ -614,6 +618,7 @@ const typing = (e: KeyboardEvent) => {
 }
 
 export function Islands(props: IslandsProps) {
+  'use no memo' // reads the editor (api) while rendering: the compiler would cache it by the stable api (HRN-1515)
   const { api, canEdit, onStudioTool, onReact, votes, me } = props
   useEditorTick(api)
   useStickyFit(api, canEdit)

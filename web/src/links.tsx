@@ -152,6 +152,7 @@ function RenderedCard({ card, element, staticBase }: { card: Meta; element: Scen
 }
 
 function Card({ target, meta, staticBase, element }: { target: Target; meta: Meta | null; staticBase: string; element: SceneEl }) {
+  'use no memo' // reads the clock while rendering: the compiler would freeze the time (HRN-1515)
   usePluginRegistry()
   if (meta && meta.kind !== 'board') {
     if (cardRenderer(meta.kind)) return <RenderedCard card={meta} element={element} staticBase={staticBase} />

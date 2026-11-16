@@ -23,7 +23,6 @@ import {
   canDelete,
   cardOffset,
   displayName,
-  draftFrom,
   excerpt,
   focusPoint,
   fullTime,
@@ -48,6 +47,7 @@ import {
   type Thread,
 } from './comments-model'
 import { commentCall } from './app-call'
+import { COMMENT_PATH, Glyph, draftAt } from './comments-button'
 import { glow } from './islands/overlays'
 import { candidates, insertMention, mentionQuery, splitMentions, suggest, type Candidate } from './mentions'
 import './comments.css'
@@ -55,6 +55,7 @@ import { t, dateLocale } from './i18n'
 
 export type { Draft, Message, Thread } from './comments-model'
 export { pinColor } from './comments-model'
+export { CommentsButton, draftAt } from './comments-button'
 
 /** One action on a thread; the server applies exactly one kind per request. */
 export type Change = { reply?: string; replyTo?: string; react?: { emoji: string; on: boolean }; resolved?: boolean; remove?: boolean; removeMessage?: string; x?: number; y?: number; elementId?: string | null }
@@ -98,9 +99,6 @@ const PANEL_SPAN = 352
 const sceneOf = (api: StudioApi) => api.getSceneElements() as unknown as SceneEl[]
 
 /** Where a new thread goes when the user clicks (x, y) in scene coordinates. */
-export function draftAt(api: StudioApi, x: number, y: number): Draft {
-  return draftFrom(sceneOf(api), x, y)
-}
 
 // ── Small hooks ─────────────────────────────────────────────────────────────
 
@@ -150,15 +148,8 @@ function scrollToPin(api: StudioApi, p: Point, phone: boolean, panelOpen: boolea
 
 // ── Icons ───────────────────────────────────────────────────────────────────
 
-function Glyph({ d, size = 16 }: { d: string; size?: number }) {
-  return (
-    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d={d} />
-    </svg>
-  )
-}
 const ICON = {
-  comment: 'M21 11.5a8.4 8.4 0 0 1-9 8.4 8.6 8.6 0 0 1-3.8-.9L3 20l1.1-4.6A8.4 8.4 0 1 1 21 11.5z',
+  comment: COMMENT_PATH,
   close: 'M6 6l12 12 M18 6L6 18',
   reply: 'M9 14L4 9l5-5 M4 9h10.5A5.5 5.5 0 0 1 20 14.5V20',
   trash: 'M4 7h16 M10 11v6 M14 11v6 M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12 M9 7V4h6v3',
@@ -172,16 +163,6 @@ const ICON = {
 }
 
 // ── Button in the right island ──────────────────────────────────────────────
-
-/** Opens the comments panel; the badge counts open threads. Same look as every island button. */
-export function CommentsButton({ count, open, onClick }: { count: number; open: boolean; onClick(): void }) {
-  return (
-    <BarButton label={count ? t('comments.buttonOpen', { count }) : t('comments.title')} on={open} onClick={onClick}>
-      <Glyph d={ICON.comment} size={18} />
-      {count > 0 && <span className="note-count">{count > 99 ? '99+' : count}</span>}
-    </BarButton>
-  )
-}
 
 function Avatar({ name, small }: { name: string; small?: boolean }) {
   return (
@@ -472,6 +453,7 @@ type LayerProps = {
  * anchored pins follow their shapes; only pins near the viewport get DOM nodes.
  */
 function NoteLayer({ api, threads, hidden, openId, draft, draftAuthor, moved, seen, me, movable, card, onOpen, onMove }: LayerProps) {
+  'use no memo' // reads the editor (api) while rendering: the compiler would cache it by the stable api (HRN-1515)
   const version = useSceneVersion()
   const near = useSceneWindow()
   const points = useMemo(() => {
@@ -540,6 +522,7 @@ type CardProps = {
 }
 
 function ThreadBody({ api, thread, me, isTeam, canComment, memory, onUpdate, onClose }: CardProps) {
+  'use no memo' // reads the editor (api) while rendering: the compiler would cache it by the stable api (HRN-1515)
   useSceneVersion() // the header names the shape; keep it current when the label is edited
   const now = useNow()
   const saved = memory.get(thread.id)
@@ -794,6 +777,7 @@ function Sheet({ children }: { children: ReactNode }) {
 // ── Composer ────────────────────────────────────────────────────────────────
 
 function Composer({ api, draft, memory, onSend, onCancel }: { api: StudioApi; draft: Draft; memory: Map<string, Unsent>; onSend(text: string): Promise<boolean>; onCancel(): void }) {
+  'use no memo' // reads the editor (api) while rendering: the compiler would cache it by the stable api (HRN-1515)
   const [text, setText] = useState(memory.get(NEW)?.text ?? '')
   const [busy, setBusy] = useState(false)
   const change = (value: string) => {
