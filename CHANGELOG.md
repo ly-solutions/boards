@@ -13,7 +13,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   time; dragging many shapes moves them as one layer and sends the change when they are dropped; the editor is
   compiled with React Compiler; comments, the chat, the palette, templates, properties and checkpoints load when
   needed; the browser no longer exports a thumbnail after edits (the server draws it); the boards list loads
-  thumbnails of the cards on screen only.
+  thumbnails of the cards on screen only, and a thumbnail a browser once sent as a vector drawing of the whole board
+  is replaced by the server's picture (720 px at most) the first time the list asks for it.
 - Dark theme keeps colours (HRN-1480): the canvas is no longer inverted as a whole. Colour fills (stickies, shapes,
   column headers) keep their light-theme colour with dark text; black and grey lines, free text and near-white tints
   are inverted as before; a white, grey or empty sticky becomes a raised dark card with a shadow; the stage is the
