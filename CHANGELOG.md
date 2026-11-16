@@ -9,6 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- The boards list keeps one centred column up to 1200 px on a wide screen (HRN-1477): the site bar, the head, the
+  tabs, the templates and the grid line up, with 32 px on the sides.
 - Big boards keep up (HRN-1515): a zoom draws the last frame or a picture of the whole board scaled, made in idle
   time; dragging many shapes moves them as one layer and sends the change when they are dropped; the editor is
   compiled with React Compiler; comments, the chat, the palette, templates, properties and checkpoints load when
