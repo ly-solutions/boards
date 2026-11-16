@@ -11,8 +11,6 @@
  * machine origins there. Board links with a key (`?k=`) keep working as before.
  */
 
-import { OWN_PROCESS } from './html.mjs'
-
 const escape = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
 
 /** Headers of the view page: our own scripts and styles only; framing as for the editor. */
@@ -36,7 +34,6 @@ export function appViewHeaders({ frameAncestors = "'self'" } = {}) {
     'referrer-policy': 'no-referrer',
     'x-content-type-options': 'nosniff',
     'cache-control': 'no-store',
-    ...OWN_PROCESS,
   }
 }
 
