@@ -14,7 +14,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   compiled with React Compiler; comments, the chat, the palette, templates, properties and checkpoints load when
   needed; the browser no longer exports a thumbnail after edits (the server draws it); the boards list loads
   thumbnails of the cards on screen only, and a thumbnail a browser once sent as a vector drawing of the whole board
-  is replaced by the server's picture (720 px at most) the first time the list asks for it.
+  is replaced by the server's picture (720 px at most) the first time the list asks for it. An idle board no longer
+  draws frames 60 times a second (Excalidraw's check for collaborators' laser trails ran in an endless frame loop and
+  handed both canvases to the compositor every frame); typing into a sticky no longer redraws the canvas on every key;
+  the comments chunk loads next to the scene.
 - Dark theme keeps colours (HRN-1480): the canvas is no longer inverted as a whole. Colour fills (stickies, shapes,
   column headers) keep their light-theme colour with dark text; black and grey lines, free text and near-white tints
   are inverted as before; a white, grey or empty sticky becomes a raised dark card with a shadow; the stage is the

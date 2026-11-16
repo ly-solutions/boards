@@ -44,7 +44,10 @@ import { isTerminal } from './islands/scene'
 
 // What the board does not need for its first frame comes in chunks of its own (HRN-1515): comments arrive right
 // after the board, the chat, the panels and checkpoints when they open.
-const Comments = lazy(() => import('./comments').then((m) => ({ default: m.Comments })))
+// Comments (their pins) are on every board from the first frame: the chunk is asked for as this module starts, next to
+// the scene, not after the first render (HRN-1515). The rest waits until it is opened.
+const commentsChunk = import('./comments')
+const Comments = lazy(() => commentsChunk.then((m) => ({ default: m.Comments })))
 const SideChat = lazy(() => import('./islands/side').then((m) => ({ default: m.SideChat })))
 const PalettePanel = lazy(() => import('./panels').then((m) => ({ default: m.PalettePanel })))
 const TemplatesPanel = lazy(() => import('./panels').then((m) => ({ default: m.TemplatesPanel })))
