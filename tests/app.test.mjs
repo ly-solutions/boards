@@ -2,7 +2,7 @@ import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile, readdir } from 'node:fs/promises'
-import { isSafePreview, pngPreviewSvg } from '../server/index.mjs'
+import { isRasterPreview, isSafePreview, pngPreviewSvg } from '../server/index.mjs'
 import { createStore } from '../server/store.mjs'
 import { createBoardStorage } from '../server/storage/boards.mjs'
 import { fsObjects } from '../server/storage/objects.mjs'
@@ -115,23 +115,36 @@ test('preview upload: an editor may post a safe SVG, a viewer may not, scripts a
   assert.equal((await post(svg)).status, 403)
   assert.equal((await post('<svg><script>alert(1)</script></svg>', { cookie: session() })).status, 400)
   assert.equal((await post(svg, { cookie: session() })).status, 200)
+  // A vector drawing is not served to the list as it is (HRN-1515): the server's picture takes its place and is kept.
   const served = await fetch(`${base}/b/${body.slug}/preview.svg${k}`)
   assert.equal(served.status, 200)
-  assert.match(served.headers.get('content-security-policy'), /sandbox/)
-  assert.equal(await served.text(), svg)
+  assert.equal(served.headers.get('content-type'), 'image/png')
+  const kept = await fetch(`${base}/b/${body.slug}/preview.svg${k}`)
+  assert.match(kept.headers.get('content-security-policy'), /sandbox/)
+  const keptSvg = await kept.text()
+  assert.ok(isSafePreview(keptSvg) && isRasterPreview(keptSvg))
+})
+
+test('isRasterPreview tells the server picture from a vector drawing', () => {
+  assert.equal(isRasterPreview(pngPreviewSvg(Buffer.alloc(24))), true)
+  assert.equal(isRasterPreview('<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>'), false)
+  assert.equal(isRasterPreview('<svg xmlns="http://www.w3.org/2000/svg"><g><image href="data:image/png;base64,AA"/></g></svg>'), false)
 })
 
 test('a server thumbnail is drawn once per change and kept as the preview (HRN-1515)', async () => {
   const { body } = await create({ graph: { nodes: [{ id: 'a', label: 'one' }, { id: 'b', label: 'two' }], edges: [{ from: 'a', to: 'b' }] } })
   const url = `${base}/b/${body.slug}/preview.svg?k=${body.key}`
   // The boards list asks for many at once: the same board is drawn once and all get the picture.
+  // A request that comes after the first one has stored its picture gets the stored preview with that picture inside.
   const first = await Promise.all([1, 2, 3].map(() => fetch(url)))
+  const pngs = []
   for (const r of first) {
     assert.equal(r.status, 200)
-    assert.equal(r.headers.get('content-type'), 'image/png')
+    const type = r.headers.get('content-type')
+    if (type === 'image/png') pngs.push(Buffer.from(await r.arrayBuffer()).toString('base64'))
+    else assert.ok(isRasterPreview(await r.text()), type)
   }
-  const sizes = await Promise.all(first.map(async (r) => (await r.arrayBuffer()).byteLength))
-  assert.ok(sizes[0] > 100 && sizes.every((n) => n === sizes[0]))
+  assert.ok(pngs.length >= 1 && pngs[0].length > 100 && pngs.every((b) => b === pngs[0]))
   // Kept: the next look serves the stored preview, an SVG with the picture inside.
   const again = await fetch(`${url}&v=1`)
   assert.equal(again.status, 200)

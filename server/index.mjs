@@ -145,6 +145,11 @@ export function pngPreviewSvg(png) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><image width="${w}" height="${h}" href="data:image/png;base64,${png.toString('base64')}"/></svg>`
 }
 
+/** A stored preview that is a picture (the server's PNG in an SVG), not a vector drawing of the board. */
+export function isRasterPreview(svg) {
+  return /^<svg[^>]*><image [^>]*href="data:image\/(png|jpeg|webp);base64,/.test(svg.slice(0, 300))
+}
+
 /** `task`: a free-form external reference (issue key or URL), up to 64 characters. */
 function normalizeTask(value) {
   if (value === undefined) return undefined
@@ -1354,7 +1359,11 @@ export function createApp({
       const stored = await store.previewSvg(state)
       // A versioned address (`v` — when the board last changed) may be kept by the browser until the board changes.
       const keep = url.searchParams.has('v') ? 'private, max-age=86400' : 'private, max-age=30'
-      if ((!stored || state.previewStale) && store.elements(state).length) {
+      // A browser's own thumbnail is a vector drawing of the whole board: a big one is a picture of thousands of
+      // shapes that the list's browser rasterises on its main thread while the list scrolls (HRN-1515). It is
+      // replaced by the server's picture, 720 px at most, the first time someone asks for it.
+      const vector = stored && !isRasterPreview(stored)
+      if ((!stored || vector || state.previewStale) && store.elements(state).length) {
         const rev = state.rev
         const png = await picture(state, [], { thumb: true }).catch((error) => {
           console.log(JSON.stringify({ at: new Date().toISOString(), level: 'warn', event: 'thumbnail_failed', slug: state.slug, error: String(error?.message ?? error).slice(0, 200) }))
@@ -1363,7 +1372,7 @@ export function createApp({
         if (png) {
           // Kept as the board's thumbnail, so the next look at the list does not draw it again (HRN-1515) — unless
           // the board changed while it was being drawn, or a browser sent its own meanwhile.
-          if (state.rev === rev && (state.previewStale || !state.previewExists)) store.setPreview(state, pngPreviewSvg(png))
+          if (state.rev === rev && (vector || state.previewStale || !state.previewExists)) store.setPreview(state, pngPreviewSvg(png))
           return sendBody(res, 200, { 'content-type': 'image/png', 'cache-control': keep, 'x-content-type-options': 'nosniff', 'x-robots-tag': 'noindex' }, png)
         }
       }
