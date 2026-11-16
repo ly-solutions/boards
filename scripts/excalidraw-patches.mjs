@@ -104,6 +104,13 @@
  *    not all at once in the next frame.
  * 24. Overview: the whole board as one picture, drawn in idle steps once the
  *    board is quiet; zoom frames far from the last full frame are made of it.
+ * 25. A frame in which no shape on screen changed is skipped with few shapes on
+ *    screen too, not only with layers (item 8): typing into a sticky re-rendered
+ *    the whole canvas on every key, though the text being edited is not drawn.
+ *    An empty interactive canvas is not cleared again on every render either.
+ * 26. Collaborators' laser trails are checked every frame only for a second
+ *    after the collaborators change, not in an endless requestAnimationFrame
+ *    loop that kept an idle board drawing frames 60 times a second.
  */
 
 export const EXCALIDRAW_VERSION = '0.18.1'
@@ -144,6 +151,8 @@ export const BAND_GAP = 8
 export const MAX_BANDS = 3
 /** Layers only pay off with many shapes on screen; otherwise compositing costs more than drawing. */
 export const BANDS_MIN_VISIBLE = 300
+/** How long collaborators' laser trails are checked every frame after the collaborators change (item 26). */
+export const LASER_AWAKE_MS = 1000
 /** Snapping guides: color in light and dark theme, line width and the size of the cross at the snap point (screen px). */
 export const SNAP_COLOR = '#e64980'
 export const SNAP_COLOR_DARK = '#f783ac'
@@ -313,6 +322,28 @@ export const PATCHES = [
     // than as a CSS background that moved with the camera: that repainted a full-screen layer on every frame.
     find: 'theme:a.theme,isExporting:c,viewBackgroundColor:a.viewBackgroundColor});p.scale(a.zoom.value,a.zoom.value),',
     replace: 'theme:a.theme,isExporting:c,viewBackgroundColor:a.viewBackgroundColor});!c&&!s.__tbKeep&&a.theme==="dark"&&window.__tbDots&&window.__tbDots(p,a,l,U,i);p.scale(a.zoom.value,a.zoom.value),',
+  },
+  {
+    id: 'laser-trails-idle',
+    file: 'app',
+    // Collaborators' laser trails were checked in a requestAnimationFrame loop that never stopped: a main frame 60
+    // times a second on an idle board, and with it both full-screen canvases handed to the compositor every frame
+    // (HRN-1515, item 26). The check only reacts to changes of the collaborators, so it runs for a moment after each.
+    find: 'onFrame(){this.updateCollabTrails()}',
+    replace: `onFrame(){this.updateCollabTrails();return performance.now()-(this.__tbWake||0)>${LASER_AWAKE_MS}}`,
+  },
+  {
+    id: 'laser-trails-wake',
+    file: 'app',
+    find: 't.collaborators&&this.setState({collaborators:t.collaborators})',
+    replace: 't.collaborators&&(this.setState({collaborators:t.collaborators}),this.laserTrails.__tbWake=performance.now(),this.animationFrameHandler.start(this.laserTrails))',
+  },
+  {
+    id: 'interactive-clean-clear',
+    file: 'app',
+    // An empty interactive canvas is not cleared again (item 25, __tbCleanCanvas).
+    find: 'return{atLeastOneVisibleElement:!1,elementsMap:o};let[c,m]=Cs(e,i),',
+    replace: 'return{atLeastOneVisibleElement:!1,elementsMap:o};__tbCleanCanvas(e);let[c,m]=Cs(e,i),',
   },
   {
     id: 'dark-paint-interactive',
@@ -885,14 +916,27 @@ function __tbBuild(cfg, render, key, from, to, canvas) {
   }
   return { key: key, from: from, to: to, canvas: canvas, ids: part.map(function (el) { return el.id; }), vers: part.map(function (el) { return __tbVersion(el, cfg); }) };
 }
+/** The same shapes, in the same order and versions, as in the frame on the canvas. */
+function __tbSameShapes(vis) {
+  var B = __tbB;
+  if (!B.ids || B.ids.length !== vis.length) return false;
+  for (var i = 0; i < vis.length; i++) if (B.ids[i] !== vis[i].id || B.vers[i] !== vis[i].version) return false;
+  return true;
+}
 function __tbBands(cfg, render) {
   var B = __tbB, tb = __tbRegen, a = cfg.appState, r = cfg.renderConfig, vis = cfg.visibleElements, n = vis.length;
   var key = __tbViewKey(cfg);
   var force = tb.forceFull;
   tb.forceFull = false;
   clearTimeout(B.heal);
-  if (n < ${BANDS_MIN_VISIBLE}) return __tbFull(cfg, render, key, 'few');
-  if (force || tb.jobs.size || a.frameToHighlight || (a.openDialog && a.openDialog.name === 'elementLinkSelector') || (r.elementsPendingErasure && r.elementsPendingErasure.size) || (r.pendingFlowchartNodes && r.pendingFlowchartNodes.length)) return __tbFull(cfg, render, null, 'state');
+  var busy = force || tb.jobs.size || a.frameToHighlight || (a.openDialog && a.openDialog.name === 'elementLinkSelector') || (r.elementsPendingErasure && r.elementsPendingErasure.size) || (r.pendingFlowchartNodes && r.pendingFlowchartNodes.length);
+  if (n < ${BANDS_MIN_VISIBLE}) {
+    // Few shapes on screen: no layers, but a frame in which nothing drawn changed is skipped all the same (item 25).
+    // Typing into a sticky re-renders the scene on every key, while the text being edited is not on the canvas.
+    if (!busy && B.key === key && B.canvas === cfg.canvas && __tbSameShapes(vis)) return __tbCount('same'), true;
+    return __tbFull(cfg, render, busy ? null : key, 'few');
+  }
+  if (busy) return __tbFull(cfg, render, null, 'state');
   if (B.key !== key || B.canvas !== cfg.canvas) return __tbFull(cfg, render, key, 'view');
   if (!B.ids || B.ids.length !== n) return __tbFull(cfg, render, key, 'set');
   var changed = [], index = null;
@@ -1177,6 +1221,26 @@ function __tbCurveBounds(shape, toOps, minMax) {
 `
 
 const APP_RUNTIME = `
+;function __tbCleanCanvas(canvas) {
+  // The interactive canvas is cleared on every render, also when it is empty and stays empty — typing into a sticky
+  // (HRN-1515). Clearing a clean canvas changes no pixel, but the browser still hands the compositor a new frame of
+  // a full-screen canvas. Such a clear is skipped: the context knows whether anything was drawn since the last full
+  // clear (item 25).
+  if (canvas.__tbClean) return;
+  canvas.__tbClean = true;
+  var ctx = canvas.getContext("2d"), P = CanvasRenderingContext2D.prototype, dirty = true;
+  ["fill", "stroke", "fillRect", "strokeRect", "fillText", "strokeText", "drawImage", "putImageData"].forEach(function (m) {
+    var draw = P[m];
+    ctx[m] = function () { dirty = true; return draw.apply(this, arguments); };
+  });
+  var clear = P.clearRect;
+  ctx.clearRect = function (x, y, w, h) {
+    if (!dirty) return;
+    clear.call(this, x, y, w, h);
+    var t = this.getTransform();
+    if (!t.b && !t.c && t.a > 0 && t.d > 0 && x * t.a + t.e <= 0 && y * t.d + t.f <= 0 && (x + w) * t.a + t.e >= canvas.width && (y + h) * t.d + t.f >= canvas.height) dirty = false;
+  };
+}
 ;var __tbSelColor = { node: null, cls: null, value: "" };
 function __tbSelectionColor(node) {
   if (!node) return "";
