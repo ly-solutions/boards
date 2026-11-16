@@ -312,7 +312,7 @@ export function renderHome({ staticBase, rows, templates, user, canSignOut, q = 
   @media (prefers-color-scheme: dark) { :root { --page: #141416; --line: rgba(255, 255, 255, 0.08); } }
   html, body { background: var(--page); }
   body { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; }
-  header { display: flex; align-items: center; gap: 1rem; max-width: 1280px; margin: 0 auto; padding: 18px 36px 0; box-sizing: border-box; }
+  header { display: flex; align-items: center; gap: 1rem; max-width: 1200px; margin: 0 auto; padding: 18px 32px 0; box-sizing: border-box; }
   header .spacer { flex: 1; }
   header .who { color: var(--muted); font-size: .9rem; }
   header a:not(.brand) { color: var(--muted); font-size: .9rem; text-decoration: none; }
