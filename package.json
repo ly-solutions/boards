@@ -45,11 +45,11 @@
     "docs:config": "node scripts/gen-config-docs.mjs"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1163.0",
+    "@aws-sdk/client-s3": "^3.1168.0",
     "@dagrejs/dagre": "^3.1.3",
     "@resvg/resvg-wasm": "^2.6.2",
-    "jsdom": "^31.0.0",
-    "ws": "^8.22.1",
+    "jsdom": "^31.0.1",
+    "ws": "^8.23.0",
     "yaml": "^2.6.1"
   },
   "devDependencies": {
@@ -58,14 +58,14 @@
     "@rolldown/plugin-babel": "^0.3.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "@vitejs/plugin-react": "^6.2.1",
+    "@vitejs/plugin-react": "^6.3.0",
     "babel-plugin-react-compiler": "^1.0.0",
     "esbuild": "^0.28.2",
     "fonteditor-core": "^2.6.3",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "typescript": "^7.0.2",
-    "vite": "^8.3.6",
+    "vite": "^8.3.8",
     "wawoff2": "^2.0.1"
   }
 }
