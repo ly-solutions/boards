@@ -27,6 +27,8 @@ test('embed: own page, inlined scene, absolute assets, no frame-ancestors; the e
 
     const editor = await fetch(`${t.base}/b/${body.slug}?k=${k}`)
     assert.match(editor.headers.get('content-security-policy'), /frame-ancestors 'self' https:\/\/workspace\.example/)
+    // A board framed by a page of the same site runs in a process of its own, not on the host's main thread.
+    assert.equal(editor.headers.get('origin-agent-cluster'), '?1')
 
     assert.equal((await fetch(`${t.base}/b/${body.slug}?k=wrong&embed=1`)).status, 404)
   } finally {

@@ -146,6 +146,13 @@ function boardCsp({ publicUrl, frameAncestors, scriptOrigins = [] }) {
   return directives.join('; ')
 }
 
+/**
+ * A board framed by a page of the same site (a workspace on another subdomain) would share that page's process and
+ * main thread: every long task of the host froze the board with it (HRN-1515). An origin-keyed agent cluster lets the
+ * browser give the board's origin a process of its own; postMessage to the host works as before.
+ */
+export const OWN_PROCESS = { 'origin-agent-cluster': '?1' }
+
 const boardPageHeaders = (csp) => ({
   'content-type': 'text/html; charset=utf-8',
   'content-security-policy': csp,
@@ -154,6 +161,7 @@ const boardPageHeaders = (csp) => ({
   'referrer-policy': 'no-referrer',
   'x-content-type-options': 'nosniff',
   'cache-control': 'no-store',
+  ...OWN_PROCESS,
 })
 
 /** The editor may be framed only by the origins in BOARDS_FRAME_ANCESTORS. */
@@ -217,6 +225,7 @@ export function pageHeaders({ frameAncestors = "'self'" } = {}) {
     'referrer-policy': 'no-referrer',
     'x-content-type-options': 'nosniff',
     'cache-control': 'no-store',
+    ...OWN_PROCESS,
   }
 }
 
