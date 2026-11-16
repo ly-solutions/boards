@@ -97,6 +97,7 @@ type Props = {
 }
 
 export function TimerTool({ timer, offset, canEdit, onAct, dock, quiet, open: openProp, onOpen }: Props) {
+  'use no memo' // reads the clock while rendering: the compiler would freeze the time (HRN-1515)
   const [openOwn, setOpenOwn] = useState(false)
   const open = openProp ?? openOwn
   const setOpen = onOpen ?? setOpenOwn

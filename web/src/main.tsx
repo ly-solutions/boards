@@ -1,4 +1,4 @@
-import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { StrictMode, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
   CaptureUpdateAction,
@@ -7,8 +7,6 @@ import {
   FONT_FAMILY,
   MainMenu,
   WelcomeScreen,
-  exportToSvg,
-  getNonDeletedElements,
   getSceneVersion,
   getVisibleSceneBounds,
   newElementWith,
@@ -20,10 +18,11 @@ import '@excalidraw/excalidraw/index.css'
 import './editor.css'
 import './motion.css'
 import { LiveChannel, type LiveMessage } from './live'
-import { BAR_ICONS, BarButton, BarMenu, CheckpointsIcon, Dock, PalettePanel, PropertiesDialog, STUDIO_APP_STATE, SlopBadge, StickyOverlay, TemplatesPanel, ToolbarTools, addSticky, loadLibrary, setStudioTool, useBarMode, useToolbarSlot, type BoardMeta, type StudioApi, type StudioTool } from './studio'
+import { BAR_ICONS, BarButton, BarMenu, CheckpointsIcon, Dock, STUDIO_APP_STATE, SlopBadge, StickyOverlay, ToolbarTools, addSticky, loadLibrary, setStudioTool, useBarMode, useToolbarSlot, type BoardMeta, type StudioApi, type StudioTool } from './studio'
 import { STICKY_COLORS } from '../../shared/palette.mjs'
-import { Comments, CommentsButton, draftAt, type Change, type Draft, type Thread } from './comments'
-import { CheckpointView, Checkpoints, type Checkpoint } from './checkpoints'
+import { CommentsButton, draftAt } from './comments-button'
+import type { Change, Draft, Thread } from './comments'
+import type { Checkpoint } from './checkpoints'
 import { TimerTool, type TimerAction, type TimerState } from './timer'
 import { LinkLayer, addCard, addRefCard, hostOf, linkToBlock } from './links'
 import { BoardMenu, type MenuState, type PluginMenuItem } from './menu'
@@ -38,10 +37,20 @@ import { fitScene, shouldFitOnLoad } from './fit'
 import { followPanHint } from './pan-hint'
 import { CALL_EVENT, MENTION, callWords, onScreen, selectionOf, toView, visibleArea, type CallDetail } from './app-call'
 import { Islands, type Person } from './islands/islands'
-import { SideChat, SideTabs } from './islands/side'
+import { SideTabs } from './islands/side-tabs'
 import { GlowLayer, ReactionLayer, TerminalLayer, glow } from './islands/overlays'
 import { AgentBar, AgentCursor, AgentLive, useAgentWorking } from './agent-live'
 import { isTerminal } from './islands/scene'
+
+// What the board does not need for its first frame comes in chunks of its own (HRN-1515): comments arrive right
+// after the board, the chat, the panels and checkpoints when they open.
+const Comments = lazy(() => import('./comments').then((m) => ({ default: m.Comments })))
+const SideChat = lazy(() => import('./islands/side').then((m) => ({ default: m.SideChat })))
+const PalettePanel = lazy(() => import('./panels').then((m) => ({ default: m.PalettePanel })))
+const TemplatesPanel = lazy(() => import('./panels').then((m) => ({ default: m.TemplatesPanel })))
+const PropertiesDialog = lazy(() => import('./panels').then((m) => ({ default: m.PropertiesDialog })))
+const Checkpoints = lazy(() => import('./checkpoints').then((m) => ({ default: m.Checkpoints })))
+const CheckpointView = lazy(() => import('./checkpoints').then((m) => ({ default: m.CheckpointView })))
 
 type Element = { id: string; version: number; versionNonce: number; isDeleted?: boolean; type: string; x?: number; y?: number; width?: number; height?: number; containerId?: string | null; customData?: Record<string, unknown>; fontSize?: number; fontFamily?: number; text?: string }
 type FileData = { id: string; mimeType: string; dataURL: string; created: number }
@@ -207,6 +216,15 @@ const boardOrigin = (() => {
 const SYNC_MS = 1500
 /** Live channel: edits are batched for 40 ms — a frame or two, not a hundred messages per stroke. */
 const PUSH_MS = 40
+/**
+ * A push of many shapes holds the next one back by this much per shape (HRN-1515): dragging a thousand shapes sent
+ * the whole selection as JSON every 40 ms — the stringify and the socket send took a third of each frame. Others now
+ * see such a move in steps of ~0.6 s; a single card still goes out in 40 ms.
+ */
+const PUSH_MS_PER_ELEMENT = 0.6
+/** While the pointer is down, a push of more shapes than this waits for the drop (at most MASS_PUSH_HOLD_MS). */
+const MASS_PUSH = 200
+const MASS_PUSH_HOLD_MS = 3000
 const POINTER_MS = 33
 const VIEWPORT_MS = 80
 /** Glide to the leader's view in follow mode: slightly longer than the gap between two of their messages. */
@@ -216,16 +234,10 @@ const PEERS_GRACE_MS = 6_000
 /** A minute without mouse movement — the participant is idle, and the avatar shows it. */
 const IDLE_MS = 60_000
 /**
- * The preview for the boards list is an SVG export of the whole scene. On a big
- * board that is a second of main-thread work that cannot move to a worker: the
- * canvas freezes meanwhile. So the preview is drawn when nobody is looking: the
- * tab went to the background, or the board is left alone — no edits, no mouse
- * movement. If we miss the chance, the server remembers the preview is stale
- * and the next person to open the board draws it.
+ * The boards list shows the server's own picture of a board (HRN-1515): every accepted edit marks the stored thumbnail
+ * stale and the next look at the list draws it there. The editor used to export the whole scene to SVG with inlined
+ * fonts — a second of main-thread work on a big board and a 1.8 MB font-subsetting chunk loaded on every board page.
  */
-const PREVIEW_QUIET_MS = 15_000
-const PREVIEW_STILL_MS = 4_000
-const PREVIEW_CHECK_MS = 2_000
 const GUEST_KEY = 'boards-guest'
 const SNAP_KEY = 'boards-snap'
 
@@ -376,6 +388,7 @@ function SnapIcon({ on }: { on: boolean }) {
 }
 
 function Board() {
+  'use no memo' // the editor root reads the board, the URL and plugin registries while rendering (HRN-1515)
   const [initial, setInitial] = useState<{ elements: Element[]; appState: Record<string, unknown>; files: Record<string, FileData> } | null>(null)
   /**
    * What to show in the corner. "Saving…" appears only if saving takes longer
@@ -443,7 +456,7 @@ function Board() {
   /** An agent's edits played out in front of everyone, with one undo per turn (agent-live.tsx). */
   const agentLive = useRef(new AgentLive()).current
   const agentWorking = useAgentWorking(agentLive)
-  const sync = useRef({ rev: 0, epoch: '', sent: new Map<string, number>(), sentFiles: new Set<string>(), inFlight: false, previewDue: false, previewBusy: false, editedAt: 0 })
+  const sync = useRef({ rev: 0, epoch: '', sent: new Map<string, number>(), sentFiles: new Set<string>(), inFlight: false })
   const live = useRef({ canEdit, guest })
   live.current = { canEdit, guest }
 
@@ -477,32 +490,6 @@ function Board() {
     return () => {
       cancelled = true
     }
-  }, [])
-
-  const guestParam = () => (live.current.guest ? `&guest=${encodeURIComponent(live.current.guest)}` : '')
-
-  const uploadPreview = useCallback(async () => {
-    const api = apiRef.current
-    if (!api || !live.current.canEdit) return
-    const elements = getNonDeletedElements(api.getSceneElements() as never)
-    if (!elements.length) return
-    const appState = { ...api.getAppState(), exportBackground: true, exportWithDarkMode: false, exportEmbedScene: false }
-    const make = (skipInliningFonts: boolean) =>
-      exportToSvg({ elements, appState: appState as never, files: api.getFiles() as never, exportPadding: 24, skipInliningFonts } as never)
-    try {
-      let svg = (await make(false)).outerHTML
-      // Inlined fonts with Cyrillic and CJK glyphs can bloat the file: then go without them.
-      if (svg.length > 2_500_000) svg = (await make(true)).outerHTML
-      await fetch(`${base}/preview${q}${guestParam()}`, { method: 'POST', headers: { 'content-type': 'image/svg+xml' }, body: svg })
-    } catch {
-      // The preview only decorates the list; if it fails now, the next edit will retry.
-    }
-  }, [])
-
-  const schedulePreview = useCallback(() => {
-    const s = sync.current
-    s.previewDue = true
-    s.editedAt = Date.now()
   }, [])
 
   /**
@@ -626,11 +613,9 @@ function Board() {
         }
         api.updateScene({ elements: merged, captureUpdate: CaptureUpdateAction.NEVER })
         if (live.current.canEdit && incoming.some((el) => el.type === 'text' && el.customData?.remeasure)) remeasure(api)
-        // A remote edit changes the list preview too: redraw it.
-        if (live.current.canEdit) schedulePreview()
       }
     },
-    [schedulePreview, setPresence, agentLive],
+    [setPresence, agentLive],
   )
 
   const channel = useRef<LiveChannel | null>(null)
@@ -640,6 +625,8 @@ function Board() {
     inflight: new Map<string, number>(),
     inflightFiles: new Set<string>(),
     pushTimer: 0 as unknown as ReturnType<typeof setTimeout> | 0,
+    nextPushAt: 0,
+    pointerDownAt: 0,
     peersTimer: undefined as ReturnType<typeof setTimeout> | undefined,
     sceneVersion: -1,
     selection: '',
@@ -664,8 +651,14 @@ function Board() {
     const changed = api.getSceneElementsIncludingDeleted().filter((el) => s.sent.get(el.id) !== el.version && r.inflight.get(el.id) !== el.version)
     const files = Object.values(api.getFiles()).filter((f) => !s.sentFiles.has(f.id) && !r.inflightFiles.has(f.id))
     if (!changed.length && !files.length) return
+    // A mass move in progress: one push at the drop rather than the whole selection again and again (HRN-1515).
+    if (r.pointerDownAt && changed.length > MASS_PUSH && Date.now() - r.pointerDownAt < MASS_PUSH_HOLD_MS) {
+      r.pushTimer = setTimeout(pushLive, PUSH_MS * 5)
+      return
+    }
     r.seq += 1
     if (!channel.current!.send({ t: 'push', seq: r.seq, elements: changed, files })) return
+    r.nextPushAt = Date.now() + changed.length * PUSH_MS_PER_ELEMENT
     r.pending.set(r.seq, { elements: changed.map((el) => [el.id, el.version]), files: files.map((f) => f.id) })
     for (const el of changed) r.inflight.set(el.id, el.version)
     for (const f of files) r.inflightFiles.add(f.id)
@@ -675,7 +668,31 @@ function Board() {
   const schedulePush = useCallback(() => {
     const r = rt.current
     if (r.pushTimer || !isLive()) return
-    r.pushTimer = setTimeout(pushLive, PUSH_MS)
+    r.pushTimer = setTimeout(pushLive, Math.max(PUSH_MS, r.nextPushAt - Date.now()))
+  }, [pushLive])
+
+  // The pointer for mass moves (see MASS_PUSH): the drop sends what waited, without the per-shape hold.
+  useEffect(() => {
+    const r = rt.current
+    const down = () => {
+      r.pointerDownAt = Date.now()
+    }
+    const up = () => {
+      if (!r.pointerDownAt) return
+      r.pointerDownAt = 0
+      r.nextPushAt = 0
+      if (!r.pushTimer) return
+      clearTimeout(r.pushTimer)
+      r.pushTimer = setTimeout(pushLive, PUSH_MS)
+    }
+    window.addEventListener('pointerdown', down, true)
+    window.addEventListener('pointerup', up, true)
+    window.addEventListener('pointercancel', up, true)
+    return () => {
+      window.removeEventListener('pointerdown', down, true)
+      window.removeEventListener('pointerup', up, true)
+      window.removeEventListener('pointercancel', up, true)
+    }
   }, [pushLive])
 
   const sendViewport = useCallback(() => {
@@ -744,7 +761,6 @@ function Board() {
           }
           if (typeof m.error === 'string') api.setToast({ message: m.error, closable: true, duration: 6000 })
           if (!r.pending.size) setStatus(live.current.canEdit ? 'live' : 'readonly')
-          if (entry && !m.error) schedulePreview()
           return
         }
         case 'notes':
@@ -799,7 +815,7 @@ function Board() {
         default:
       }
     },
-    [applyRemote, glidePointer, pushLive, renderPeers, schedulePreview, sendViewport, setPresence, showEdit],
+    [applyRemote, glidePointer, pushLive, renderPeers, sendViewport, setPresence, showEdit],
   )
 
   const startLive = useCallback(() => {
@@ -973,39 +989,6 @@ function Board() {
     }
   }, [setUserState])
 
-  /** Draw the preview when things are quiet or in the background, see PREVIEW_QUIET_MS. */
-  useEffect(() => {
-    const run = async (leaving = false) => {
-      const s = sync.current
-      if (!s.previewDue || s.previewBusy || !live.current.canEdit) return
-      const hidden = document.visibilityState === 'hidden'
-      // A background tab doesn't mean the board is quiet: others may be editing
-      // it right now. A background tab used to redraw the preview on every
-      // remote edit — a full scene export with fonts every two seconds while
-      // someone typed. Now: immediately only when leaving the tab, otherwise
-      // like everyone else — once edits have settled.
-      const settled = Date.now() - s.editedAt > PREVIEW_QUIET_MS
-      const quiet = settled && (hidden || Date.now() - rt.current.activityAt > PREVIEW_STILL_MS)
-      if (!leaving && !quiet) return
-      s.previewDue = false
-      s.previewBusy = true
-      try {
-        await uploadPreview()
-      } finally {
-        s.previewBusy = false
-      }
-    }
-    const timer = setInterval(() => run(), PREVIEW_CHECK_MS)
-    const onHide = () => {
-      if (document.visibilityState === 'hidden') run(true)
-    }
-    document.addEventListener('visibilitychange', onHide)
-    return () => {
-      clearInterval(timer)
-      document.removeEventListener('visibilitychange', onHide)
-    }
-  }, [uploadPreview])
-
   /** Polling: the main path without a live channel and the fallback while it reconnects. */
   const syncNow = useCallback(async (force = false) => {
     const api = apiRef.current
@@ -1031,14 +1014,13 @@ function Board() {
       // The live channel may have come up while the response was in flight — then it owns the revision.
       if (isLive()) return
       applyRemote(data)
-      if (writer && (changed.length || files.length)) schedulePreview()
       setStatus(writer ? 'saved' : 'readonly')
     } catch {
       if (!isLive()) setStatus('offline')
     } finally {
       s.inFlight = false
     }
-  }, [applyRemote, schedulePreview])
+  }, [applyRemote])
   syncNowRef.current = syncNow
 
   useEffect(() => {
@@ -1245,11 +1227,9 @@ function Board() {
       setTimeout(() => {
         if (!live.current.canEdit) return
         remeasure(api as Api)
-        // No preview or a stale one — draw it once the board is left alone.
-        if (!config.hasPreview || config.previewStale) sync.current.previewDue = true
       }, 300)
     },
-    [schedulePreview, sendViewport, startLive, onUserFollow, startPlugins],
+    [sendViewport, startLive, onUserFollow, startPlugins],
   )
 
   /**
@@ -1882,34 +1862,38 @@ function Board() {
       {studioApi && ISLANDS && <GlowLayer />}
       {studioApi && ISLANDS && <AgentCursor live={agentLive} />}
       {studioApi && ISLANDS && <AgentBar live={agentLive} canEdit={canEdit} />}
-      {studioApi && ISLANDS && chatOpen && config.app && <SideChat api={studioApi as never} setSide={setSide} onAsk={ask} />}
-      {studioApi && ISLANDS && chatOpen && !config.app && <SideChat api={studioApi as never} setSide={setSide} onAsk={askHere} threads={notes.comments} me={me} canAsk={canEdit} />}
+      <Suspense fallback={null}>
+        {studioApi && ISLANDS && chatOpen && config.app && <SideChat api={studioApi as never} setSide={setSide} onAsk={ask} />}
+        {studioApi && ISLANDS && chatOpen && !config.app && <SideChat api={studioApi as never} setSide={setSide} onAsk={askHere} threads={notes.comments} me={me} canAsk={canEdit} />}
+      </Suspense>
 
       {studioApi && config.motion && <PulseLayer />}
       {studioApi && <StickyOverlay api={studioApi} me={me} reactions={REACTIONS} votes={notes.reactions} canReact={canEdit} onReact={react} />}
-      {studioApi && (
-        <Comments
-          tabs={ISLANDS ? <SideTabs side={side} setSide={setSide} /> : undefined}
-          api={studioApi}
-          slug={config.slug}
-          threads={notes.comments}
-          me={me}
-          canComment={canComment}
-          isTeam={Boolean(config.user)}
-          draft={commentDraft}
-          setDraft={setCommentDraft}
-          onStartComment={startComment}
-          hidden={commentsHidden}
-          setHidden={setCommentsHidden}
-          panelOpen={commentsPanel}
-          setPanelOpen={setCommentsPanel}
-          onCreate={createComment}
-          onUpdate={updateComment}
-          people={mentionable}
-          focus={focusThread}
-          agent={Boolean(config.app)}
-        />
-      )}
+      <Suspense fallback={null}>
+        {studioApi && (
+          <Comments
+            tabs={ISLANDS ? <SideTabs side={side} setSide={setSide} /> : undefined}
+            api={studioApi}
+            slug={config.slug}
+            threads={notes.comments}
+            me={me}
+            canComment={canComment}
+            isTeam={Boolean(config.user)}
+            draft={commentDraft}
+            setDraft={setCommentDraft}
+            onStartComment={startComment}
+            hidden={commentsHidden}
+            setHidden={setCommentsHidden}
+            panelOpen={commentsPanel}
+            setPanelOpen={setCommentsPanel}
+            onCreate={createComment}
+            onUpdate={updateComment}
+            people={mentionable}
+            focus={focusThread}
+            agent={Boolean(config.app)}
+          />
+        )}
+      </Suspense>
       {studioApi && canEdit && (
         <>
           {/* Desktop: buttons in the Excalidraw top toolbar; phone: the bottom dock. Islands have their own toolbar. */}
@@ -1924,11 +1908,13 @@ function Board() {
                   <SlopBadge api={studioApi} />
                 </Dock>
               )}
-          {panel === 'palette' && <PalettePanel api={studioApi} onClose={() => setPanel(null)} stickyColor={stickyColor} setStickyColor={setStickyColor} />}
-          {panel === 'templates' && <TemplatesPanel api={studioApi} onClose={() => setPanel(null)} staticBase={config.staticBase} />}
-          {panel === 'checkpoints' && config.workboard && (
-            <Checkpoints api={studioApi} base={base} q={q} guest={guest} canEdit={canEdit} list={checkpoints} setList={setCheckpoints} onClose={() => setPanel(null)} />
-          )}
+          <Suspense fallback={null}>
+            {panel === 'palette' && <PalettePanel api={studioApi} onClose={() => setPanel(null)} stickyColor={stickyColor} setStickyColor={setStickyColor} />}
+            {panel === 'templates' && <TemplatesPanel api={studioApi} onClose={() => setPanel(null)} staticBase={config.staticBase} />}
+            {panel === 'checkpoints' && config.workboard && (
+              <Checkpoints api={studioApi} base={base} q={q} guest={guest} canEdit={canEdit} list={checkpoints} setList={setCheckpoints} onClose={() => setPanel(null)} />
+            )}
+          </Suspense>
         </>
       )}
       {studioApi && config.workboard && (
@@ -1944,8 +1930,10 @@ function Board() {
       {studioApi && config.workboard && canEdit && menu && (
         <BoardMenu api={studioApi} menu={menu} onClose={closeMenu} onComment={commentAt} onSticky={stickyAt} pluginItems={pluginItems(menu)} />
       )}
-      {studioApi && config.at && <CheckpointView api={studioApi} base={base} q={q} guest={guest} at={config.at} canCopy={Boolean(config.canCopy)} boardUrl={config.boardUrl ?? `${base}${q}`} />}
-      {properties && <PropertiesDialog meta={{ ...meta, title }} canEdit={Boolean(config.user)} onSave={saveProperties} onClose={() => setProperties(false)} fields={config.plugins?.fields ?? []} />}
+      <Suspense fallback={null}>
+        {studioApi && config.at && <CheckpointView api={studioApi} base={base} q={q} guest={guest} at={config.at} canCopy={Boolean(config.canCopy)} boardUrl={config.boardUrl ?? `${base}${q}`} />}
+        {properties && <PropertiesDialog meta={{ ...meta, title }} canEdit={Boolean(config.user)} onSave={saveProperties} onClose={() => setProperties(false)} fields={config.plugins?.fields ?? []} />}
+      </Suspense>
 
       {!canEdit && config.authEnabled && !ISLANDS && (
         <div className="board-banner" role="status">

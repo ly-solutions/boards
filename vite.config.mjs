@@ -5,13 +5,13 @@ import { excalidrawPatches } from './scripts/excalidraw-patches.mjs'
 import { selfHostedFonts } from './scripts/self-hosted-fonts.mjs'
 
 /**
- * React Compiler (HRN-1515), only for the files listed here. Most of the editor reads Excalidraw imperatively while
- * it renders (`api.getSceneElements()`, `api.getAppState()` after a tick or a scene version): the compiler caches such
- * a call by the stable `api` and the component silently stops following the board — the build, types and tests stay
- * green. A file goes on the list once its components read only props, state and hooks during render (refs and the
- * api in effects and handlers are fine); a function that has to read the editor in render gets 'use no memo'.
+ * React Compiler (HRN-1515) for the whole editor. Much of it reads Excalidraw imperatively while it renders
+ * (`api.getSceneElements()`, `api.getAppState()` after a tick or a scene version), and the clock: the compiler caches
+ * such a call by the stable `api` (or forever) and the component silently stops following the board — the build, types
+ * and tests stay green. Such a component starts with 'use no memo' and says why; refs and the api in effects and
+ * handlers are fine.
  */
-const COMPILED = [/\/web\/src\/(camera|timer|motion-fx|embed-view)\.tsx$/, /\/web\/src\/islands\/(icons|ui)\.tsx$/]
+const COMPILED = [/\/web\/src\/.*\.tsx?$/]
 function reactCompiler() {
   const preset = reactCompilerPreset()
   preset.rolldown.filter.id = { include: COMPILED }

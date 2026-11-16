@@ -7,6 +7,9 @@ import { Icon } from './icons'
 import { selectedOf, textOf } from './scene'
 import { useEditorTick, type Api } from './islands'
 import type { Thread } from '../comments-model'
+import { SideTabs } from './side-tabs'
+
+export { SideTabs }
 
 /** A thread that calls the agent: its first message has @harnessly (or @агент). */
 const CALL = /(^|\s)@(harnessly|агент|agent)\b/i
@@ -18,6 +21,7 @@ const strip = (text: string) => text.replace(/(^|\s)@(harnessly|агент|agent
  * and answers in the thread. Here those threads read as a chat.
  */
 function ThreadChat({ api, threads, me }: { api: Api; threads: Thread[]; me: string | null }) {
+  'use no memo' // reads the clock while rendering: the compiler would freeze the time (HRN-1515)
   const now = Date.now()
   const asks = threads.filter((th) => CALL.test(th.messages[0]?.text ?? '')).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   return (
@@ -63,22 +67,10 @@ function showIds(api: Api, ids: string[]) {
   if (els.length) api.scrollToContent(els as never, { fitToContent: els.length > 1, animate: true })
 }
 
-export function SideTabs({ side, setSide }: { side: 'comments' | 'chat' | null; setSide: (s: 'comments' | 'chat' | null) => void; app?: boolean }) {
-  return (
-    <div className="isl-tabs" role="tablist">
-      <button type="button" role="tab" aria-selected={side === 'comments'} className={side === 'comments' ? 'on' : ''} onClick={() => setSide('comments')}>
-        {t('islands.comments')}
-      </button>
-      <button type="button" role="tab" aria-selected={side === 'chat'} className={side === 'chat' ? 'on' : ''} onClick={() => setSide('chat')}>
-        {t('islands.chat')}
-      </button>
-    </div>
-  )
-}
-
 type Sent = { id: number; text: string; chip: string | null }
 
 export function SideChat({ api, setSide, onAsk, threads = null, me = null, canAsk = true }: { api: Api; setSide: (s: 'comments' | 'chat' | null) => void; onAsk: (text: string, ids: string[]) => void; threads?: Thread[] | null; me?: string | null; canAsk?: boolean }) {
+  'use no memo' // reads the editor (api) while rendering: the compiler would cache it by the stable api (HRN-1515)
   useEditorTick(api)
   const [text, setText] = useState('')
   const [sent, setSent] = useState<Sent[]>([])

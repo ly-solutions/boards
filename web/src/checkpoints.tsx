@@ -64,6 +64,7 @@ function WeekLine({ week }: { week: Week }) {
 
 /** Diff highlight on the canvas: frames follow live elements, removed ones stay as ghosts in their old place. */
 export const CheckpointHighlights = memo(function CheckpointHighlights({ api, changes }: { api: StudioApi; changes: Changes }) {
+  'use no memo' // reads the editor (api) while rendering: the compiler would cache it by the stable api (HRN-1515)
   const version = useSceneVersion()
   const live = useMemo(() => {
     const wanted = new Set([...changes.added, ...changes.changed].map((u) => u.id))
@@ -111,6 +112,7 @@ type Props = {
 
 /** The checkpoints panel: what changed now, the checkpoint button and past checkpoints. */
 export const Checkpoints = memo(function Checkpoints({ api, base, q, guest, canEdit, list, setList, onClose }: Props) {
+  'use no memo' // reads the editor (api) while rendering: the compiler would cache it by the stable api (HRN-1515)
   const version = useSceneVersion()
   const [selected, setSelected] = useState<string | null>('now')
   const [changes, setChanges] = useState<Changes | null>(null)

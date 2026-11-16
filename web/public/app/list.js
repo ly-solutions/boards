@@ -451,6 +451,26 @@
       )
     }
 
+    // Thumbnails of the cards on screen (and just below) only, HRN-1515: a list of hundreds of boards used to ask for
+    // all of them. A thumbnail shown once is set at once when the list redraws, so it does not blink.
+    var shownPreviews = new Set()
+    var previewsInView = typeof IntersectionObserver === 'function'
+      ? new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            if (!entry.isIntersecting) return
+            previewsInView.unobserve(entry.target)
+            shownPreviews.add(entry.target.dataset.src)
+            entry.target.src = entry.target.dataset.src
+          })
+        }, { rootMargin: '300px 0px' })
+      : null
+    function setPreview(img, url) {
+      if (!url) return
+      img.dataset.src = url
+      if (!previewsInView || shownPreviews.has(url)) img.src = url
+      else previewsInView.observe(img)
+    }
+
     function card(row) {
       var box = el('div', 'bl-bc')
       box.dataset.slug = row.slug
@@ -461,7 +481,7 @@
       img.alt = ''
       img.loading = 'lazy'
       img.decoding = 'async'
-      img.src = row.preview
+      setPreview(img, row.preview)
       th.appendChild(img)
       var open = el('span', 'bl-open')
       open.innerHTML = icon('out')
