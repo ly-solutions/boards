@@ -41,6 +41,7 @@ import { SideTabs } from './islands/side-tabs'
 import { GlowLayer, ReactionLayer, TerminalLayer, glow } from './islands/overlays'
 import { AgentBar, AgentCursor, AgentLive, useAgentWorking } from './agent-live'
 import { isTerminal } from './islands/scene'
+import { useHostShare } from './host-actions'
 
 // What the board does not need for its first frame comes in chunks of its own (HRN-1515): comments arrive right
 // after the board, the chat, the panels and checkpoints when they open.
@@ -1637,6 +1638,8 @@ function Board() {
     if (config.shareUrl) window.open(config.shareUrl, '_blank', 'noopener')
     else setSharing(true)
   }, [])
+  // In harnessly's app the same button opens harnessly's dialog (HRN-1791): its «Общий доступ» is the client link.
+  const hostShare = useHostShare(Boolean(config.app))
   const openProperties = useCallback(() => setProperties(true), [])
   const startComment = useCallback(() => onTool('comment'), [onTool])
   const openComments = useMemo(() => notes.comments.filter((t) => !t.resolved).length, [notes.comments])
@@ -1821,7 +1824,7 @@ function Board() {
           crowd={crowd}
           agentWorking={agentWorking}
           status={{ kind: shownStatus, text: statusText }}
-          onShare={config.app ? null : openShare}
+          onShare={config.app ? hostShare : openShare}
           openComments={openComments}
           side={side}
           setSide={setSide}

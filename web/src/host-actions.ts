@@ -53,6 +53,27 @@ export function useHostActions(open: boolean): HostAction[] {
   return list
 }
 
+const shareOnHost = () => runHostAction('share')
+
+/**
+ * harnessly's «Поделиться» for the board's own button at the top right, the one a board opened by its address has: in the
+ * app the person looks for it there, not in ⋯. null while harnessly does not offer it (no harnessly, an older one).
+ */
+export function useHostShare(app: boolean): (() => void) | null {
+  const [offered, setOffered] = useState(false)
+  useEffect(() => {
+    if (!app) return
+    let live = true
+    void askHostActions().then((list) => {
+      if (live) setOffered(list.some((a) => a.id === 'share'))
+    })
+    return () => {
+      live = false
+    }
+  }, [app])
+  return offered ? shareOnHost : null
+}
+
 /** harnessly's icon names in the islands' own set. */
 export const HOST_ICON: Record<string, string> = {
   share: 'link',
